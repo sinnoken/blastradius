@@ -30,7 +30,9 @@ const topology = {
     { id: "e_LHR_PN", source: "LHR", target: "PN_EU", cost: 5, type: "transit" },
     { id: "e_FRA_PN", source: "FRA", target: "PN_EU", cost: 5, type: "transit" },
     { id: "e_AMS_PN", source: "AMS", target: "PN_EU", cost: 5, type: "transit" },
-    { id: "e_LHR_FRA", source: "LHR", target: "FRA", cost: 10, type: "p2p" }
+    { id: "e_LHR_FRA", source: "LHR", target: "FRA", cost: 10, type: "p2p" },
+    // Leased wave: SIN ↔ FRA(by Tata Communications, 10G long-term)
+    { id: "e_SIN_FRA_lease", source:"SIN", target:"FRA", cost: 80, type: "p2p" }
   ],
   externals: [
     { advertising_router: "TPE", subnet: "0.0.0.0/0", metric: 1, metric_type: "E2" }

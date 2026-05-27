@@ -631,13 +631,15 @@ function renderMatrix() {
       }
       const r = dijkstraECMP(adj, a, b);
       // 去重 stripPseudo 後相同的 path(同一條 router-level 路徑可能因 LSA2 pseudo-node 出現多次)
+      // 保留原始 path 以便 pathToEdgeIds 能正確匹配經過 pseudo-node 的邊
       const seen = new Set();
+      const rawPaths = [];
       const uniquePaths = [];
       for (const p of r.paths) {
         const s = stripPseudo(p).join('>');
-        if (!seen.has(s)) { seen.add(s); uniquePaths.push(stripPseudo(p)); }
+        if (!seen.has(s)) { seen.add(s); rawPaths.push(p); uniquePaths.push(stripPseudo(p)); }
       }
-      matrix[a][b] = { cost: r.cost, paths: uniquePaths };
+      matrix[a][b] = { cost: r.cost, paths: uniquePaths, rawPaths };
       if (r.cost !== Infinity && r.cost > maxCost) maxCost = r.cost;
     }
   }
@@ -720,13 +722,14 @@ function showMatrixCellDetail(src, dst) {
     return;
   }
 
-  // 在拓樸圖上高亮所有 ECMP 路徑
-  for (const p of cell.paths) {
+  // 在拓樸圖上高亮所有 ECMP 路徑(用 rawPaths,含 pseudo-node,才能正確匹配邊)
+  const pathsForHighlight = cell.rawPaths || cell.paths;
+  for (const p of pathsForHighlight) {
     for (const eid of pathToEdgeIds(p, topology.edges)) setEdgeRole(eid, 'primary');
   }
   setNodeRole(src, 'endpoint');
   setNodeRole(dst, 'endpoint');
-  for (const p of cell.paths) for (const n of p) {
+  for (const p of pathsForHighlight) for (const n of p) {
     if (n !== src && n !== dst) setNodeRole(n, 'highlight');
   }
 
@@ -774,19 +777,32 @@ document.getElementById('runFailSim').addEventListener('click', () => {
   };
 
   // 透過 state machine 設定 edge role(瞬時註記,切 Tab 自動清掉)
-  const sortedDelta = Object.entries(r.delta).sort((a,b) => Math.abs(b[1].changePct) - Math.abs(a[1].changePct));
-  for (const [eid, d] of sortedDelta) {
-    const cls = classify(eid, d);
-    if (cls === 'down')      setEdgeRole(eid, 'failed-by-node');
-    else if (cls === 'up')   setEdgeRole(eid, 'load-inc');
-    else if (cls === 'dec')  setEdgeRole(eid, 'load-dec');
+  // iterate 全 topology.edges,讓「接在失效節點上但平時零流量」的純備援也能被標到 down
+  const emptyDelta = { direction: 'none', changePct: 0, before: 0, after: 0 };
+  for (const e of topology.edges) {
+    const d = r.delta[e.id] || emptyDelta;
+    const cls = classify(e.id, d);
+    if (cls === 'down')      setEdgeRole(e.id, 'failed-by-node');
+    else if (cls === 'up')   setEdgeRole(e.id, 'load-inc');
+    else if (cls === 'dec')  setEdgeRole(e.id, 'load-dec');
   }
 
   // group rows by status for the table
   const grouped = { down: [], up: [], dec: [] };
+  const seen = new Set();
+  // 先補:所有接在失效節點上的邊一律放進 down,不論 delta 有沒有紀錄
+  for (const e of topology.edges) {
+    if (e.source === failedNode || e.target === failedNode) {
+      grouped.down.push([e.id, r.delta[e.id] || emptyDelta]);
+      seen.add(e.id);
+    }
+  }
+  // 再補:delta 內其他 up / dec(按 |Δ%| 排序)
+  const sortedDelta = Object.entries(r.delta).sort((a,b) => Math.abs(b[1].changePct) - Math.abs(a[1].changePct));
   for (const [eid, d] of sortedDelta) {
-    const cls = classify(eid, d);
-    if (cls !== 'none') grouped[cls].push([eid, d]);
+    if (seen.has(eid)) continue;
+    if (d.direction === 'inc')      grouped.up.push([eid, d]);
+    else if (d.direction === 'dec') grouped.dec.push([eid, d]);
   }
 
   let html = '';

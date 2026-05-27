@@ -97,7 +97,7 @@ The default scenario is an **"intercontinental ISP backbone (10 PoPs)"** — des
 - **Unprotected segment**: AMS ↔ PN_EU is the only transit reaching AMS — its withdrawal isolates AMS.
 - **LSA5 external**: TPE advertises `0.0.0.0/0` (default route).
 
-To model your own network: edit `topology.js`. Schema in [SPEC.en.md](./SPEC.en.md).
+To model your own network: edit `topology.js`. Schema in [SPEC.md](./SPEC.md).
 
 ---
 
@@ -128,4 +128,4 @@ To model your own network: edit `topology.js`. Schema in [SPEC.en.md](./SPEC.en.
 
 ---
 
-For the data model and algorithms in detail, see [SPEC.en.md](./SPEC.en.md).
+For the data model and algorithms in detail, see [SPEC.md](./SPEC.md).

@@ -1,4 +1,4 @@
-// Exported from BlastRadius POC at 2026-05-27T07:00:37.642Z
+// Exported from BlastRadius POC at 2026-05-27T07:59:13.748Z
 const topology = {
   nodes: [
     { id: "TPE", label: "TPE\nTW", type: "router", area: "0", stubs: ["1.1.1.1/32","10.1.0.0/24","100.64.0.0/24"], isASBR: true, isABR: false },
@@ -26,11 +26,11 @@ const topology = {
     { id: "e_TYO_SYD", source: "TYO", target: "SYD", cost: 40, type: "p2p" },
     { id: "e_TYO_LAX", source: "TYO", target: "LAX", cost: 50, type: "p2p" },
     { id: "e_LAX_LHR", source: "LAX", target: "LHR", cost: 70, type: "p2p" },
-    { id: "e_LAX_AMS", source: "LAX", target: "AMS", cost: 85, type: "p2p" },
+    { id: "e_LAX_AMS", source: "LAX", target: "AMS", cost: 85, type: "p2p", costRev: 70 },
     { id: "e_LHR_PN", source: "LHR", target: "PN_EU", cost: 5, type: "transit" },
     { id: "e_FRA_PN", source: "FRA", target: "PN_EU", cost: 5, type: "transit" },
     { id: "e_AMS_PN", source: "AMS", target: "PN_EU", cost: 5, type: "transit" },
-    { id: "e_LHR_FRA", source: "LHR", target: "FRA", cost: 10, type: "p2p" },
+    { id: "e_LHR_FRA", source: "LHR", target: "FRA", cost: 5, type: "p2p", costRev: 10 },
     { id: "e_SIN_FRA_lease", source: "SIN", target: "FRA", cost: 80, type: "p2p", costRev: 70 }
   ],
   externals: [
@@ -43,10 +43,10 @@ const topology = {
     HKG: { x: 196, y: 263 },
     SIN: { x: 266, y: 404 },
     SYD: { x: 436, y: 312 },
-    LAX: { x: 601, y: 180 },
-    LHR: { x: 757, y: 184 },
-    AMS: { x: 758, y: 77 },
-    FRA: { x: 768, y: 407 },
-    PN_EU: { x: 894, y: 191 }
+    LAX: { x: 577, y: 177 },
+    LHR: { x: 734, y: 176 },
+    AMS: { x: 735, y: 42 },
+    FRA: { x: 739, y: 399 },
+    PN_EU: { x: 886, y: 171 }
   },
 };

@@ -1,22 +1,21 @@
 # BlastRadius SPEC
 
-本文件規範 BlastRadius POC 的資料模型、演算法定義、模組分層與視覺狀態機。
-所有編號(§) 與程式碼中的章節註解對應,可雙向追溯。
+This document specifies the data model, algorithms, module layering, and visual state machine for the BlastRadius POC. Section numbers (§) match the section comments in the source for two-way traceability.
 
 ---
 
-## §1 資料模型
+## §1 Data model
 
-### §1.1 Topology Schema
+### §1.1 Topology schema
 
-`topology.js` 暴露單一全域變數 `topology`,結構如下:
+`topology.js` exposes a single global variable `topology`:
 
 ```js
 const topology = {
-  nodes: [...],       // Router + Pseudo-node
-  edges: [...],       // p2p / transit 邊
-  externals: [...],   // LSA5 (optional)
-  positions: { ... }, // Cytoscape 預設座標 (optional)
+  nodes: [...],       // Routers + pseudo-nodes
+  edges: [...],       // p2p / transit links
+  externals: [...],   // LSA5 externals (optional)
+  positions: { ... }, // Cytoscape coordinates (optional)
 };
 ```
 
@@ -25,19 +24,19 @@ const topology = {
 ```ts
 type Node =
   | {
-      id: string;            // 唯一識別,通常為 PoP 簡稱(TPE / TYO / ...)
-      label: string;         // 圖上顯示文字,支援 \n 換行
+      id: string;            // Unique ID, typically the PoP code (TPE / TYO / ...)
+      label: string;         // Display string; supports \n
       type: 'router';
-      area: string;          // OSPF area(目前僅支援 '0')
-      stubs?: string[];      // LSA3 等價:該 router 宣告的 prefix(CIDR)
-      isASBR?: boolean;      // 是否為 ASBR(對外注入 LSA5)
-      isABR?: boolean;       // 是否為 ABR(目前未啟用 inter-area 計算)
+      area: string;          // OSPF area (only '0' supported today)
+      stubs?: string[];      // LSA3-equivalent: prefixes (CIDR) advertised by this router
+      isASBR?: boolean;      // ASBR — injects LSA5 externals
+      isABR?: boolean;       // ABR — inter-area not yet implemented
     }
   | {
-      id: string;            // 以 'PN' 開頭表示 pseudo-node(LSA2 抽象)
+      id: string;            // Prefix 'PN' denotes a pseudo-node (LSA2 abstraction)
       label: string;
       type: 'pseudonode';
-      subnet: string;        // 該 transit LAN 的 CIDR
+      subnet: string;        // CIDR of the transit LAN
     };
 ```
 
@@ -49,16 +48,16 @@ type Edge =
       id: string;
       source: string;
       target: string;
-      cost: number;          // 正向 cost(source → target)
-      costRev?: number;      // 反向 cost(僅 p2p,省略時等於 cost,即對稱)
+      cost: number;          // Forward metric (source → target)
+      costRev?: number;      // Reverse metric (p2p only; defaults to cost — symmetric)
       type: 'p2p';
     }
   | {
       id: string;
-      source: string;        // 一端為 Router、另一端為 Pseudo-node
+      source: string;        // One endpoint router, the other pseudo-node
       target: string;
-      cost: number;          // Router → Pseudo 的 cost
-      type: 'transit';       // Pseudo → Router 固定為 0(LSA2 語意)
+      cost: number;          // Router → pseudo metric
+      type: 'transit';       // Pseudo → router metric is fixed at 0 (LSA2 semantics)
     };
 ```
 
@@ -66,8 +65,8 @@ type Edge =
 
 ```ts
 type External = {
-  advertising_router: string;   // 哪台 ASBR 注入
-  subnet: string;               // 例如 '0.0.0.0/0'
+  advertising_router: string;   // ASBR that originates this external
+  subnet: string;               // e.g. '0.0.0.0/0'
   metric: number;
   metric_type: 'E1' | 'E2';
 };
@@ -75,7 +74,7 @@ type External = {
 
 ---
 
-## §2 模組分層
+## §2 Module layering
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -85,7 +84,7 @@ type External = {
 │   - buildAdjacency(edges, failedEdges, failedNodes)     │
 │   - buildSubnetIndex(topo)                              │
 ├────────────────────────────────────────────────────────┤
-│ Module C: Algorithm Engine (§4–§9)                      │
+│ Module C: Algorithm Engine (§4–§10)                     │
 │   C1 SPT + ECMP        (§4)                             │
 │   C2 Backup Path       (§5)                             │
 │   C3 Failure Sim       (§6)                             │
@@ -98,11 +97,11 @@ type External = {
 │   edgeStates / nodeStates  (op + role)                  │
 │   failedEdges / failedNodes facade                      │
 ├────────────────────────────────────────────────────────┤
-│ Module E: UI Layer         (Cytoscape + Tab handlers)   │
+│ Module E: UI Layer         (Cytoscape + tab handlers)   │
 └────────────────────────────────────────────────────────┘
 ```
 
-底層回呼方向只有「向下依賴」 — UI 呼叫 Engine,Engine 呼叫 Builder,Builder 讀 Topology。State Machine 是 UI 跟 Engine 之間的橋:UI 透過 `setEdgeOp / setNodeOp` 操作持久狀態,Engine 透過 `failedEdges / failedNodes` facade 讀取。
+Dependencies flow strictly downward — UI invokes Engine, Engine invokes Builder, Builder reads Topology. The state machine bridges UI and Engine: UI mutates persistent state via `setEdgeOp / setNodeOp`; Engine consumes it through the `failedEdges / failedNodes` facade.
 
 ---
 
@@ -110,44 +109,44 @@ type External = {
 
 ### §3.1 Adjacency (`buildAdjacency`)
 
-把 `topology.edges` 轉成 Dijkstra 用的鄰接表 `adj[u] = [[v, cost], ...]`。三條規則:
+Converts `topology.edges` into a Dijkstra adjacency list `adj[u] = [[v, cost], ...]`. Three rules:
 
-**Rule 1 — p2p edge**
+**Rule 1 — p2p link**
 
 ```
 add(source, target, cost)
 add(target, source, costRev ?? cost)
 ```
 
-**Rule 2 — transit edge (LSA2 語意)**
+**Rule 2 — transit link (LSA2 semantics)**
 
 ```
-add(router, pseudo, cost)   // Router → Pseudo:有 cost
-add(pseudo, router, 0)      // Pseudo → Router:固定 0
+add(router, pseudo, cost)   // Router → pseudo: metric applies
+add(pseudo, router, 0)      // Pseudo → router: metric always 0
 ```
 
-**Rule 3 — 故障過濾**
+**Rule 3 — failure filtering**
 
-- `failedEdges.has(e.id)` → 整條跳過
-- `failedNodes.has(u || v)` → 該方向跳過
+- `failedEdges.has(e.id)` → skip the entire link
+- `failedNodes.has(u || v)` → skip the affected direction
 
-### §3.2 Subnet Index (`buildSubnetIndex`)
+### §3.2 Subnet index (`buildSubnetIndex`)
 
-`subnet → Set<advertising_router_id>`,集合大小 ≥2 視為 backed-up。來源:
+`subnet → Set<advertising_router_id>` — sets of size ≥2 are treated as redundant. Sources:
 
-| Rule | 來源 | 行為 |
-|------|------|------|
-| Rule 3 | `node.stubs` | 該 router 為 advertiser |
-| Rule 5 | LSA2 transit | 所有 attached routers 都「擁有」該 pseudo-node 的 subnet |
-| Rule 4 | `externals` | LSA5 中的 `advertising_router` 為 advertiser |
+| Rule | Origin | Behavior |
+|------|--------|----------|
+| Rule 3 | `node.stubs` | Router is the advertiser |
+| Rule 5 | LSA2 transit | All attached routers "own" the pseudo-node's subnet |
+| Rule 4 | `externals` | LSA5 `advertising_router` is the advertiser |
 
 ---
 
 ## §4 C1 — SPT + ECMP
 
-### §4.1 演算法
+### §4.1 Algorithm
 
-Dijkstra + 等成本鬆弛擴展。`preds[v]` 是 `Set<predecessor>`,允許多個前驅:
+Dijkstra with equal-cost relaxation. `preds[v]` is a `Set<predecessor>`, allowing multiple parents:
 
 ```
 for each neighbor (v, c) of u:
@@ -159,48 +158,48 @@ for each neighbor (v, c) of u:
     preds[v].add(u)
 ```
 
-### §4.2 ECMP 路徑枚舉
+### §4.2 ECMP path enumeration
 
-從 `dst` 倒推 `preds`,DFS 還原所有 source → dst 的最短路徑列表。
+Backtrack `preds` from `dst` via DFS to enumerate every source → dst shortest path.
 
-### §4.3 Pseudo-node 後處理
+### §4.3 Pseudo-node post-processing
 
-`stripPseudo(path)` 把路徑中以 `PN` 開頭的節點過濾掉,呈現「router-level」視角。
+`stripPseudo(path)` filters nodes whose ID begins with `PN`, yielding a router-level view.
 
-### §4.4 IP / Network 解析
+### §4.4 Prefix resolution
 
-`resolveLPM(subnetIndex, target)`:目前實作為「精確匹配 + default route(`0.0.0.0/0`)fallback」。完整 LPM 為 Roadmap。
+`resolveLPM(subnetIndex, target)` — currently implements "exact match + default-route (`0.0.0.0/0`) fallback". Full LPM is on the roadmap.
 
 ---
 
-## §5 C2 — Backup Path
+## §5 C2 — Backup path
 
-### §5.1 砍邊重算
+### §5.1 Link-removal simulation
 
-`backupPath(topo, src, dst, removedEdges)` = 把 `removedEdges` 套上 `failedEdges` 後重跑 §4。
+`backupPath(topo, src, dst, removedEdges)` = unions `removedEdges` into `failedEdges`, then reruns §4.
 
-### §5.4 Unbackup Segment Scan
+### §5.4 Unprotected-segment scan
 
-對 primary 路徑上每條邊試移除,若移除後 cost = ∞,標記為 unbacked:
+For each link on the primary path, simulate withdrawal; if the post-withdrawal metric is ∞, flag the segment as unprotected:
 
 ```
-primary  = dijkstraECMP(adj, src, dst)
+primary = dijkstraECMP(adj, src, dst)
 for each edge e in primary.edges:
   if backupPath(topo, src, dst, [e]).cost == ∞:
-    unbacked.push(e)
+    unprotected.push(e)
 ```
 
-語意:**該邊一壞,src → dst 就斷,沒有任何備援可走**。
+Semantics: **withdrawing this single link severs src → dst with no available alternate path** — a SPOF for that pair.
 
 ---
 
-## §6 C3 — Node Failure Simulation
+## §6 C3 — Node failure simulation
 
-### §6.1 連通性
+### §6.1 Connectivity
 
-`connectedComponents(adj, routerIds)`:BFS 走 router-only(跳過 pseudo-node),分割成連通元件。
+`connectedComponents(adj, routerIds)` — BFS over routers only (pseudo-nodes skipped), yielding connected components.
 
-### §6.2 流量重分配
+### §6.2 Traffic redistribution
 
 `allPairsLoad(topo, failedEdges, failedNodes)`:
 
@@ -208,30 +207,30 @@ for each edge e in primary.edges:
 load[edge] = Σ over all (a→b) pairs: 1 / r.paths.length
 ```
 
-ECMP 等分權重,每條 path 對其經過的每條 edge 累加。
+ECMP splits load equally; every path contributes to each link it traverses.
 
-`simulateNodeFailure` 取 `before / after` 兩次全網 load 差值,輸出每條 edge 的 `direction ∈ {inc, dec, none}` 與 `changePct`。
-
----
-
-## §7 C4 — ECMP Backup Check
-
-對每對 (src, dst):
-
-1. 計算 primary,若 `paths.length < 2` 或共用同一 first-hop → `status: n/a`
-2. 收集 `ecmpEdgeIds` = primary 的 first-hop 邊集合
-3. 對每條 `eid ∈ ecmpEdgeIds`,移除後重算:
-   - 若不可達 → `status: failed`,reason = `removing eid → unreachable`
-   - 若新路徑 first-hop 不在 `ecmpEdgeIds \ {eid}` → `status: failed`,reason = `backup uses non-ECMP edge`
-4. 全部通過 → `status: passed`
-
-**語意**:理想的 ECMP 群組,任一成員失效後,流量應由群組內其他成員接手,不應該逃出群組。
+`simulateNodeFailure` takes `before / after` network-wide load snapshots and produces, for each link, `direction ∈ {inc, dec, none}` and `changePct`.
 
 ---
 
-## §8 C5 — Asymmetric Path Detection
+## §7 C4 — ECMP backup validation
 
-對每對 unordered (a, b):
+For each (src, dst) pair:
+
+1. Compute the primary; if `paths.length < 2`, or if all paths share a single first-hop → `status: n/a`.
+2. Collect `ecmpEdgeIds` = the first-hop link set of the primary.
+3. For each `eid ∈ ecmpEdgeIds`, withdraw and recompute:
+   - If unreachable → `status: failed`, reason = `removing eid → unreachable`.
+   - If the post-withdrawal first-hop is not in `ecmpEdgeIds \ {eid}` → `status: failed`, reason = `backup uses non-ECMP link`.
+4. All survive → `status: passed`.
+
+**Semantics**: a well-formed ECMP set should absorb the loss of any one member by reassigning traffic *within* the set — load should not spill onto a non-ECMP path.
+
+---
+
+## §8 C5 — Asymmetric path detection
+
+For each unordered (a, b):
 
 ```
 fwd = SPT(a → b)
@@ -240,46 +239,46 @@ fwdSig = sorted set of stripPseudo(p).join('>')
 revSig = sorted set of stripPseudo(p).reverse().join('>')
 ```
 
-若 `fwd.cost ≠ rev.cost` 或 `fwdSig ≠ revSig` → 列入非對稱清單。
+If `fwd.cost ≠ rev.cost` or `fwdSig ≠ revSig` → pair is asymmetric.
 
 ---
 
-## §9 C6 — Subnet Heatmap
+## §9 C6 — Prefix redundancy heatmap
 
-每台 router 統計 `notbackuped / total`,Ratio 映射顏色:
+Per router: count `nonRedundant / total`. Map the ratio to a color:
 
-| Ratio | 顏色 | 語意 |
-|-------|------|------|
-| 0 | 綠 | 所有 subnet 都有備援 |
-| 0–0.33 | 黃 | 少數 subnet 為單一宣告 |
-| 0.33–0.66 | 橘 | 約一半 subnet 無備援 |
-| > 0.66 | 紅 | 多數 subnet 為單一宣告 |
+| Ratio | Color | Meaning |
+|-------|-------|---------|
+| 0 | Green | Every prefix is redundantly advertised |
+| 0–0.33 | Yellow | A few prefixes are singly-advertised |
+| 0.33–0.66 | Orange | ~half of prefixes are non-redundant |
+| > 0.66 | Red | Majority of prefixes are singly-advertised |
 
 ---
 
-## §10 C8 — N-1 Worst-case Ranking
+## §10 C8 — N-1 worst-case ranking
 
-### §10.1 枚舉
+### §10.1 Scenario enumeration
 
 ```
 scenarios =
-  { kind:'edge', id, edge } for each p2p edge ∪
+  { kind:'edge', id, edge } for each p2p link ∪
   { kind:'node', id }       for each router
 ```
 
-Transit 邊不算實體失效情境(它是 LSA2 內部抽象)。
+Transit links are excluded — they're LSA2 abstractions, not physical failure modes.
 
-### §10.2 雙視角累計
+### §10.2 Dual accumulation
 
-對每個 scenario,對全網 (a, b) 重算 SPT,同時累計兩種 stats:
+For each scenario, recompute SPT for every (a, b) pair and accumulate both views:
 
 **Per-pair**
 
 ```
 pairWorst[a>b] = {
-  base:      baseline cost (無故障),
-  worstCost: 所有 scenario 中最差的 cost,
-  culprits:  造成最差結果的 scenario list,
+  base:      baseline cost (no failure),
+  worstCost: worst cost across all scenarios,
+  culprits:  list of scenarios that produce the worst cost,
 }
 ```
 
@@ -287,105 +286,105 @@ pairWorst[a>b] = {
 
 ```
 failStats[scenario] = {
-  unreachable: 此失效造成多少 pair 不可達,
-  degraded:    多少 pair 還通但變慢,
+  unreachable: pairs rendered unreachable by this failure,
+  degraded:    pairs still reachable but on a longer path,
   totalDelta:  Σ (worstCost - baseCost),
-  maxRatio:    最大 worst / base 倍率,
+  maxRatio:    max worst / base ratio observed,
 }
 ```
 
-### §10.3 排序
+### §10.3 Sort order
 
-- **Pair**:`ratio = worstCost / baseCost` 降序,不可達(∞)優先
-- **Failure**:不可達數降序 → `totalDelta` 降序
+- **Pair**: `ratio = worstCost / baseCost` descending; unreachable (∞) first.
+- **Failure**: unreachable count descending → `totalDelta` descending.
 
-### §10.4 與 §5.4 (Unbackup) 的關係
+### §10.4 Relationship to §5.4 (Unprotected scan)
 
-| 維度 | §5.4 Unbackup | §10 N-1 |
-|------|---------------|---------|
-| 焦點 | 單一 (src, dst) pair | 全網所有 pair |
-| 失效範圍 | 只試 primary 路徑上的邊 | 所有 edge + 所有 router |
-| 判定 | 二元(通 / 不通) | 連續(倍率 + 不可達計數) |
-| 用途 | 「這條路徑安全嗎?」 | 「全網最脆弱在哪?」 |
+| Dimension | §5.4 Unprotected scan | §10 N-1 ranking |
+|-----------|-----------------------|-----------------|
+| Focus | Single (src, dst) pair | Every pair in the topology |
+| Failure scope | Only links on the primary path | Every link + every router |
+| Verdict | Binary (reachable / unreachable) | Continuous (ratio + unreachable count) |
+| Use case | "Is *this* path SPOF-free?" | "Where is the topology weakest overall?" |
 
-§5.4 是 §10 的一個 binary subset。
+§5.4 is a binary subset of §10.
 
 ---
 
-## §11 視覺狀態機
+## §11 Visual state machine
 
-### §11.1 兩個正交維度
+### §11.1 Two orthogonal dimensions
 
-每個 entity 持有兩個獨立狀態:
+Each entity carries two independent states:
 
-| 維度 | 來源 | 跨 Tab 行為 | Edge 取值 | Node 取值 |
-|------|------|-------------|-----------|-----------|
-| **op** | 使用者持久操作(右鍵故障) | 不清除 | `healthy` / `failed` | `up` / `down` |
-| **role** | 分析結果的瞬時註記 | 切 Tab 自動清掉 | `none` / `primary` / `backup` / `unbacked` / `load-inc` / `load-dec` / `failed-by-node` | `none` / `endpoint` / `highlight` / `asym-mark` / `heat-{green/yellow/orange/red}` / `failed-node` |
+| Dimension | Source | Cross-tab behavior | Edge values | Node values |
+|-----------|--------|--------------------|-------------|-------------|
+| **op** | Persistent user action (right-click failure) | Never cleared | `healthy` / `failed` | `up` / `down` |
+| **role** | Transient analytical markup | Cleared on tab switch | `none` / `primary` / `backup` / `unbacked` / `load-inc` / `load-dec` / `failed-by-node` | `none` / `endpoint` / `highlight` / `asym-mark` / `heat-{green/yellow/orange/red}` / `failed-node` |
 
-### §11.2 渲染規則
+### §11.2 Render precedence
 
 ```
-op 優先:
-  edge.op = failed         → 顯示為 failed (紅色虛線)
-  node.op = down           → 顯示為 failed-node
-  edge 端點 node.op = down → 派生為 failed (不寫回 edge.op,保持單一資料源)
-否則 role 直接映射到對應 CSS class。
+op wins:
+  edge.op = failed                → render as failed (red dashed)
+  node.op = down                  → render as failed-node
+  edge endpoint node.op = down    → derived as failed (do NOT write back to edge.op — single source of truth)
+otherwise: role maps directly to its CSS class.
 ```
 
 ### §11.3 Facade
 
-`failedEdges` 與 `failedNodes` 是對狀態機的 Set-like 包裝(`has / add / delete / clear / size / iterator`),提供給既有演算法當參數 — 避免演算法層需要知道狀態機細節。
+`failedEdges` and `failedNodes` are Set-like wrappers (`has / add / delete / clear / size / iterator`) over the state machine — they exist so existing algorithms can accept them as parameters without coupling to the state machine.
 
-### §11.4 不變式
+### §11.4 Invariants
 
-1. 所有 Cytoscape `addClass / removeClass` 必須走 `setEdgeOp / setEdgeRole / setNodeOp / setNodeRole`,不准直接操作元素 class
-2. 切 Tab 時呼叫 `clearAllRoles()` — 只清 role,不動 op
-3. 「重置畫面」按鈕 = `clearAllRoles()`,「清除所有故障」= `failedEdges.clear() + failedNodes.clear()`,語意分離
-
----
-
-## §12 Tab 行為矩陣
-
-| Tab | 編號 | 吃右鍵故障? | 切換時自動執行 |
-|-----|------|-------------|----------------|
-| 路徑 | C1 | ✅ | `renderPath(src, dst)` |
-| 矩陣 | C2 | ✅ | `renderMatrix()` |
-| 全 Pair | C3 | ✅ | `listAllPairs.click()` |
-| 失效模擬 | C4 | ❌(自帶情境) | — |
-| ECMP 檢查 | C5 | ❌(設計審計) | — |
-| 非對稱 | C6 | ❌(設計審計) | — |
-| Heatmap | C7 | ❌(設計審計) | — |
-| N-1 | C8 | ❌(設計審計) | `runN1Scan.click()` |
-| 鏈路 | — | — | `renderEdgeEditor()` |
+1. Every Cytoscape `addClass / removeClass` must go through `setEdgeOp / setEdgeRole / setNodeOp / setNodeRole` — direct class manipulation is forbidden.
+2. Tab switches call `clearAllRoles()` — clears role only, never op.
+3. "Reset view" button = `clearAllRoles()`; "Clear all failures" = `failedEdges.clear() + failedNodes.clear()` — the two semantics are deliberately separate.
 
 ---
 
-## §13 演算法複雜度
+## §12 Tab behavior matrix
 
-設 `V = router 數`, `E = edge 數`。本實作未使用 fibonacci heap,Dijkstra 內排序 array PQ,單次 SPT 為 `O((V + E) log V)`(近似)。
-
-| 模組 | 單次成本 | 觸發頻率 |
-|------|----------|----------|
-| C1 SPT (single pair) | O((V+E) log V) | 使用者點按 |
-| C2 Matrix (all pairs) | O(V² · (V+E) log V) | 切到矩陣 Tab |
-| C3 Failure Sim | 2 × all-pairs | 使用者點按 |
-| C4 ECMP Check | O(V² · k · SPT) | 使用者點按,k=ECMP 邊數 |
-| C5 Asymmetric | O(V² · SPT) | 使用者點按 |
-| C7 N-1 | O((V + E) · V² · SPT) | 使用者點按 |
-
-POC 規模(V ≈ 10, E ≈ 20)下 N-1 全掃約 ~6000 次 SPT,瀏覽器內 < 200 ms。
-真實規模(V ≈ 100, E ≈ 300)估算 N-1 全掃約 4 × 10⁶ SPT,需要 Web Worker 或後端化。
+| Tab | ID | Honors right-click failures? | Auto-runs on tab activation |
+|-----|----|------------------------------|-----------------------------|
+| Path | C1 | ✅ | `renderPath(src, dst)` |
+| Matrix | C2 | ✅ | `renderMatrix()` |
+| All Pairs | C3 | ✅ | `listAllPairs.click()` |
+| Failure Sim | C4 | ❌ (own scenario) | — |
+| ECMP Check | C5 | ❌ (design-time audit) | — |
+| Asymmetric | C6 | ❌ (design-time audit) | — |
+| Heatmap | C7 | ❌ (design-time audit) | — |
+| N-1 | C8 | ❌ (design-time audit) | `runN1Scan.click()` |
+| Links | — | — | `renderEdgeEditor()` |
 
 ---
 
-## §14 變更紀錄相對於 §1.0
+## §13 Algorithmic complexity
 
-本 SPEC 對應 BlastRadius POC `v1.x`(從 Topolograph 命名分支出來後)。
-主要差異於原始 OSPF 演算法 spec:
+Let `V = number of routers`, `E = number of links`. This implementation uses an array-based priority queue (not a Fibonacci heap), so a single SPT computation is approximately `O((V + E) log V)`.
 
-- 新增 §10 N-1 Worst-case Ranking
-- §11 視覺狀態機獨立成章(原先散落在 UI handler 各處)
-- §12 Tab 行為矩陣明確化「吃右鍵故障 vs 設計審計」二分
+| Module | Per-invocation cost | Trigger |
+|--------|---------------------|---------|
+| C1 SPT (single pair) | O((V+E) log V) | User click |
+| C2 Matrix (all pairs) | O(V² · (V+E) log V) | Matrix tab activation |
+| C3 Failure Sim | 2 × all-pairs | User click |
+| C4 ECMP Check | O(V² · k · SPT) | User click; k = ECMP edge count |
+| C5 Asymmetric | O(V² · SPT) | User click |
+| C7 N-1 | O((V + E) · V² · SPT) | User click |
 
-歷史 commit 對應點請見 `topology.js` 註解中的「演算法觸發點檢核表」。
+At POC scale (V ≈ 10, E ≈ 20) the full N-1 sweep is ~6,000 SPT computations and completes in < 200 ms in-browser.
+At production scale (V ≈ 100, E ≈ 300) the same sweep is on the order of 4 × 10⁶ SPT computations — feasible only via Web Workers or a server-side compute path.
+
+---
+
+## §14 Changes since v1.0
+
+This SPEC corresponds to BlastRadius POC `v1.x` (the line that branched from Topolograph).
+Notable deltas from the original OSPF algorithms SPEC:
+
+- Added §10 N-1 worst-case ranking.
+- §11 visual state machine is now its own chapter (previously scattered across UI handlers).
+- §12 tab behavior matrix makes the "honors right-click failures vs design-time audit" split explicit.
+
+Historical commit anchors live in the "algorithm trigger checklist" comments inside `topology.js`.

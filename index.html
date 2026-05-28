@@ -29,8 +29,18 @@
     .select-input { @apply w-full px-2.5 py-1.5 border border-gray-300 rounded text-xs bg-white cursor-pointer hover:border-gray-400; }
 
     .tabs { @apply flex border-b border-gray-200 bg-gray-50; }
-    .tab  { @apply flex-1 px-1.5 py-2.5 text-xs font-medium text-gray-500 bg-transparent border-b-2 border-transparent cursor-pointer transition-colors hover:bg-gray-100 hover:text-gray-700; }
-    .tab.active { @apply text-blue-600 border-blue-600 bg-white; }
+    .tab  { @apply flex-1 px-1.5 py-2.5 text-xs font-medium text-gray-500 bg-transparent border-t-2 border-b-2 border-transparent cursor-pointer transition-colors hover:bg-gray-100 hover:text-gray-700; }
+    /* group accent bars (desaturated when inactive) */
+    .tab[data-group="live"]   { border-top-color: #99f6e4; }  /* teal-200    — 即時狀態 */
+    .tab[data-group="whatif"] { border-top-color: #fde68a; }  /* amber-200   — What-if */
+    .tab[data-group="audit"]  { border-top-color: #c7d2fe; }  /* indigo-200  — 設計審計 */
+    .tab[data-group="edit"]   { border-top-color: #cbd5e1; }  /* slate-300   — 編輯 */
+    /* active state — saturated top + matching bottom + group-tinted text */
+    .tab.active { @apply bg-white; }
+    .tab.active[data-group="live"]   { color: #0f766e; border-top-color: #14b8a6; border-bottom-color: #14b8a6; }
+    .tab.active[data-group="whatif"] { color: #b45309; border-top-color: #f59e0b; border-bottom-color: #f59e0b; }
+    .tab.active[data-group="audit"]  { color: #4338ca; border-top-color: #6366f1; border-bottom-color: #6366f1; }
+    .tab.active[data-group="edit"]   { color: #334155; border-top-color: #64748b; border-bottom-color: #64748b; }
     .tab-content { @apply hidden p-3.5; }
     .tab-content.active { @apply block; }
 
@@ -122,17 +132,18 @@
   <!-- RIGHT: tabbed reports -->
   <aside class="bg-white border-l border-gray-200 overflow-y-auto">
     <div class="tabs">
-      <button class="tab active" data-tab="path" title="即時狀態(吃右鍵故障)">路徑</button>
-      <button class="tab" data-tab="matrix" title="即時狀態(吃右鍵故障)">矩陣</button>
-      <button class="tab" data-tab="allpairs" title="即時狀態(吃右鍵故障)">全 Pair</button>
+      <button class="tab active" data-tab="path" data-group="live" title="即時狀態(吃右鍵故障)">路徑</button>
+      <button class="tab" data-tab="matrix" data-group="live" title="即時狀態(吃右鍵故障)">矩陣</button>
+      <button class="tab" data-tab="allpairs" data-group="live" title="即時狀態(吃右鍵故障)">全 Pair</button>
       <div class="w-px bg-gray-300 my-1.5" title="分隔"></div>
-      <button class="tab" data-tab="failure" title="What-if 模擬(自選節點失效)">失效模擬</button>
+      <button class="tab" data-tab="failure" data-group="whatif" title="What-if 模擬(自選節點失效)">失效模擬</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
-      <button class="tab" data-tab="ecmp" title="設計審計(忽略右鍵故障)">ECMP 檢查</button>
-      <button class="tab" data-tab="asym" title="設計審計(忽略右鍵故障)">非對稱</button>
-      <button class="tab" data-tab="heatmap" title="設計審計(忽略右鍵故障)">Heatmap</button>
-      <button class="tab" data-tab="n1" title="設計審計(忽略右鍵故障)">N-1</button>
-      <button class="tab" data-tab="edges" title="拓樸編輯">鏈路</button>
+      <button class="tab" data-tab="ecmp" data-group="audit" title="設計審計(忽略右鍵故障)">ECMP 檢查</button>
+      <button class="tab" data-tab="asym" data-group="audit" title="設計審計(忽略右鍵故障)">非對稱</button>
+      <button class="tab" data-tab="heatmap" data-group="audit" title="設計審計(忽略右鍵故障)">Heatmap</button>
+      <button class="tab" data-tab="n1" data-group="audit" title="設計審計(忽略右鍵故障)">N-1</button>
+      <div class="w-px bg-gray-300 my-1.5"></div>
+      <button class="tab" data-tab="edges" data-group="edit" title="拓樸編輯">鏈路</button>
     </div>
 
     <div class="tab-content active" id="tab-path">
@@ -1052,7 +1063,7 @@ document.getElementById('runN1Scan').addEventListener('click', () => {
   if (pairRows.length === 0) {
     html += '<span class="badge pass">所有 pair 都能撐過任一單點失效</span>';
   } else {
-    html += '<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>×</th><th>元凶</th></tr>';
+    html += '<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>cost</th><th>元凶</th></tr>';
     for (const row of pairRows.slice(0, 20)) {
       const ratioBadge = row.ratio === Infinity
         ? '<span class="badge fail">∞</span>'

@@ -192,6 +192,33 @@ export function allPairsLoad(topo, failedEdges = new Set(), failedNodes = new Se
   return load;
 }
 
+// §6.2b 流量加權版邊負載 — 與 allPairsLoad 結構相同,僅權重改為 demand[a][b]
+// 語意:每條邊實際扛多少 Gbps(ECMP 等分)。缺值用 demand.default。
+export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNodes = new Set()) {
+  if (!demand || !demand.matrix) return {};
+  const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
+  const routers = topo.nodes
+    .filter(n => n.type === 'router' && !failedNodes.has(n.id))
+    .map(n => n.id);
+  const dflt = demand.default ?? 0;
+  const load = {};
+  for (const a of routers) {
+    for (const b of routers) {
+      if (a === b) continue;
+      const r = dijkstraECMP(adj, a, b);
+      if (r.cost === Infinity || r.paths.length === 0) continue;
+      const gbps = demand.matrix[a]?.[b] ?? dflt;
+      const w = gbps / r.paths.length;
+      for (const p of r.paths) {
+        for (const eid of pathToEdgeIds(p, topo.edges)) {
+          load[eid] = (load[eid] || 0) + w;
+        }
+      }
+    }
+  }
+  return load;
+}
+
 // Freeman Node Betweenness Centrality (§6.3)
 // σ(s,t|v) / σ(s,t),ECMP 等分;strip pseudo-node;排除 endpoints。
 // 語意:純拓樸結構上,每台 router 平均扛多少 "過路" SPT 流量。

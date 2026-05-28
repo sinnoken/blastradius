@@ -5,6 +5,7 @@
 <title>BlastRadius POC — OSPF Full Algorithms</title>
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
 <script src="topology.js"></script>
+<script src="demand.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style type="text/tailwindcss">
   @layer base {
@@ -135,6 +136,7 @@
       <button class="tab active" data-tab="path" data-group="live" title="即時狀態(吃右鍵故障)">路徑</button>
       <button class="tab" data-tab="matrix" data-group="live" title="即時狀態(吃右鍵故障)">矩陣</button>
       <button class="tab" data-tab="allpairs" data-group="live" title="即時狀態(吃右鍵故障)">樞紐度</button>
+      <button class="tab" data-tab="traffic" data-group="live" title="流量視角(需 demand.js)">邊流量</button>
       <div class="w-px bg-gray-300 my-1.5" title="分隔"></div>
       <button class="tab" data-tab="failure" data-group="whatif" title="What-if 模擬(自選節點失效)">失效模擬</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
@@ -188,6 +190,17 @@
       </div>
       <button class="btn-primary mt-2" id="listAllPairs">重新計算</button>
       <div id="all-pairs-result" class="mt-2.5"></div>
+    </div>
+
+    <div class="tab-content" id="tab-traffic">
+      <h2 class="section-h !border-0 !mt-0">邊流量視圖</h2>
+      <div class="hint">
+        依 <code>demand.js</code> 的需求矩陣,計算每條邊實際扛多少 <b>Gbps</b>(ECMP 等分)。
+        跟 C3 樞紐度的差別:樞紐度看結構、不看流量;邊流量看實際負載。
+        高 / 中 / 低三階以最大值的 60% / 20% 為門檻。
+      </div>
+      <button class="btn-primary mt-2" id="runTraffic">重新計算</button>
+      <div id="traffic-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-edges">
@@ -293,7 +306,7 @@
 import {
   buildAdjacency, buildPrefixIndex, dijkstraECMP, stripPseudo,
   resolveLPM, pathToEdgeIds, backupPath, unbackupSegmentScan,
-  connectedComponents, allPairsLoad, computeNodeBC, simulateNodeFailure,
+  connectedComponents, allPairsLoad, allPairsTraffic, computeNodeBC, simulateNodeFailure,
   firstHopEdge, ecmpBackupCheck, ecmpBackupScanAll,
   detectAsymmetric, computeHeatmap, computeN1WorstCase,
 } from './engine.js';
@@ -302,12 +315,14 @@ import {
 // §0 CONSTANTS
 // ============================================================================
 const EDGE_ROLES = ['primary','backup','unbacked','load-inc','load-dec','failed-by-node',
-                    'bc-hub','bc-normal','bc-rare','bc-idle'];
+                    'bc-hub','bc-normal','bc-rare','bc-idle',
+                    'traffic-high','traffic-mid','traffic-low'];
 const NODE_ROLES = ['endpoint','highlight','asym-mark','failed-node',
                     'heat-green','heat-yellow','heat-orange','heat-red',
                     'bc-hub','bc-normal','bc-rare','bc-idle'];
 const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec',
-                          'bc-hub','bc-normal','bc-rare','bc-idle'];
+                          'bc-hub','bc-normal','bc-rare','bc-idle',
+                          'traffic-high','traffic-mid','traffic-low'];
 const ALL_NODE_CLASSES = ['endpoint','highlight','asym-mark','failed-node',
                           'heat-green','heat-yellow','heat-orange','heat-red',
                           'bc-hub','bc-normal','bc-rare','bc-idle'];
@@ -362,6 +377,9 @@ const cy = cytoscape({
     { selector: 'edge.bc-normal',style:{ 'line-color':'#3b82f6','width':5,'z-index':4 }},
     { selector: 'edge.bc-rare',  style:{ 'line-color':'#fde047','width':3,'z-index':3 }},
     { selector: 'edge.bc-idle',  style:{ 'line-color':'#94a3b8','line-style':'dashed','width':2,'z-index':2 }},
+    { selector: 'edge.traffic-high', style:{ 'line-color':'#dc2626','width':8,'z-index':5 }},
+    { selector: 'edge.traffic-mid',  style:{ 'line-color':'#f59e0b','width':5,'z-index':4 }},
+    { selector: 'edge.traffic-low',  style:{ 'line-color':'#94a3b8','width':2,'z-index':2 }},
     { selector: 'node.endpoint',style:{
       'background-color':'#2563eb','border-color':'#1e3a8a','color':'#fff','border-width':4,
     }},
@@ -964,6 +982,79 @@ const C3_AllPairs = (() => {
 })();
 
 // ----------------------------------------------------------------------------
+// §5.3b C9 — Edge Traffic View (邊流量視圖,需 demand.js)
+// ----------------------------------------------------------------------------
+const C9_Traffic = (() => {
+  const TIERS = {
+    high: { label: '高負載', color: '#dc2626', cardBg: '#fee2e2' },
+    mid:  { label: '中負載', color: '#a16207', cardBg: '#fef3c7' },
+    low:  { label: '低負載', color: '#475569', cardBg: '#f1f5f9' },
+  };
+  function classify(v, max) {
+    if (max === 0) return 'low';
+    if (v > 0.6 * max) return 'high';
+    if (v > 0.2 * max) return 'mid';
+    return 'low';
+  }
+
+  function render() {
+    clearAllRoles();
+    const div = dom('traffic-result');
+    if (typeof demand === 'undefined' || !demand?.matrix) {
+      div.innerHTML = '<div class="hint" style="color:#991b1b">未載入 demand.js,無法顯示流量視圖。</div>';
+      return;
+    }
+    const traffic = allPairsTraffic(topology, demand, failedEdges, failedNodes);
+    const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
+    const max = rankedEdges.reduce((m, e) => Math.max(m, traffic[e.id] || 0), 0);
+
+    const tierCounts = { high: 0, mid: 0, low: 0 };
+    const rows = [];
+    for (const e of rankedEdges) {
+      const v = traffic[e.id] || 0;
+      const tier = classify(v, max);
+      tierCounts[tier]++;
+      setEdgeRole(e.id, 'traffic-' + tier);
+      rows.push({ eid: e.id, edge: e, gbps: v, tier });
+    }
+    rows.sort((x, y) => y.gbps - x.gbps);
+
+    let html = '<div class="mini-stat">';
+    for (const tier of ['high', 'mid', 'low']) {
+      const t = TIERS[tier];
+      html += `<div class="info-card" style="background:${t.cardBg};border-color:${t.color}">
+        <div class="label" style="color:${t.color}">${t.label}</div>
+        <div class="value" style="color:${t.color}">${tierCounts[tier]} 條</div>
+      </div>`;
+    }
+    html += '</div>';
+    html += `<div class="info-card"><div class="label">最大邊負載 / 來源</div>
+      <div class="value">${max.toFixed(1)} Gbps
+      <span style="color:#6b7280;font-weight:400;font-size:10px">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;
+
+    html += '<h2 class="section-h mt-3">邊流量排行</h2>';
+    html += '<table><tr><th>Edge</th><th>連接</th><th>Gbps</th><th>分類</th></tr>';
+    for (const r of rows) {
+      const t = TIERS[r.tier];
+      html += `<tr>
+        <td>${r.eid}</td>
+        <td>${r.edge.source} ↔ ${r.edge.target}</td>
+        <td style="font-weight:600">${r.gbps.toFixed(1)}</td>
+        <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
+      </tr>`;
+    }
+    html += '</table>';
+    div.innerHTML = html;
+  }
+
+  function init() {
+    dom('runTraffic').addEventListener('click', render);
+  }
+
+  return { init, activate: render };
+})();
+
+// ----------------------------------------------------------------------------
 // §5.4 C4 — Failure Simulation (節點失效模擬)
 // ----------------------------------------------------------------------------
 const C4_Failure = (() => {
@@ -1524,6 +1615,7 @@ const TABS = {
   path:     C1_Path,
   matrix:   C2_Matrix,
   allpairs: C3_AllPairs,
+  traffic:  C9_Traffic,
   failure:  C4_Failure,
   ecmp:     C5_Ecmp,
   asym:     C6_Asym,

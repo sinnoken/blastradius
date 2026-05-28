@@ -290,8 +290,8 @@ export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new S
 }
 
 export function simulateNodeFailure(topo, failedNodeId) {
-  const before = allPairsLoad(topo);
-  const after  = allPairsLoad(topo, new Set(), new Set([failedNodeId]));
+  const before = allPairsLoad(topo).load;
+  const after  = allPairsLoad(topo, new Set(), new Set([failedNodeId])).load;
   const routers = topo.nodes
     .filter(n => n.type === 'router' && n.id !== failedNodeId)
     .map(n => n.id);

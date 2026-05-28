@@ -140,7 +140,7 @@
       <div class="w-px bg-gray-300 my-1.5"></div>
       <button class="tab" data-tab="ecmp" data-group="audit" title="設計審計(忽略右鍵故障)">ECMP 檢查</button>
       <button class="tab" data-tab="asym" data-group="audit" title="設計審計(忽略右鍵故障)">非對稱</button>
-      <button class="tab" data-tab="heatmap" data-group="audit" title="設計審計(忽略右鍵故障)">Heatmap</button>
+      <button class="tab" data-tab="heatmap" data-group="audit" title="設計審計(忽略右鍵故障)">Prefix 冗餘</button>
       <button class="tab" data-tab="n1" data-group="audit" title="設計審計(忽略右鍵故障)">N-1</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
       <button class="tab" data-tab="edges" data-group="edit" title="拓樸編輯">鏈路</button>
@@ -231,9 +231,22 @@
     </div>
 
     <div class="tab-content" id="tab-heatmap">
-      <h2 class="section-h !border-0 !mt-0">C7 Subnet Heatmap</h2>
+      <h2 class="section-h !border-0 !mt-0">C7 Prefix 宣告冗餘</h2>
       <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受右鍵故障影響</div>
-      <div class="hint">基於 Subnet Index(§3.2 Rule 5):被 ≥2 節點宣告 = backed-up,僅被 1 節點宣告 = non-backuped。</div>
+      <div class="hint">
+        基於 Prefix Index(§3.2 Rule 5):被 ≥2 節點宣告 = redundant(有備援),僅被 1 節點宣告 = single-advertised(單一宣告)。
+        <div class="mt-1.5">每台 router 統計 <b>single-advertised ÷ total</b> 比例,依此著色:</div>
+        <div class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
+          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#86efac;border-color:#15803d"></span>
+          <span><b>= 0%</b> — 全 prefix 都有冗餘宣告(理想)</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#fde047;border-color:#a16207"></span>
+          <span><b>0–33%</b> — 少數 prefix 單一宣告</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#fdba74;border-color:#c2410c"></span>
+          <span><b>33–66%</b> — 約一半 prefix 無冗餘</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#fca5a5;border-color:#b91c1c"></span>
+          <span><b>&gt; 66%</b> — 多數 prefix 單一宣告(高風險)</span>
+        </div>
+      </div>
       <button class="btn-primary mt-2" id="runHeatmap">套用 Heatmap 著色</button>
       <button class="btn-secondary mt-1.5" id="clearHeatmap">清除 Heatmap</button>
       <div id="heatmap-result" class="mt-2.5"></div>
@@ -264,7 +277,7 @@
 //   §1  CYTOSCAPE INIT    — cy 實例 + style 表
 //   §2  STATE MACHINE     — edge/nodeStates Map、setters、facade
 //   §3  UI HELPERS        — dom() 取元素
-//   §4  SHARED CONTEXT    — pseudoVisible / subnetIndex / originalEdges
+//   §4  SHARED CONTEXT    — pseudoVisible / prefixIndex / originalEdges
 //                          / select 初始化 / rerenderIfPathActive()
 //   §5  TAB MODULES       — 每個 Tab 一個 IIFE,統一 { init, activate } 介面
 //     §5.1 C1 Path        §5.2 C2 Matrix      §5.3 C3 AllPairs
@@ -277,7 +290,7 @@
 // ============================================================================
 
 import {
-  buildAdjacency, buildSubnetIndex, dijkstraECMP, stripPseudo,
+  buildAdjacency, buildPrefixIndex, dijkstraECMP, stripPseudo,
   resolveLPM, pathToEdgeIds, backupPath, unbackupSegmentScan,
   connectedComponents, allPairsLoad, simulateNodeFailure,
   firstHopEdge, ecmpBackupCheck, ecmpBackupScanAll,
@@ -468,7 +481,7 @@ const dom = (id) => document.getElementById(id);
 // §4 SHARED CONTEXT — module-scope state + cross-tab helpers
 // ============================================================================
 let pseudoVisible = true;
-const subnetIndex = buildSubnetIndex(topology);
+const prefixIndex = buildPrefixIndex(topology);
 
 // snapshot of original edge costs — used by "還原原始值"
 const originalEdges = topology.edges.map(e => ({ id: e.id, cost: e.cost, costRev: e.costRev }));
@@ -1078,7 +1091,7 @@ const C6_Asym = (() => {
 const C7_Heatmap = (() => {
   function render() {
     clearAllRoles();
-    const hm = computeHeatmap(topology, subnetIndex);
+    const hm = computeHeatmap(topology, prefixIndex);
     for (const [nid, data] of Object.entries(hm)) {
       let role = 'heat-green';
       if (data.ratio > 0.66) role = 'heat-red';
@@ -1093,12 +1106,12 @@ const C7_Heatmap = (() => {
         <td>${data.total}</td><td>${data.notbackuped}</td><td>${pct}</td></tr>`;
     }
     html += '</table>';
-    html += '<h2 class="section-h mt-3">Subnet Index (§3.2 Rule 5)</h2>';
-    html += '<table><tr><th>Subnet</th><th>Advertisers</th><th>Status</th></tr>';
-    for (const [sn, advs] of Object.entries(subnetIndex)) {
+    html += '<h2 class="section-h mt-3">Prefix Index (§3.2 Rule 5)</h2>';
+    html += '<table><tr><th>Prefix</th><th>Advertisers</th><th>Status</th></tr>';
+    for (const [sn, advs] of Object.entries(prefixIndex)) {
       const backed = advs.size >= 2;
       html += `<tr><td>${sn}</td><td>${[...advs].join(', ')}</td>
-        <td><span class="badge ${backed?'pass':'fail'}">${backed?'backed-up':'single'}</span></td></tr>`;
+        <td><span class="badge ${backed?'pass':'fail'}">${backed?'redundant':'single-advertised'}</span></td></tr>`;
     }
     html += '</table>';
     dom('heatmap-result').innerHTML = html;

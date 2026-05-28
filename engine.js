@@ -33,8 +33,8 @@ export function buildAdjacency(edges, failedEdges = new Set(), failedNodes = new
   return adj;
 }
 
-// Rule 3 (stub) + Rule 5 (subnet index) + Rule 4 (LSA5)
-export function buildSubnetIndex(topo) {
+// Rule 3 (stub) + Rule 5 (prefix index) + Rule 4 (LSA5)
+export function buildPrefixIndex(topo) {
   const idx = {};
   const add = (s, n) => { (idx[s] ??= new Set()).add(n); };
 
@@ -99,9 +99,9 @@ export function dijkstraECMP(adj, src, dst) {
 export const stripPseudo = (path) => path.filter(n => !n.startsWith('PN'));
 
 // §4.4 IP/Network 版本 — LPM (精確匹配 + default route fallback)
-export function resolveLPM(subnetIndex, target) {
-  if (subnetIndex[target]) return { match: target, routers: subnetIndex[target] };
-  if (subnetIndex['0.0.0.0/0']) return { match: '0.0.0.0/0', routers: subnetIndex['0.0.0.0/0'] };
+export function resolveLPM(prefixIndex, target) {
+  if (prefixIndex[target]) return { match: target, routers: prefixIndex[target] };
+  if (prefixIndex['0.0.0.0/0']) return { match: '0.0.0.0/0', routers: prefixIndex['0.0.0.0/0'] };
   return null;
 }
 
@@ -306,22 +306,22 @@ export function detectAsymmetric(topo) {
 }
 
 // ============================================================================
-// C6 — SUBNET HEATMAP (§9)
+// C6 — PREFIX REDUNDANCY HEATMAP (§9)
 // ============================================================================
 
-export function computeHeatmap(topo, subnetIndex) {
+export function computeHeatmap(topo, prefixIndex) {
   const result = {};
   for (const node of topo.nodes.filter(n => n.type === 'router')) {
     const owned = [];
-    for (const [subnet, advs] of Object.entries(subnetIndex)) {
-      if (advs.has(node.id)) owned.push({ subnet, advertisers: [...advs], backed: advs.size >= 2 });
+    for (const [prefix, advs] of Object.entries(prefixIndex)) {
+      if (advs.has(node.id)) owned.push({ prefix, advertisers: [...advs], backed: advs.size >= 2 });
     }
     const notbk = owned.filter(o => !o.backed).length;
     result[node.id] = {
       notbackuped: notbk,
       total: owned.length,
       ratio: owned.length ? notbk / owned.length : 0,
-      subnets: owned,
+      prefixes: owned,
     };
   }
   return result;

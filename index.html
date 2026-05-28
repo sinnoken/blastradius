@@ -134,7 +134,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="path" data-group="live" title="即時狀態(吃右鍵故障)">路徑</button>
       <button class="tab" data-tab="matrix" data-group="live" title="即時狀態(吃右鍵故障)">矩陣</button>
-      <button class="tab" data-tab="allpairs" data-group="live" title="即時狀態(吃右鍵故障)">全 Pair</button>
+      <button class="tab" data-tab="allpairs" data-group="live" title="即時狀態(吃右鍵故障)">鏈路樞紐</button>
       <div class="w-px bg-gray-300 my-1.5" title="分隔"></div>
       <button class="tab" data-tab="failure" data-group="whatif" title="What-if 模擬(自選節點失效)">失效模擬</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
@@ -180,10 +180,11 @@
     </div>
 
     <div class="tab-content" id="tab-allpairs">
-      <h2 class="section-h !border-0 !mt-0">C3 全 Pair 路徑 & 純備援盤點</h2>
+      <h2 class="section-h !border-0 !mt-0">C3 鏈路樞紐度盤點</h2>
       <div class="hint">
-        計算當前(含故障狀態)所有 Router pair 的最短路徑,並把<b>被任一 SPT 使用的邊</b>標成藍線。
-        沒被標的邊 = <b>純備援電路</b>(平時零流量,只在主路徑失效時接手) — 通常是規劃時的冗餘,或 cost 設太高沒人走的廢線。
+        計算每條鏈路的<b>樞紐度</b>(Edge Betweenness Centrality):被多少 SPT 路徑經過,ECMP 等分計算。
+        樞紐度高 = 流量承載重,失效衝擊大;樞紐度 0 = 純備援,平時零流量。
+        分 4 階對應採購決策:<b>樞紐</b>擴容雙保 / <b>正常</b>維持 / <b>偶爾</b>降頻寬候選 / <b>純備援</b>砍掉候選。
       </div>
       <button class="btn-primary mt-2" id="listAllPairs">重新計算</button>
       <div id="all-pairs-result" class="mt-2.5"></div>
@@ -300,10 +301,12 @@ import {
 // ============================================================================
 // §0 CONSTANTS
 // ============================================================================
-const EDGE_ROLES = ['primary','backup','unbacked','load-inc','load-dec','failed-by-node'];
+const EDGE_ROLES = ['primary','backup','unbacked','load-inc','load-dec','failed-by-node',
+                    'bc-hub','bc-normal','bc-rare','bc-idle'];
 const NODE_ROLES = ['endpoint','highlight','asym-mark','failed-node',
                     'heat-green','heat-yellow','heat-orange','heat-red'];
-const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec'];
+const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec',
+                          'bc-hub','bc-normal','bc-rare','bc-idle'];
 const ALL_NODE_CLASSES = ['endpoint','highlight','asym-mark','failed-node',
                           'heat-green','heat-yellow','heat-orange','heat-red'];
 
@@ -353,6 +356,10 @@ const cy = cytoscape({
     { selector: 'edge.unbacked',style:{ 'line-color':'#dc2626','width':4,'z-index':11 }},
     { selector: 'edge.load-inc',style:{ 'line-color':'#3b82f6','width':5,'z-index':8 }},
     { selector: 'edge.load-dec',style:{ 'line-color':'#eab308','width':4,'z-index':7 }},
+    { selector: 'edge.bc-hub',   style:{ 'line-color':'#16a34a','width':8,'z-index':5 }},
+    { selector: 'edge.bc-normal',style:{ 'line-color':'#3b82f6','width':5,'z-index':4 }},
+    { selector: 'edge.bc-rare',  style:{ 'line-color':'#fde047','width':3,'z-index':3 }},
+    { selector: 'edge.bc-idle',  style:{ 'line-color':'#94a3b8','line-style':'dashed','width':2,'z-index':2 }},
     { selector: 'node.endpoint',style:{
       'background-color':'#2563eb','border-color':'#1e3a8a','color':'#fff','border-width':4,
     }},
@@ -777,18 +784,52 @@ const C2_Matrix = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.3 C3 — All Pairs (全 Pair 路徑 + 純備援盤點)
+// §5.3 C3 — Link Centrality (鏈路樞紐度盤點)
 // ----------------------------------------------------------------------------
+// 每條 p2p 鏈路的 Edge Betweenness Centrality(被多少 SPT 經過,ECMP 等分)
+// → 依相對 maxBC 分 4 階,對應採購決策:擴容雙保 / 維持 / 降頻寬 / 砍掉。
+// 用 SPEC §11 狀態機:setEdgeRole(eid, 'bc-' + tier) — 切 Tab 自動清除。
 const C3_AllPairs = (() => {
-  // 列出所有 pair 最短路徑 — 並在拓樸圖上把「被任何 SPT 經過的邊」標成藍線,
-  // 沒被標的就是純備援電路(平時沒有流量,只在主路徑失效時才接手)
+  const TIERS = {
+    hub:    { label: '樞紐',   action: '擴容雙保',   color: '#15803d', cardBg: '#dcfce7' },
+    normal: { label: '正常',   action: '維持',       color: '#1e40af', cardBg: '#dbeafe' },
+    rare:   { label: '偶爾',   action: '降頻寬候選', color: '#a16207', cardBg: '#fef9c3' },
+    idle:   { label: '純備援', action: '砍掉候選',   color: '#475569', cardBg: '#f1f5f9' },
+  };
+
+  function classify(v, maxBC) {
+    if (v === 0)         return 'idle';
+    if (maxBC === 0)     return 'idle';
+    if (v > 0.4 * maxBC) return 'hub';
+    if (v > 0.1 * maxBC) return 'normal';
+    return 'rare';
+  }
+
   function render() {
     clearAllRoles();
+
+    // ---- 樞紐度計算(吃右鍵故障,反映當前營運狀態)----
+    // 包含 transit 邊:它們是真實的 Router↔IX 連線,採購視角不可省略。
+    const bc = allPairsLoad(topology, failedEdges, failedNodes);
+    const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
+    const maxBC = rankedEdges.reduce((m, e) => Math.max(m, bc[e.id] || 0), 0);
+
+    // ---- 分階 + 著色 + 排行 ----
+    const tierCounts = { hub: 0, normal: 0, rare: 0, idle: 0 };
+    const ranking = [];
+    for (const e of rankedEdges) {
+      const v = bc[e.id] || 0;
+      const tier = classify(v, maxBC);
+      tierCounts[tier]++;
+      setEdgeRole(e.id, 'bc-' + tier);
+      ranking.push({ eid: e.id, edge: e, bc: v, tier });
+    }
+    ranking.sort((x, y) => y.bc - x.bc);
+
+    // ---- 全 pair SPT 列舉(吃右鍵故障)— 順手收集樞紐性語境下的最短路徑 ----
     const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
     const routers = topology.nodes.filter(n => n.type === 'router' && !failedNodes.has(n.id)).map(n => n.id);
-    const div = dom('all-pairs-result');
-    const rows = [];
-    const usedEdges = new Set();
+    const pairRows = [];
     let unreach = 0;
     for (const a of routers) {
       for (const b of routers) {
@@ -800,46 +841,61 @@ const C3_AllPairs = (() => {
         for (const p of r.paths) {
           const s = stripPseudo(p).join('>');
           if (!seen.has(s)) { seen.add(s); disp.push(stripPseudo(p)); }
-          for (const eid of pathToEdgeIds(p, topology.edges)) usedEdges.add(eid);
         }
-        rows.push({ a, b, cost: r.cost, paths: disp });
+        pairRows.push({ a, b, cost: r.cost, paths: disp });
       }
     }
-    rows.sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+    pairRows.sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+    const reachable = pairRows.length;
 
-    // 視覺化:被用到 → primary(藍);沒用到 → 不動(維持灰色預設,即為純備援)
-    for (const eid of usedEdges) setEdgeRole(eid, 'primary');
+    // ---- 渲染 ----
+    const div = dom('all-pairs-result');
+    let html = '';
 
-    // 純備援邊 = 全部 edges 排除 failed 與 used
-    const allEids = topology.edges.map(e => e.id);
-    const pureBackup = allEids.filter(eid =>
-      !usedEdges.has(eid) && !failedEdges.has(eid)
-    );
+    // 4 階採購決策卡(用 grid 2×2 排列)
+    html += '<div class="mini-stat">';
+    for (const tier of ['hub', 'normal', 'rare', 'idle']) {
+      const t = TIERS[tier];
+      html += `<div class="info-card" style="background:${t.cardBg};border-color:${t.color}">
+        <div class="label" style="color:${t.color}">${t.label} · ${t.action}</div>
+        <div class="value" style="color:${t.color}">${tierCounts[tier]} 條</div>
+      </div>`;
+    }
+    html += '</div>';
 
-    let html = `<div class="mini-stat">
-      <div class="info-card"><div class="label">可達 pair</div><div class="value">${rows.length}${unreach > 0 ? ` <span style="color:#991b1b;font-size:10px">/ 不可達 ${unreach}</span>` : ''}</div></div>
-      <div class="info-card"><div class="label">SPT 用到的邊</div><div class="value" style="color:#2563eb">${usedEdges.size} / ${allEids.length}</div></div>
+    // 可達性摘要
+    html += `<div class="info-card">
+      <div class="label">可達 pair / 不可達</div>
+      <div class="value">${reachable}${unreach > 0 ? ` <span style="color:#991b1b">/ ${unreach}</span>` : ' / 0'}
+        &nbsp;<span style="color:#6b7280;font-weight:400;font-size:10px">maxBC = ${maxBC.toFixed(1)}</span></div>
     </div>`;
-    if (pureBackup.length > 0) {
-      html += `<div class="info-card" style="border-color:#94a3b8;background:#f8fafc">
-        <div class="label">純備援電路(無任何 SPT 經過,平時無流量)</div>
-        <div class="value" style="color:#475569">${pureBackup.length} 條</div>`;
-      for (const eid of pureBackup) {
-        const e = topology.edges.find(x => x.id === eid);
-        html += `<div style="font-family:monospace;font-size:10px;color:#64748b;margin-top:2px">
-          ${eid}: ${e.source} ↔ ${e.target} (cost ${e.cost}${e.costRev != null && e.costRev !== e.cost ? `/${e.costRev}` : ''})</div>`;
-      }
-      html += '</div>';
-    } else {
-      html += '<div class="hint" style="margin-top:8px"><span class="badge pass">無純備援邊</span>每條鏈路至少被一個 SPT 使用。</div>';
-    }
-    html += '<table class="mt-2"><tr><th>Src</th><th>Dst</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
-    for (const r of rows) {
-      const ecmpBadge = r.paths.length > 1 ? `<span class="badge ecmp">×${r.paths.length}</span>` : '';
-      const pathsHtml = r.paths.map(p => `<div style="font-family:monospace">${p.join(' → ')}</div>`).join('');
-      html += `<tr><td>${r.a}</td><td>${r.b}</td><td>${r.cost}</td><td>${ecmpBadge}</td><td>${pathsHtml}</td></tr>`;
+
+    // 鏈路樞紐度排行
+    html += '<h2 class="section-h mt-3">鏈路樞紐度排行</h2>';
+    html += '<table><tr><th>Edge</th><th>連接</th><th>BC</th><th>分類</th><th>建議</th></tr>';
+    for (const r of ranking) {
+      const t = TIERS[r.tier];
+      const cost = r.edge.cost + (r.edge.costRev != null && r.edge.costRev !== r.edge.cost ? `/${r.edge.costRev}` : '');
+      html += `<tr>
+        <td>${r.eid}</td>
+        <td>${r.edge.source} ↔ ${r.edge.target}<br><span style="color:#9ca3af;font-size:10px">cost ${cost}</span></td>
+        <td style="font-weight:600">${r.bc.toFixed(1)}</td>
+        <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
+        <td style="color:${t.color};font-size:10px">${t.action}</td>
+      </tr>`;
     }
     html += '</table>';
+
+    // 全 pair 最短路徑列表(保留舊版)
+    html += '<h2 class="section-h mt-3">全 Pair 最短路徑</h2>';
+    html += '<table><tr><th>Src</th><th>Dst</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
+    for (const pr of pairRows) {
+      const ecmpBadge = pr.paths.length > 1 ? `<span class="badge ecmp">×${pr.paths.length}</span>` : '';
+      const pathsHtml = pr.paths.map(p => `<div style="font-family:monospace">${p.join(' → ')}</div>`).join('');
+      html += `<tr><td>${pr.a}</td><td>${pr.b}</td><td>${pr.cost}</td><td>${ecmpBadge}</td><td>${pathsHtml}</td></tr>`;
+    }
+    html += '</table>';
+
     div.innerHTML = html;
   }
 

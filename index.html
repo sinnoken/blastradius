@@ -1223,6 +1223,25 @@ const C8_N1 = (() => {
     }
   }
 
+  // 災難演練視角:把失效元件標紅,所有受影響 pair 的重繞路徑全部疊上去
+  function renderFailureVisual(f) {
+    clearAllRoles();
+    const fE = f.kind === 'edge' ? new Set([f.id]) : new Set();
+    const fN = f.kind === 'node' ? new Set([f.id]) : new Set();
+    if (f.kind === 'edge') setEdgeRole(f.id, 'failed-by-node');
+    if (f.kind === 'node') setNodeRole(f.id, 'failed-node');
+
+    const adj = buildAdjacency(topology.edges, fE, fN);
+    for (const aff of f.affected) {
+      if (aff.worst === Infinity) continue;  // 不可達就沒繞道可畫
+      const r = dijkstraECMP(adj, aff.a, aff.b);
+      if (r.cost === Infinity) continue;
+      for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
+        if (edgeStates.get(eid)?.role === 'none') setEdgeRole(eid, 'backup');
+      }
+    }
+  }
+
   function render() {
     const result = computeN1WorstCase(topology);
     n1Cache = result;
@@ -1244,10 +1263,30 @@ const C8_N1 = (() => {
       <div class="info-card"><div class="label">不受影響</div><div class="value" style="color:#166534">${okPairs}</div></div>
     </div>`;
 
+    html += '<h2 class="section-h mt-3">最致命失效 (Top 10)</h2>';
+    if (failureRows.length === 0) {
+      html += '<span class="badge pass">無單點失效會造成任何 pair 劣化</span>';
+    } else {
+      html += '<div class="hint mb-2">點任一列模擬該失效情境 — 失效元件標紅,所有受影響 pair 的重繞路徑以橘色高亮。</div>';
+      html += '<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th></tr>';
+      for (const f of failureRows.slice(0, 10)) {
+        const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
+        html += `<tr class="clickable" data-fail-idx="${failureRows.indexOf(f)}">
+          <td>${fmtCulprit(f)}</td>
+          <td style="color:${f.unreachable > 0 ? '#991b1b' : '#9ca3af'};font-weight:${f.unreachable > 0 ? 600 : 400}">${f.unreachable}</td>
+          <td>${f.degraded}</td>
+          <td>${f.totalDelta}</td>
+          <td>${ratioStr}</td>
+        </tr>`;
+      }
+      html += '</table>';
+    }
+
     html += '<h2 class="section-h mt-3">最脆弱 Pair (Top 20)</h2>';
     if (pairRows.length === 0) {
       html += '<span class="badge pass">所有 pair 都能撐過任一單點失效</span>';
     } else {
+      html += '<div class="hint mb-2">點任一列查看該 pair 在最糟失效下的重繞路徑。</div>';
       html += '<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>cost</th><th>元凶</th></tr>';
       for (const row of pairRows.slice(0, 20)) {
         const ratioBadge = row.ratio === Infinity
@@ -1267,30 +1306,16 @@ const C8_N1 = (() => {
       html += '</table>';
     }
 
-    html += '<h2 class="section-h mt-3">最致命失效 (Top 10)</h2>';
-    if (failureRows.length === 0) {
-      html += '<span class="badge pass">無單點失效會造成任何 pair 劣化</span>';
-    } else {
-      html += '<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th></tr>';
-      for (const f of failureRows.slice(0, 10)) {
-        const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
-        html += `<tr><td>${fmtCulprit(f)}</td>
-          <td style="color:${f.unreachable > 0 ? '#991b1b' : '#9ca3af'};font-weight:${f.unreachable > 0 ? 600 : 400}">${f.unreachable}</td>
-          <td>${f.degraded}</td>
-          <td>${f.totalDelta}</td>
-          <td>${ratioStr}</td>
-        </tr>`;
-      }
-      html += '</table>';
-    }
-
     dom('n1-result').innerHTML = html;
 
-    // 綁定 pair row 點擊事件 → 圖上視覺化
+    // 綁定點擊事件 → 圖上視覺化(依 data-fail-idx / data-pair-idx 分派)
     document.querySelectorAll('#n1-result tr.clickable').forEach(tr => {
       tr.addEventListener('click', () => {
-        const idx = parseInt(tr.dataset.pairIdx, 10);
-        renderVisual(pairRows[idx]);
+        if (tr.dataset.failIdx != null) {
+          renderFailureVisual(failureRows[parseInt(tr.dataset.failIdx, 10)]);
+        } else if (tr.dataset.pairIdx != null) {
+          renderVisual(pairRows[parseInt(tr.dataset.pairIdx, 10)]);
+        }
         document.querySelectorAll('#n1-result tr.clickable').forEach(r => r.classList.remove('row-active'));
         tr.classList.add('row-active');
       });

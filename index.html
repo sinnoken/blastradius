@@ -193,11 +193,12 @@
     </div>
 
     <div class="tab-content" id="tab-traffic">
-      <h2 class="section-h !border-0 !mt-0">邊流量視圖</h2>
+      <h2 class="section-h !border-0 !mt-0">C9 邊流量視圖</h2>
       <div class="hint">
-        依 <code>demand.js</code> 的需求矩陣,計算每條邊實際扛多少 <b>Gbps</b>(ECMP 等分)。
-        跟 C3 樞紐度的差別:樞紐度看結構、不看流量;邊流量看實際負載。
-        高 / 中 / 低三階以最大值的 60% / 20% 為門檻。
+        每條鏈路目前實際扛多少 <b>Gbps</b>。
+        <div class="mt-1">做法:把 <code>demand.js</code> 裡每對 Router 的流量需求放到最短路徑上(有 ECMP 時平均分攤),沿途每條邊累加。</div>
+        <div class="mt-1">與 C3 的差別:C3 數「有幾條路徑經過」(看結構),本頁算「實際帶幾 Gbps」(看流量) — 一條邊可能 C3 高但這裡低,表示常被用但每筆量小。</div>
+        <div class="mt-1">門檻(以最大邊負載為基準):<b>&gt; 60%</b> 高 / <b>&gt; 20%</b> 中 / 其餘低。</div>
       </div>
       <button class="btn-primary mt-2" id="runTraffic">重新計算</button>
       <div id="traffic-result" class="mt-2.5"></div>
@@ -841,7 +842,8 @@ const C3_AllPairs = (() => {
 
     // ---- Edge 樞紐度計算(吃右鍵故障,反映當前營運狀態)----
     // 包含 transit 邊:它們是真實的 Router↔IX 連線,採購視角不可省略。
-    const bc = allPairsLoad(topology, failedEdges, failedNodes);
+    const bcResult = allPairsLoad(topology, failedEdges, failedNodes);
+    const bc = bcResult.load;
     const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
     const maxBC = rankedEdges.reduce((m, e) => Math.max(m, bc[e.id] || 0), 0);
 
@@ -858,7 +860,8 @@ const C3_AllPairs = (() => {
     ranking.sort((x, y) => y.bc - x.bc);
 
     // ---- Node 樞紐度計算 + 分階 + 著色 + 排行 ----
-    const nodeBC = computeNodeBC(topology, failedEdges, failedNodes);
+    const nodeBCResult = computeNodeBC(topology, failedEdges, failedNodes);
+    const nodeBC = nodeBCResult.load;
     const rankedNodes = topology.nodes
       .filter(n => n.type === 'router' && !failedNodes.has(n.id));
     const maxNodeBC = rankedNodes.reduce((m, n) => Math.max(m, nodeBC[n.id] || 0), 0);
@@ -873,16 +876,16 @@ const C3_AllPairs = (() => {
     }
     nodeRanking.sort((x, y) => y.bc - x.bc);
 
-    // ---- 全 pair SPT 列舉(吃右鍵故障)— 順手收集樞紐性語境下的最短路徑 ----
+    // ---- 全 pair SPT 列舉(吃右鍵故障)— 收集最短路徑供下方 listing 用 ----
+    // (lost pair 計數已由 bcResult.lostPairs 提供,本迴圈只負責 reachable pair 的路徑)
     const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
     const routers = topology.nodes.filter(n => n.type === 'router' && !failedNodes.has(n.id)).map(n => n.id);
     const pairRows = [];
-    let unreach = 0;
     for (const a of routers) {
       for (const b of routers) {
         if (a === b) continue;
         const r = dijkstraECMP(adj, a, b);
-        if (r.cost === Infinity) { unreach++; continue; }
+        if (r.cost === Infinity) continue;
         const seen = new Set();
         const disp = [];
         for (const p of r.paths) {
@@ -893,11 +896,31 @@ const C3_AllPairs = (() => {
       }
     }
     pairRows.sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
-    const reachable = pairRows.length;
 
     // ---- 渲染 ----
     const div = dom('all-pairs-result');
     let html = '';
+
+    // 可達性會計 banner — 不可達的 pair 不會出現在 BC 排名分母裡,
+    // 所以要先讓使用者看到「有多少 pair 連不通」,才不會誤把劣化中的網路看成樞紐均衡。
+    const lostPairs = bcResult.lostPairs;
+    const totalForBanner = bcResult.totalPairs;
+    if (lostPairs.length === 0) {
+      html += `<div class="info-card" style="background:#dcfce7;border-color:#15803d">
+        <div class="label" style="color:#15803d">可達性</div>
+        <div class="value" style="color:#15803d">${totalForBanner} 對 pair 全數可達</div>
+      </div>`;
+    } else {
+      const sample = lostPairs.slice(0, 6).map(p => `${p.a}→${p.b}`).join(', ');
+      const more = lostPairs.length > 6 ? ` <span style="color:#9ca3af">+${lostPairs.length - 6} more</span>` : '';
+      html += `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c">
+        <div class="label" style="color:#991b1b">可達性會計 — ⚠ 部分 pair 不可達</div>
+        <div class="value" style="color:#991b1b">${bcResult.reachablePairs} / ${totalForBanner} 可達
+          &nbsp;<span style="color:#6b7280;font-weight:400;font-size:10px">(失去 ${lostPairs.length} 對)</span></div>
+        <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}${more}</div>
+        <div style="font-size:10px;color:#7f1d1d;margin-top:4px">以下 BC 排名僅統計 ${bcResult.reachablePairs} 對可達 pair。失效節點 / 鏈路若是 hub,真實衝擊比表面數字更大。</div>
+      </div>`;
+    }
 
     // 4 階採購決策卡(用 grid 2×2 排列)
     html += '<div class="mini-stat">';
@@ -910,12 +933,8 @@ const C3_AllPairs = (() => {
     }
     html += '</div>';
 
-    // 可達性摘要
-    html += `<div class="info-card">
-      <div class="label">可達 pair / 不可達</div>
-      <div class="value">${reachable}${unreach > 0 ? ` <span style="color:#991b1b">/ ${unreach}</span>` : ' / 0'}
-        &nbsp;<span style="color:#6b7280;font-weight:400;font-size:10px">maxBC = ${maxBC.toFixed(1)}</span></div>
-    </div>`;
+    html += `<div class="info-card"><div class="label">maxBC</div>
+      <div class="value">${maxBC.toFixed(1)}</div></div>`;
 
     // 鏈路樞紐度排行
     html += '<h2 class="section-h mt-3">鏈路樞紐度排行</h2>';
@@ -1004,7 +1023,8 @@ const C9_Traffic = (() => {
       div.innerHTML = '<div class="hint" style="color:#991b1b">未載入 demand.js,無法顯示流量視圖。</div>';
       return;
     }
-    const traffic = allPairsTraffic(topology, demand, failedEdges, failedNodes);
+    const result = allPairsTraffic(topology, demand, failedEdges, failedNodes);
+    const traffic = result.traffic;
     const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
     const max = rankedEdges.reduce((m, e) => Math.max(m, traffic[e.id] || 0), 0);
 
@@ -1019,7 +1039,34 @@ const C9_Traffic = (() => {
     }
     rows.sort((x, y) => y.gbps - x.gbps);
 
-    let html = '<div class="mini-stat">';
+    let html = '';
+
+    // 可達性會計 banner — 失去路徑的 demand 不會出現在下方流量分母裡,
+    // 必須先讓使用者看到「有多少 Gbps 無路可走」,否則右鍵故障愈狠,
+    // 表面流量反而愈輕,變成反指標。
+    const lostGbps = result.lostDemand;
+    const totalGbps = result.totalDemand;
+    if (lostGbps === 0) {
+      html += `<div class="info-card" style="background:#dcfce7;border-color:#15803d">
+        <div class="label" style="color:#15803d">可達性</div>
+        <div class="value" style="color:#15803d">${totalGbps.toFixed(0)} Gbps demand 全數有路可走</div>
+      </div>`;
+    } else {
+      const lostPct = totalGbps > 0 ? (lostGbps / totalGbps * 100) : 0;
+      const sample = result.lostDemandPairs.slice(0, 5)
+        .map(p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`).join(', ');
+      const more = result.lostDemandPairs.length > 5
+        ? ` <span style="color:#9ca3af">+${result.lostDemandPairs.length - 5} more</span>` : '';
+      html += `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c">
+        <div class="label" style="color:#991b1b">可達性會計 — ⚠ 部分 demand 失去路徑</div>
+        <div class="value" style="color:#991b1b">${result.servedDemand.toFixed(0)} / ${totalGbps.toFixed(0)} Gbps 可達
+          &nbsp;<span style="color:#6b7280;font-weight:400;font-size:10px">(失去 ${lostGbps.toFixed(0)} Gbps · ${lostPct.toFixed(1)}%)</span></div>
+        <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}${more}</div>
+        <div style="font-size:10px;color:#7f1d1d;margin-top:4px">以下流量排行僅基於剩餘可達 demand。現實裡這 ${lostGbps.toFixed(0)} Gbps 不會憑空消失,代表「客戶斷線」或「BGP 倒換出域」。</div>
+      </div>`;
+    }
+
+    html += '<div class="mini-stat">';
     for (const tier of ['high', 'mid', 'low']) {
       const t = TIERS[tier];
       html += `<div class="info-card" style="background:${t.cardBg};border-color:${t.color}">

@@ -170,17 +170,26 @@ export function connectedComponents(adj, routerIds) {
 }
 
 // 每條 edge 被多少 path 使用,ECMP 等權平分
+// 回傳 { load, totalPairs, reachablePairs, lostPairs }
+// totalPairs:可參與計算的有序 pair 總數(已排除失效節點 — 失效節點不當 endpoint)
+// lostPairs:兩端都存活但無路徑可達的 pair 列表,讓 caller 決定怎麼呈現
 export function allPairsLoad(topo, failedEdges = new Set(), failedNodes = new Set()) {
   const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
   const routers = topo.nodes
     .filter(n => n.type === 'router' && !failedNodes.has(n.id))
     .map(n => n.id);
   const load = {};
+  const lostPairs = [];
+  let totalPairs = 0;
   for (const a of routers) {
     for (const b of routers) {
       if (a === b) continue;
+      totalPairs++;
       const r = dijkstraECMP(adj, a, b);
-      if (r.cost === Infinity || r.paths.length === 0) continue;
+      if (r.cost === Infinity || r.paths.length === 0) {
+        lostPairs.push({ a, b });
+        continue;
+      }
       const w = 1 / r.paths.length;
       for (const p of r.paths) {
         for (const eid of pathToEdgeIds(p, topo.edges)) {
@@ -189,39 +198,66 @@ export function allPairsLoad(topo, failedEdges = new Set(), failedNodes = new Se
       }
     }
   }
-  return load;
+  return { load, totalPairs, reachablePairs: totalPairs - lostPairs.length, lostPairs };
 }
 
-// §6.2b 流量加權版邊負載 — 與 allPairsLoad 結構相同,僅權重改為 demand[a][b]
-// 語意:每條邊實際扛多少 Gbps(ECMP 等分)。缺值用 demand.default。
+// §6.2b 流量加權版邊負載 — 權重改為 demand[a][b]
+// 與 allPairsLoad 的差異:
+//   1. 多回傳 Gbps 帳目 (totalDemand / servedDemand / lostDemand)
+//   2. iterate 全部 router(不排除失效節點),因為 demand 到 / 出失效節點
+//      在現實裡是「客戶被拋棄」,屬於 lostDemand 的一部分,必須被計入
+//      ─ 否則右鍵砍掉節點時整片 demand 會憑空消失,使流量視圖反向變得安全
 export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNodes = new Set()) {
-  if (!demand || !demand.matrix) return {};
+  const empty = {
+    traffic: {}, totalPairs: 0, reachablePairs: 0, lostPairs: [],
+    totalDemand: 0, servedDemand: 0, lostDemand: 0, lostDemandPairs: [],
+  };
+  if (!demand || !demand.matrix) return empty;
   const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
-  const routers = topo.nodes
-    .filter(n => n.type === 'router' && !failedNodes.has(n.id))
-    .map(n => n.id);
+  const allRouters = topo.nodes.filter(n => n.type === 'router').map(n => n.id);
   const dflt = demand.default ?? 0;
-  const load = {};
-  for (const a of routers) {
-    for (const b of routers) {
+  const traffic = {};
+  const lostDemandPairs = [];
+  let totalPairs = 0, reachablePairs = 0;
+  let totalDemand = 0, servedDemand = 0;
+  for (const a of allRouters) {
+    for (const b of allRouters) {
       if (a === b) continue;
-      const r = dijkstraECMP(adj, a, b);
-      if (r.cost === Infinity || r.paths.length === 0) continue;
+      totalPairs++;
       const gbps = demand.matrix[a]?.[b] ?? dflt;
+      totalDemand += gbps;
+      if (failedNodes.has(a) || failedNodes.has(b)) {
+        if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'endpoint-down' });
+        continue;
+      }
+      const r = dijkstraECMP(adj, a, b);
+      if (r.cost === Infinity || r.paths.length === 0) {
+        if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'no-path' });
+        continue;
+      }
+      reachablePairs++;
+      servedDemand += gbps;
       const w = gbps / r.paths.length;
       for (const p of r.paths) {
         for (const eid of pathToEdgeIds(p, topo.edges)) {
-          load[eid] = (load[eid] || 0) + w;
+          traffic[eid] = (traffic[eid] || 0) + w;
         }
       }
     }
   }
-  return load;
+  lostDemandPairs.sort((x, y) => y.gbps - x.gbps);
+  return {
+    traffic, totalPairs, reachablePairs,
+    lostPairs: lostDemandPairs.map(({ a, b }) => ({ a, b })),
+    totalDemand, servedDemand, lostDemand: totalDemand - servedDemand,
+    lostDemandPairs,
+  };
 }
 
 // Freeman Node Betweenness Centrality (§6.3)
 // σ(s,t|v) / σ(s,t),ECMP 等分;strip pseudo-node;排除 endpoints。
 // 語意:純拓樸結構上,每台 router 平均扛多少 "過路" SPT 流量。
+// 回傳結構與 allPairsLoad 一致,方便 caller 統一處理可達性訊息。
 export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new Set()) {
   const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
   const routers = topo.nodes
@@ -229,11 +265,17 @@ export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new S
     .map(n => n.id);
   const load = {};
   for (const r of routers) load[r] = 0;
+  const lostPairs = [];
+  let totalPairs = 0;
   for (const a of routers) {
     for (const b of routers) {
       if (a === b) continue;
+      totalPairs++;
       const r = dijkstraECMP(adj, a, b);
-      if (r.cost === Infinity || r.paths.length === 0) continue;
+      if (r.cost === Infinity || r.paths.length === 0) {
+        lostPairs.push({ a, b });
+        continue;
+      }
       const w = 1 / r.paths.length;
       for (const p of r.paths) {
         const stripped = stripPseudo(p);
@@ -244,7 +286,7 @@ export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new S
       }
     }
   }
-  return load;
+  return { load, totalPairs, reachablePairs: totalPairs - lostPairs.length, lostPairs };
 }
 
 export function simulateNodeFailure(topo, failedNodeId) {

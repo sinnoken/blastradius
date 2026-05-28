@@ -257,9 +257,23 @@
 
 <script type="module">
 // ============================================================================
-// 1. TOPOLOGY DATA — 由 topology.js 載入(全域變數 `topology`)
-// 2. ALGORITHM ENGINE — 由 engine.js 載入(SPEC §3–§10 純函式)
-// 3. CYTOSCAPE INITIALIZATION
+// BlastRadius POC — UI script
+//
+// 本檔組織(對應 SPEC §11 視覺狀態機 + §12 Tab 行為矩陣):
+//   §0  CONSTANTS         — class / role 名稱表
+//   §1  CYTOSCAPE INIT    — cy 實例 + style 表
+//   §2  STATE MACHINE     — edge/nodeStates Map、setters、facade
+//   §3  UI HELPERS        — dom() 取元素
+//   §4  SHARED CONTEXT    — pseudoVisible / subnetIndex / originalEdges
+//                          / select 初始化 / rerenderIfPathActive()
+//   §5  TAB MODULES       — 每個 Tab 一個 IIFE,統一 { init, activate } 介面
+//     §5.1 C1 Path        §5.2 C2 Matrix      §5.3 C3 AllPairs
+//     §5.4 C4 Failure     §5.5 C5 ECMP        §5.6 C6 Asymmetric
+//     §5.7 C7 Heatmap     §5.8 C8 N-1         §5.9 Edges Editor
+//   §6  TAB REGISTRY      — TABS 註冊表 + dispatch loop
+//   §7  GLOBAL HANDLERS   — togglePseudo / clearFailed / 右鍵切換故障 / 初始 render
+//
+// 演算法層在 engine.js,本檔只負責「拿狀態 → 呼叫演算法 → 渲染結果」。
 // ============================================================================
 
 import {
@@ -270,6 +284,19 @@ import {
   detectAsymmetric, computeHeatmap, computeN1WorstCase,
 } from './engine.js';
 
+// ============================================================================
+// §0 CONSTANTS
+// ============================================================================
+const EDGE_ROLES = ['primary','backup','unbacked','load-inc','load-dec','failed-by-node'];
+const NODE_ROLES = ['endpoint','highlight','asym-mark','failed-node',
+                    'heat-green','heat-yellow','heat-orange','heat-red'];
+const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec'];
+const ALL_NODE_CLASSES = ['endpoint','highlight','asym-mark','failed-node',
+                          'heat-green','heat-yellow','heat-orange','heat-red'];
+
+// ============================================================================
+// §1 CYTOSCAPE INITIALIZATION
+// ============================================================================
 const cy = cytoscape({
   container: document.getElementById('cy'),
   // 不可選取(避免選取殘留),允許拖曳(左鍵拖移、右鍵切換故障 — 兩種互動完全分離)
@@ -338,7 +365,7 @@ const cy = cytoscape({
 });
 
 // ============================================================================
-// 10. STATE MACHINE — single source of truth for entity visual state
+// §2 STATE MACHINE — single source of truth for entity visual state (SPEC §11)
 // ============================================================================
 //
 // Entity has two orthogonal dimensions:
@@ -354,13 +381,6 @@ const cy = cytoscape({
 // Render rule:  op=failed/down → 'failed' / 'failed-node'   (op 優先)
 //               否則由 role 直接映射到對應 class
 // All Cytoscape class manipulation MUST go through these setters.
-
-const EDGE_ROLES = ['primary','backup','unbacked','load-inc','load-dec','failed-by-node'];
-const NODE_ROLES = ['endpoint','highlight','asym-mark','failed-node',
-                    'heat-green','heat-yellow','heat-orange','heat-red'];
-const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec'];
-const ALL_NODE_CLASSES = ['endpoint','highlight','asym-mark','failed-node',
-                          'heat-green','heat-yellow','heat-orange','heat-red'];
 
 const edgeStates = new Map();
 const nodeStates = new Map();
@@ -439,6 +459,14 @@ const failedNodes = {
   [Symbol.iterator]: function*() { for (const [nid, st] of nodeStates) if (st.op === 'down') yield nid; },
 };
 
+// ============================================================================
+// §3 UI HELPERS
+// ============================================================================
+const dom = (id) => document.getElementById(id);
+
+// ============================================================================
+// §4 SHARED CONTEXT — module-scope state + cross-tab helpers
+// ============================================================================
 let pseudoVisible = true;
 const subnetIndex = buildSubnetIndex(topology);
 
@@ -448,433 +476,479 @@ const originalEdges = topology.edges.map(e => ({ id: e.id, cost: e.cost, costRev
 // populate selects
 const routerNodes = topology.nodes.filter(n => n.type === 'router');
 for (const sel of ['src','dst','failNode']) {
-  const el = document.getElementById(sel);
+  const el = dom(sel);
   for (const n of routerNodes) el.add(new Option(n.label, n.id));
 }
-document.getElementById('src').value = 'TPE';
-document.getElementById('dst').value = 'AMS';
-document.getElementById('failNode').value = 'LAX';
+dom('src').value = 'TPE';
+dom('dst').value = 'AMS';
+dom('failNode').value = 'LAX';
 
-// ---------- Tab: Path Analysis (C1 + C2) ----------
-function renderPath(src, dst) {
-  clearAllRoles();
-  const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
-  const r = dijkstraECMP(adj, src, dst);
-  const div = document.getElementById('path-result');
-
-  if (r.cost === Infinity) {
-    div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
-      <div class="hint">${src} → ${dst} 沒有可用路徑(可能因故障導致)。</div>`;
-    setNodeRole(src, 'endpoint');
-    setNodeRole(dst, 'endpoint');
-    return;
+// 共用:右鍵故障 / 邊成本變更後,若 Path Tab 正在顯示就重算。
+// 注意:函式只是「宣告」並引用 C1_Path,直到第一次被呼叫時才會解析 — 此時 §5.1 已執行完畢。
+function rerenderIfPathActive() {
+  if (dom('tab-path').classList.contains('active')) {
+    C1_Path.render(dom('src').value, dom('dst').value);
   }
-
-  const disp = [];
-  const seen = new Set();
-  for (const p of r.paths) {
-    const s = stripPseudo(p).join('>');
-    if (!seen.has(s)) { seen.add(s); disp.push(stripPseudo(p)); }
-  }
-
-  // 判斷是否為 BACKUP:跟「無故障基線」比較。若路徑集合或 cost 不同 → 走備援
-  // 只看「有沒有故障」不夠 — 故障可能跟當前 src→dst 完全無關
-  const hasFailure = failedEdges.size + failedNodes.size > 0;
-  let inBackup = false;
-  if (hasFailure) {
-    const baseAdj = buildAdjacency(topology.edges);  // 不傳 failed*,即無故障基線
-    const baseR = dijkstraECMP(baseAdj, src, dst);
-    const currentSig = new Set(r.paths.map(p => stripPseudo(p).join('>')));
-    const baseSig    = new Set(baseR.paths.map(p => stripPseudo(p).join('>')));
-    const sameSet = currentSig.size === baseSig.size &&
-                    [...currentSig].every(x => baseSig.has(x));
-    inBackup = baseR.cost !== r.cost || !sameSet;
-  }
-
-  const role = inBackup ? 'backup' : 'primary';
-  for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
-    setEdgeRole(eid, role);
-  }
-  setNodeRole(src, 'endpoint');
-  setNodeRole(dst, 'endpoint');
-  for (const p of disp) for (const n of p) {
-    if (n !== src && n !== dst) setNodeRole(n, 'highlight');
-  }
-
-  const isECMP = disp.length > 1;
-  let html = '';
-  html += inBackup ? '<span class="badge backup">BACKUP MODE</span>'
-                   : '<span class="badge ecmp">PRIMARY</span>';
-  if (isECMP) html += `<span class="badge ecmp">ECMP × ${disp.length}</span>`;
-  html += `<div class="info-card" style="margin-top:6px">
-    <div class="label">Total Cost</div><div class="value">${r.cost}</div></div>`;
-  for (const p of disp) {
-    html += `<div class="path-item${inBackup ? ' backup' : ''}">
-      <span class="cost">${r.cost}</span>${p.join(' → ')}</div>`;
-  }
-  div.innerHTML = html;
 }
 
-document.getElementById('runSpt').addEventListener('click', () => {
-  renderPath(document.getElementById('src').value, document.getElementById('dst').value);
-});
-document.getElementById('resetView').addEventListener('click', () => {
-  clearAllRoles();
-  document.getElementById('path-result').innerHTML =
-    '<div class="hint">選擇 Source / Destination 後點擊「計算最短路徑」開始分析。</div>';
-  document.getElementById('unbackup-result').innerHTML = '';
-});
-document.getElementById('clearFailed').addEventListener('click', () => {
-  failedEdges.clear();
-  failedNodes.clear();
-  renderPath(document.getElementById('src').value, document.getElementById('dst').value);
-});
+// ============================================================================
+// §5 TAB MODULES — 每個 Tab 一個 IIFE,統一 { init, activate } 介面
+// ============================================================================
+// init()      綁定按鈕等只需做一次的初始化
+// activate()  Tab 被切換到時自動呼叫(對應 SPEC §12 矩陣的「自動執行」欄)
+// 其餘 closure 內的函式為私有,供 init/activate 使用,不對外暴露。
 
-// 列出所有 pair 最短路徑 — 並在拓樸圖上把「被任何 SPT 經過的邊」標成藍線,
-// 沒被標的就是純備援電路(平時沒有流量,只在主路徑失效時才接手)
-document.getElementById('listAllPairs').addEventListener('click', () => {
-  clearAllRoles();
-  const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
-  const routers = topology.nodes.filter(n => n.type === 'router' && !failedNodes.has(n.id)).map(n => n.id);
-  const div = document.getElementById('all-pairs-result');
-  const rows = [];
-  const usedEdges = new Set();
-  let unreach = 0;
-  for (const a of routers) {
-    for (const b of routers) {
-      if (a === b) continue;
-      const r = dijkstraECMP(adj, a, b);
-      if (r.cost === Infinity) { unreach++; continue; }
-      const seen = new Set();
-      const disp = [];
-      for (const p of r.paths) {
-        const s = stripPseudo(p).join('>');
-        if (!seen.has(s)) { seen.add(s); disp.push(stripPseudo(p)); }
-        for (const eid of pathToEdgeIds(p, topology.edges)) usedEdges.add(eid);
+// ----------------------------------------------------------------------------
+// §5.1 C1 — Path Analysis (路徑)
+// ----------------------------------------------------------------------------
+const C1_Path = (() => {
+  function render(src, dst) {
+    clearAllRoles();
+    const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
+    const r = dijkstraECMP(adj, src, dst);
+    const div = dom('path-result');
+
+    if (r.cost === Infinity) {
+      div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
+        <div class="hint">${src} → ${dst} 沒有可用路徑(可能因故障導致)。</div>`;
+      setNodeRole(src, 'endpoint');
+      setNodeRole(dst, 'endpoint');
+      return;
+    }
+
+    const disp = [];
+    const seen = new Set();
+    for (const p of r.paths) {
+      const s = stripPseudo(p).join('>');
+      if (!seen.has(s)) { seen.add(s); disp.push(stripPseudo(p)); }
+    }
+
+    // 判斷是否為 BACKUP:跟「無故障基線」比較。若路徑集合或 cost 不同 → 走備援
+    // 只看「有沒有故障」不夠 — 故障可能跟當前 src→dst 完全無關
+    const hasFailure = failedEdges.size + failedNodes.size > 0;
+    let inBackup = false;
+    if (hasFailure) {
+      const baseAdj = buildAdjacency(topology.edges);  // 不傳 failed*,即無故障基線
+      const baseR = dijkstraECMP(baseAdj, src, dst);
+      const currentSig = new Set(r.paths.map(p => stripPseudo(p).join('>')));
+      const baseSig    = new Set(baseR.paths.map(p => stripPseudo(p).join('>')));
+      const sameSet = currentSig.size === baseSig.size &&
+                      [...currentSig].every(x => baseSig.has(x));
+      inBackup = baseR.cost !== r.cost || !sameSet;
+    }
+
+    const role = inBackup ? 'backup' : 'primary';
+    for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
+      setEdgeRole(eid, role);
+    }
+    setNodeRole(src, 'endpoint');
+    setNodeRole(dst, 'endpoint');
+    for (const p of disp) for (const n of p) {
+      if (n !== src && n !== dst) setNodeRole(n, 'highlight');
+    }
+
+    const isECMP = disp.length > 1;
+    let html = '';
+    html += inBackup ? '<span class="badge backup">BACKUP MODE</span>'
+                     : '<span class="badge ecmp">PRIMARY</span>';
+    if (isECMP) html += `<span class="badge ecmp">ECMP × ${disp.length}</span>`;
+    html += `<div class="info-card" style="margin-top:6px">
+      <div class="label">Total Cost</div><div class="value">${r.cost}</div></div>`;
+    for (const p of disp) {
+      html += `<div class="path-item${inBackup ? ' backup' : ''}">
+        <span class="cost">${r.cost}</span>${p.join(' → ')}</div>`;
+    }
+    div.innerHTML = html;
+  }
+
+  function reset() {
+    clearAllRoles();
+    dom('path-result').innerHTML =
+      '<div class="hint">選擇 Source / Destination 後點擊「計算最短路徑」開始分析。</div>';
+    dom('unbackup-result').innerHTML = '';
+  }
+
+  function scanUnbackup() {
+    const src = dom('src').value;
+    const dst = dom('dst').value;
+    const { primaryEdges, unbacked } = unbackupSegmentScan(topology, src, dst);
+    // 先把任何先前留下的 unbacked role 清掉,再標記新的;primary role 由前次 render 保留
+    for (const [eid, st] of edgeStates) {
+      if (st.role === 'unbacked') setEdgeRole(eid, 'none');
+    }
+    for (const eid of unbacked) setEdgeRole(eid, 'unbacked');
+    const div = dom('unbackup-result');
+    if (primaryEdges.length === 0) {
+      div.innerHTML = '<div class="hint">無 primary 路徑可掃描。</div>';
+      return;
+    }
+    let html = `<div class="info-card" style="margin-top:8px">
+      <div class="label">Primary edges</div>
+      <div class="value">${primaryEdges.join(', ')}</div></div>`;
+    if (unbacked.length === 0) {
+      html += '<span class="badge pass">所有 primary edges 都有備援</span>';
+    } else {
+      html += `<span class="badge fail">Unbackuped: ${unbacked.length}</span>`;
+      for (const eid of unbacked) {
+        const e = topology.edges.find(x => x.id === eid);
+        html += `<div class="path-item fail">${eid}: ${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
       }
-      rows.push({ a, b, cost: r.cost, paths: disp });
     }
+    div.innerHTML = html;
   }
-  rows.sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
 
-  // 視覺化:被用到 → primary(藍);沒用到 → 不動(維持灰色預設,即為純備援)
-  for (const eid of usedEdges) setEdgeRole(eid, 'primary');
-
-  // 純備援邊 = 全部 edges 排除 failed 與 used
-  const allEids = topology.edges.map(e => e.id);
-  const pureBackup = allEids.filter(eid =>
-    !usedEdges.has(eid) && !failedEdges.has(eid)
-  );
-
-  let html = `<div class="mini-stat">
-    <div class="info-card"><div class="label">可達 pair</div><div class="value">${rows.length}${unreach > 0 ? ` <span style="color:#991b1b;font-size:10px">/ 不可達 ${unreach}</span>` : ''}</div></div>
-    <div class="info-card"><div class="label">SPT 用到的邊</div><div class="value" style="color:#2563eb">${usedEdges.size} / ${allEids.length}</div></div>
-  </div>`;
-  if (pureBackup.length > 0) {
-    html += `<div class="info-card" style="border-color:#94a3b8;background:#f8fafc">
-      <div class="label">純備援電路(無任何 SPT 經過,平時無流量)</div>
-      <div class="value" style="color:#475569">${pureBackup.length} 條</div>`;
-    for (const eid of pureBackup) {
-      const e = topology.edges.find(x => x.id === eid);
-      html += `<div style="font-family:monospace;font-size:10px;color:#64748b;margin-top:2px">
-        ${eid}: ${e.source} ↔ ${e.target} (cost ${e.cost}${e.costRev != null && e.costRev !== e.cost ? `/${e.costRev}` : ''})</div>`;
-    }
-    html += '</div>';
-  } else {
-    html += '<div class="hint" style="margin-top:8px"><span class="badge pass">無純備援邊</span>每條鏈路至少被一個 SPT 使用。</div>';
+  function init() {
+    dom('runSpt').addEventListener('click', () =>
+      render(dom('src').value, dom('dst').value));
+    dom('resetView').addEventListener('click', reset);
+    dom('scanUnbackup').addEventListener('click', scanUnbackup);
   }
-  html += '<table class="mt-2"><tr><th>Src</th><th>Dst</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
-  for (const r of rows) {
-    const ecmpBadge = r.paths.length > 1 ? `<span class="badge ecmp">×${r.paths.length}</span>` : '';
-    const pathsHtml = r.paths.map(p => `<div style="font-family:monospace">${p.join(' → ')}</div>`).join('');
-    html += `<tr><td>${r.a}</td><td>${r.b}</td><td>${r.cost}</td><td>${ecmpBadge}</td><td>${pathsHtml}</td></tr>`;
-  }
-  html += '</table>';
-  div.innerHTML = html;
-});
 
-// Unbackup scan (§5.4)
-document.getElementById('scanUnbackup').addEventListener('click', () => {
-  const src = document.getElementById('src').value;
-  const dst = document.getElementById('dst').value;
-  const { primaryEdges, unbacked } = unbackupSegmentScan(topology, src, dst);
-  // 先把任何先前留下的 unbacked role 清掉,再標記新的;primary role 由前次 renderPath 保留
-  for (const [eid, st] of edgeStates) {
-    if (st.role === 'unbacked') setEdgeRole(eid, 'none');
-  }
-  for (const eid of unbacked) setEdgeRole(eid, 'unbacked');
-  const div = document.getElementById('unbackup-result');
-  if (primaryEdges.length === 0) {
-    div.innerHTML = '<div class="hint">無 primary 路徑可掃描。</div>';
-    return;
-  }
-  let html = `<div class="info-card" style="margin-top:8px">
-    <div class="label">Primary edges</div>
-    <div class="value">${primaryEdges.join(', ')}</div></div>`;
-  if (unbacked.length === 0) {
-    html += '<span class="badge pass">所有 primary edges 都有備援</span>';
-  } else {
-    html += `<span class="badge fail">Unbackuped: ${unbacked.length}</span>`;
-    for (const eid of unbacked) {
-      const e = topology.edges.find(x => x.id === eid);
-      html += `<div class="path-item fail">${eid}: ${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
-    }
-  }
-  div.innerHTML = html;
-});
-
-// ---------- Tab: Matrix ----------
-// 緩存上次矩陣計算結果,點格子時用來取出 ECMP 路徑詳情(避免重算)
-let matrixCache = null;
-
-function renderMatrix() {
-  const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
-  const routers = topology.nodes.filter(n => n.type === 'router').map(n => n.id);
-  const matrix = {};
-  let maxCost = 0;
-  for (const a of routers) {
-    matrix[a] = {};
-    for (const b of routers) {
-      if (a === b) { matrix[a][b] = null; continue; }
-      if (failedNodes.has(a) || failedNodes.has(b)) {
-        matrix[a][b] = { cost: Infinity, paths: [] };
-        continue;
-      }
-      const r = dijkstraECMP(adj, a, b);
-      // 去重 stripPseudo 後相同的 path(同一條 router-level 路徑可能因 LSA2 pseudo-node 出現多次)
-      // 保留原始 path 以便 pathToEdgeIds 能正確匹配經過 pseudo-node 的邊
-      const seen = new Set();
-      const rawPaths = [];
-      const uniquePaths = [];
-      for (const p of r.paths) {
-        const s = stripPseudo(p).join('>');
-        if (!seen.has(s)) { seen.add(s); rawPaths.push(p); uniquePaths.push(stripPseudo(p)); }
-      }
-      matrix[a][b] = { cost: r.cost, paths: uniquePaths, rawPaths };
-      if (r.cost !== Infinity && r.cost > maxCost) maxCost = r.cost;
-    }
-  }
-  matrixCache = { routers, matrix, maxCost };
-
-  // 顯示故障狀態
-  const failInfo = document.getElementById('matrix-fail-info');
-  const fE = failedEdges.size, fN = failedNodes.size;
-  failInfo.innerHTML = (fE + fN > 0)
-    ? `<span style="color:#dc2626">目前故障:${fE} 邊 / ${fN} 節點</span>`
-    : '';
-
-  // cost → 顏色(低=綠,高=紅)
-  const colorFor = (cost) => {
-    if (cost === Infinity) return { bg: '#fecaca', fg: '#991b1b' };  // 不可達
-    if (maxCost === 0) return { bg: '#f0fdf4', fg: '#166534' };
-    const t = cost / maxCost;
-    // green (134,239,172) → yellow (253,224,71) → orange (251,146,60) → red (252,165,165)
-    if (t < 0.33) return { bg: '#dcfce7', fg: '#166534' };
-    if (t < 0.66) return { bg: '#fef9c3', fg: '#854d0e' };
-    if (t < 0.85) return { bg: '#fed7aa', fg: '#9a3412' };
-    return { bg: '#fecaca', fg: '#991b1b' };
+  return {
+    init,
+    activate: () => render(dom('src').value, dom('dst').value),
+    render,
   };
+})();
 
-  let html = '<table style="font-size:10px"><tr><th style="background:#1e3a8a;color:#fff">↓src \\ dst→</th>';
-  for (const b of routers) html += `<th>${b}</th>`;
-  html += '</tr>';
-  for (const a of routers) {
-    html += `<tr><th>${a}</th>`;
-    for (const b of routers) {
-      const cell = matrix[a][b];
-      if (cell === null) {
-        html += '<td style="background:#e5e7eb;text-align:center">—</td>';
-        continue;
+// ----------------------------------------------------------------------------
+// §5.2 C2 — Matrix (矩陣)
+// ----------------------------------------------------------------------------
+const C2_Matrix = (() => {
+  // closure cache: 上次矩陣計算結果,點格子時用來取出 ECMP 路徑詳情(避免重算)
+  let matrixCache = null;
+
+  function render() {
+    const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
+    const routers = topology.nodes.filter(n => n.type === 'router').map(n => n.id);
+    const matrix = {};
+    let maxCost = 0;
+    for (const a of routers) {
+      matrix[a] = {};
+      for (const b of routers) {
+        if (a === b) { matrix[a][b] = null; continue; }
+        if (failedNodes.has(a) || failedNodes.has(b)) {
+          matrix[a][b] = { cost: Infinity, paths: [] };
+          continue;
+        }
+        const r = dijkstraECMP(adj, a, b);
+        // 去重 stripPseudo 後相同的 path(同一條 router-level 路徑可能因 LSA2 pseudo-node 出現多次)
+        // 保留原始 path 以便 pathToEdgeIds 能正確匹配經過 pseudo-node 的邊
+        const seen = new Set();
+        const rawPaths = [];
+        const uniquePaths = [];
+        for (const p of r.paths) {
+          const s = stripPseudo(p).join('>');
+          if (!seen.has(s)) { seen.add(s); rawPaths.push(p); uniquePaths.push(stripPseudo(p)); }
+        }
+        matrix[a][b] = { cost: r.cost, paths: uniquePaths, rawPaths };
+        if (r.cost !== Infinity && r.cost > maxCost) maxCost = r.cost;
       }
-      if (cell.cost === Infinity) {
-        html += `<td class="clickable" data-src="${a}" data-dst="${b}" style="background:#fecaca;color:#991b1b;text-align:center;font-weight:600">∞</td>`;
-        continue;
-      }
-      const { bg, fg } = colorFor(cell.cost);
-      const ecmp = cell.paths.length;
-      const ecmpSup = ecmp >= 2 ? `<sup style="color:#1e40af">${ecmp >= 10 ? ecmp : ['','','²','³','⁴','⁵','⁶','⁷','⁸','⁹'][ecmp]}</sup>` : '';
-      // 非對稱標記:跟鏡像格 cost 不同
-      const mirror = matrix[b] && matrix[b][a];
-      const asym = mirror && mirror.cost !== Infinity && mirror.cost !== cell.cost
-        ? '<sub style="color:#a855f7;font-weight:700">*</sub>' : '';
-      html += `<td class="clickable" data-src="${a}" data-dst="${b}"
-        style="background:${bg};color:${fg};text-align:center;font-weight:600;cursor:pointer">${cell.cost}${ecmpSup}${asym}</td>`;
     }
+    matrixCache = { routers, matrix, maxCost };
+
+    // 顯示故障狀態
+    const failInfo = dom('matrix-fail-info');
+    const fE = failedEdges.size, fN = failedNodes.size;
+    failInfo.innerHTML = (fE + fN > 0)
+      ? `<span style="color:#dc2626">目前故障:${fE} 邊 / ${fN} 節點</span>`
+      : '';
+
+    // cost → 顏色(低=綠,高=紅)
+    const colorFor = (cost) => {
+      if (cost === Infinity) return { bg: '#fecaca', fg: '#991b1b' };  // 不可達
+      if (maxCost === 0) return { bg: '#f0fdf4', fg: '#166534' };
+      const t = cost / maxCost;
+      // green (134,239,172) → yellow (253,224,71) → orange (251,146,60) → red (252,165,165)
+      if (t < 0.33) return { bg: '#dcfce7', fg: '#166534' };
+      if (t < 0.66) return { bg: '#fef9c3', fg: '#854d0e' };
+      if (t < 0.85) return { bg: '#fed7aa', fg: '#9a3412' };
+      return { bg: '#fecaca', fg: '#991b1b' };
+    };
+
+    let html = '<table style="font-size:10px"><tr><th style="background:#1e3a8a;color:#fff">↓src \\ dst→</th>';
+    for (const b of routers) html += `<th>${b}</th>`;
     html += '</tr>';
+    for (const a of routers) {
+      html += `<tr><th>${a}</th>`;
+      for (const b of routers) {
+        const cell = matrix[a][b];
+        if (cell === null) {
+          html += '<td style="background:#e5e7eb;text-align:center">—</td>';
+          continue;
+        }
+        if (cell.cost === Infinity) {
+          html += `<td class="clickable" data-src="${a}" data-dst="${b}" style="background:#fecaca;color:#991b1b;text-align:center;font-weight:600">∞</td>`;
+          continue;
+        }
+        const { bg, fg } = colorFor(cell.cost);
+        const ecmp = cell.paths.length;
+        const ecmpSup = ecmp >= 2 ? `<sup style="color:#1e40af">${ecmp >= 10 ? ecmp : ['','','²','³','⁴','⁵','⁶','⁷','⁸','⁹'][ecmp]}</sup>` : '';
+        // 非對稱標記:跟鏡像格 cost 不同
+        const mirror = matrix[b] && matrix[b][a];
+        const asym = mirror && mirror.cost !== Infinity && mirror.cost !== cell.cost
+          ? '<sub style="color:#a855f7;font-weight:700">*</sub>' : '';
+        html += `<td class="clickable" data-src="${a}" data-dst="${b}"
+          style="background:${bg};color:${fg};text-align:center;font-weight:600;cursor:pointer">${cell.cost}${ecmpSup}${asym}</td>`;
+      }
+      html += '</tr>';
+    }
+    html += '</table>';
+    html += `<div class="hint mt-2">最大 cost = <b>${maxCost === 0 ? 'n/a' : maxCost}</b>。底色越紅 cost 越高。<sub style="color:#a855f7;font-weight:700">*</sub> 標記表示與反方向 cost 不同(非對稱)。</div>`;
+    dom('matrix-result').innerHTML = html;
+    dom('matrix-detail').innerHTML = '';
+
+    // 綁定點擊事件
+    document.querySelectorAll('#matrix-result td.clickable').forEach(td => {
+      td.addEventListener('click', () => showCellDetail(td.dataset.src, td.dataset.dst));
+    });
   }
-  html += '</table>';
-  html += `<div class="hint mt-2">最大 cost = <b>${maxCost === 0 ? 'n/a' : maxCost}</b>。底色越紅 cost 越高。<sub style="color:#a855f7;font-weight:700">*</sub> 標記表示與反方向 cost 不同(非對稱)。</div>`;
-  document.getElementById('matrix-result').innerHTML = html;
-  document.getElementById('matrix-detail').innerHTML = '';
 
-  // 綁定點擊事件
-  document.querySelectorAll('#matrix-result td.clickable').forEach(td => {
-    td.addEventListener('click', () => showMatrixCellDetail(td.dataset.src, td.dataset.dst));
-  });
-}
+  function showCellDetail(src, dst) {
+    if (!matrixCache) return;
+    const cell = matrixCache.matrix[src][dst];
+    const div = dom('matrix-detail');
 
-function showMatrixCellDetail(src, dst) {
-  if (!matrixCache) return;
-  const cell = matrixCache.matrix[src][dst];
-  const div = document.getElementById('matrix-detail');
+    // 視覺反饋:選取狀態
+    document.querySelectorAll('#matrix-result td.clickable').forEach(td => {
+      td.style.outline = (td.dataset.src === src && td.dataset.dst === dst) ? '3px solid #2563eb' : 'none';
+    });
 
-  // 視覺反饋:選取狀態
-  document.querySelectorAll('#matrix-result td.clickable').forEach(td => {
-    td.style.outline = (td.dataset.src === src && td.dataset.dst === dst) ? '3px solid #2563eb' : 'none';
-  });
+    clearAllRoles();
 
-  clearAllRoles();
+    if (cell.cost === Infinity) {
+      setNodeRole(src, 'endpoint');
+      setNodeRole(dst, 'endpoint');
+      div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
+        <div class="hint">${src} → ${dst} 沒有可用路徑。</div>`;
+      return;
+    }
 
-  if (cell.cost === Infinity) {
+    // 在拓樸圖上高亮所有 ECMP 路徑(用 rawPaths,含 pseudo-node,才能正確匹配邊)
+    const pathsForHighlight = cell.rawPaths || cell.paths;
+    for (const p of pathsForHighlight) {
+      for (const eid of pathToEdgeIds(p, topology.edges)) setEdgeRole(eid, 'primary');
+    }
     setNodeRole(src, 'endpoint');
     setNodeRole(dst, 'endpoint');
-    div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
-      <div class="hint">${src} → ${dst} 沒有可用路徑。</div>`;
-    return;
-  }
-
-  // 在拓樸圖上高亮所有 ECMP 路徑(用 rawPaths,含 pseudo-node,才能正確匹配邊)
-  const pathsForHighlight = cell.rawPaths || cell.paths;
-  for (const p of pathsForHighlight) {
-    for (const eid of pathToEdgeIds(p, topology.edges)) setEdgeRole(eid, 'primary');
-  }
-  setNodeRole(src, 'endpoint');
-  setNodeRole(dst, 'endpoint');
-  for (const p of pathsForHighlight) for (const n of p) {
-    if (n !== src && n !== dst) setNodeRole(n, 'highlight');
-  }
-
-  // 反方向資訊(非對稱比對)
-  const reverse = matrixCache.matrix[dst][src];
-  const isAsym = reverse && reverse.cost !== Infinity && reverse.cost !== cell.cost;
-
-  let html = `<div class="info-card"><div class="label">${src} → ${dst}</div>
-    <div class="value">cost ${cell.cost}${cell.paths.length > 1 ? ` · ECMP ×${cell.paths.length}` : ''}</div></div>`;
-  for (const p of cell.paths) {
-    html += `<div class="path-item"><span class="cost">${cell.cost}</span>${p.join(' → ')}</div>`;
-  }
-  if (isAsym) {
-    html += `<div class="info-card" style="margin-top:8px;border-color:#a855f7">
-      <div class="label" style="color:#7e22ce">反方向 ${dst} → ${src}</div>
-      <div class="value">cost ${reverse.cost} (非對稱)</div></div>`;
-    for (const p of reverse.paths) {
-      html += `<div class="path-item" style="background:#f3e8ff;border-left-color:#a855f7">
-        <span class="cost">${reverse.cost}</span>${p.join(' → ')}</div>`;
+    for (const p of pathsForHighlight) for (const n of p) {
+      if (n !== src && n !== dst) setNodeRole(n, 'highlight');
     }
-  }
-  div.innerHTML = html;
-}
 
-document.getElementById('runMatrix').addEventListener('click', renderMatrix);
+    // 反方向資訊(非對稱比對)
+    const reverse = matrixCache.matrix[dst][src];
+    const isAsym = reverse && reverse.cost !== Infinity && reverse.cost !== cell.cost;
 
-// ---------- Tab: Failure Simulation (C3) ----------
-document.getElementById('runFailSim').addEventListener('click', () => {
-  const failedNode = document.getElementById('failNode').value;
-  const r = simulateNodeFailure(topology, failedNode);
-
-  clearAllRoles();
-  setNodeRole(failedNode, 'failed-node');
-
-  // classify each edge: 'down' (attached to failed node), 'up' (load increased), 'dec' (load decreased)
-  const isAttached = (eid) => {
-    const e = topology.edges.find(x => x.id === eid);
-    return e && (e.source === failedNode || e.target === failedNode);
-  };
-  const classify = (eid, d) => {
-    if (isAttached(eid)) return 'down';
-    if (d.direction === 'inc') return 'up';
-    if (d.direction === 'dec') return 'dec';
-    return 'none';
-  };
-
-  // 透過 state machine 設定 edge role(瞬時註記,切 Tab 自動清掉)
-  // iterate 全 topology.edges,讓「接在失效節點上但平時零流量」的純備援也能被標到 down
-  const emptyDelta = { direction: 'none', changePct: 0, before: 0, after: 0 };
-  for (const e of topology.edges) {
-    const d = r.delta[e.id] || emptyDelta;
-    const cls = classify(e.id, d);
-    if (cls === 'down')      setEdgeRole(e.id, 'failed-by-node');
-    else if (cls === 'up')   setEdgeRole(e.id, 'load-inc');
-    else if (cls === 'dec')  setEdgeRole(e.id, 'load-dec');
-  }
-
-  // group rows by status for the table
-  const grouped = { down: [], up: [], dec: [] };
-  const seen = new Set();
-  // 先補:所有接在失效節點上的邊一律放進 down,不論 delta 有沒有紀錄
-  for (const e of topology.edges) {
-    if (e.source === failedNode || e.target === failedNode) {
-      grouped.down.push([e.id, r.delta[e.id] || emptyDelta]);
-      seen.add(e.id);
+    let html = `<div class="info-card"><div class="label">${src} → ${dst}</div>
+      <div class="value">cost ${cell.cost}${cell.paths.length > 1 ? ` · ECMP ×${cell.paths.length}` : ''}</div></div>`;
+    for (const p of cell.paths) {
+      html += `<div class="path-item"><span class="cost">${cell.cost}</span>${p.join(' → ')}</div>`;
     }
-  }
-  // 再補:delta 內其他 up / dec(按 |Δ%| 排序)
-  const sortedDelta = Object.entries(r.delta).sort((a,b) => Math.abs(b[1].changePct) - Math.abs(a[1].changePct));
-  for (const [eid, d] of sortedDelta) {
-    if (seen.has(eid)) continue;
-    if (d.direction === 'inc')      grouped.up.push([eid, d]);
-    else if (d.direction === 'dec') grouped.dec.push([eid, d]);
-  }
-
-  let html = '';
-  html += r.isConnected
-    ? '<span class="badge connected">Connected</span>'
-    : '<span class="badge disconnected">DISCONNECTED</span>';
-  html += `<div class="info-card" style="margin-top:6px">
-    <div class="label">Components after failure</div>
-    <div class="value">${r.components.length}</div></div>`;
-  if (!r.isConnected) {
-    html += `<div class="info-card">
-      <div class="label">Disjointed groups</div>
-      <div class="value">${r.components.map(c => '[' + c.join(',') + ']').join(' ')}</div></div>`;
+    if (isAsym) {
+      html += `<div class="info-card" style="margin-top:8px;border-color:#a855f7">
+        <div class="label" style="color:#7e22ce">反方向 ${dst} → ${src}</div>
+        <div class="value">cost ${reverse.cost} (非對稱)</div></div>`;
+      for (const p of reverse.paths) {
+        html += `<div class="path-item" style="background:#f3e8ff;border-left-color:#a855f7">
+          <span class="cost">${reverse.cost}</span>${p.join(' → ')}</div>`;
+      }
+    }
+    div.innerHTML = html;
   }
 
-  html += '<h2 class="section-h mt-3">Top affected links</h2>';
-  html += `<div class="hint mb-2">
-    <span class="badge fail">斷線 ${grouped.down.length}</span>
-    <span class="badge" style="background:#dbeafe;color:#1e40af">↑ 增加 ${grouped.up.length}</span>
-    <span class="badge" style="background:#fef9c3;color:#854d0e">↓ 減少 ${grouped.dec.length}</span>
-  </div>`;
-  html += '<table><tr><th>Edge</th><th>狀態</th><th>Before</th><th>After</th><th>Δ%</th></tr>';
-
-  // order: 斷線 first, then ↑ increases (most impactful reroute hotspots), then ↓ decreases — cap at 12 rows
-  const ordered = [
-    ...grouped.down,
-    ...grouped.up,
-    ...grouped.dec,
-  ].slice(0, 12);
-
-  for (const [eid, d] of ordered) {
-    const e = topology.edges.find(x => x.id === eid);
-    const cls = classify(eid, d);
-    const statusCell =
-      cls === 'down' ? '<span class="badge fail">斷線</span>' :
-      cls === 'up'   ? '<span class="badge" style="background:#dbeafe;color:#1e40af">↑ 增加</span>' :
-                       '<span class="badge" style="background:#fef9c3;color:#854d0e">↓ 減少</span>';
-    const arrow = d.direction === 'inc' ? '↑' : '↓';
-    const color = cls === 'down' ? '#dc2626' : (cls === 'up' ? '#2563eb' : '#ca8a04');
-    const pct = isFinite(d.changePct) ? d.changePct.toFixed(0) + '%' : '∞';
-    html += `<tr><td>${eid}<br><span style="color:#9ca3af;font-size:10px">${e.source}↔${e.target}</span></td>
-      <td>${statusCell}</td>
-      <td>${d.before.toFixed(1)}</td><td>${d.after.toFixed(1)}</td>
-      <td style="color:${color};font-weight:600">${arrow} ${pct}</td></tr>`;
+  function init() {
+    dom('runMatrix').addEventListener('click', render);
   }
-  html += '</table>';
-  document.getElementById('failure-result').innerHTML = html;
-});
 
-// ---------- Tab: ECMP Check (C4) ----------
-document.getElementById('runEcmpCheck').addEventListener('click', () => {
-  const results = ecmpBackupScanAll(topology);
-  const summary = { passed: 0, failed: 0, 'n/a': 0 };
-  for (const r of results) summary[r.status]++;
+  return { init, activate: render };
+})();
 
-  // n/a 細分:no ECMP vs single first-hop
-  const naNoEcmp     = results.filter(r => r.status === 'n/a' && r.reason === 'no ECMP').length;
-  const naSingleHop  = results.filter(r => r.status === 'n/a' && r.reason === 'single first-hop').length;
+// ----------------------------------------------------------------------------
+// §5.3 C3 — All Pairs (全 Pair 路徑 + 純備援盤點)
+// ----------------------------------------------------------------------------
+const C3_AllPairs = (() => {
+  // 列出所有 pair 最短路徑 — 並在拓樸圖上把「被任何 SPT 經過的邊」標成藍線,
+  // 沒被標的就是純備援電路(平時沒有流量,只在主路徑失效時才接手)
+  function render() {
+    clearAllRoles();
+    const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
+    const routers = topology.nodes.filter(n => n.type === 'router' && !failedNodes.has(n.id)).map(n => n.id);
+    const div = dom('all-pairs-result');
+    const rows = [];
+    const usedEdges = new Set();
+    let unreach = 0;
+    for (const a of routers) {
+      for (const b of routers) {
+        if (a === b) continue;
+        const r = dijkstraECMP(adj, a, b);
+        if (r.cost === Infinity) { unreach++; continue; }
+        const seen = new Set();
+        const disp = [];
+        for (const p of r.paths) {
+          const s = stripPseudo(p).join('>');
+          if (!seen.has(s)) { seen.add(s); disp.push(stripPseudo(p)); }
+          for (const eid of pathToEdgeIds(p, topology.edges)) usedEdges.add(eid);
+        }
+        rows.push({ a, b, cost: r.cost, paths: disp });
+      }
+    }
+    rows.sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
 
+    // 視覺化:被用到 → primary(藍);沒用到 → 不動(維持灰色預設,即為純備援)
+    for (const eid of usedEdges) setEdgeRole(eid, 'primary');
+
+    // 純備援邊 = 全部 edges 排除 failed 與 used
+    const allEids = topology.edges.map(e => e.id);
+    const pureBackup = allEids.filter(eid =>
+      !usedEdges.has(eid) && !failedEdges.has(eid)
+    );
+
+    let html = `<div class="mini-stat">
+      <div class="info-card"><div class="label">可達 pair</div><div class="value">${rows.length}${unreach > 0 ? ` <span style="color:#991b1b;font-size:10px">/ 不可達 ${unreach}</span>` : ''}</div></div>
+      <div class="info-card"><div class="label">SPT 用到的邊</div><div class="value" style="color:#2563eb">${usedEdges.size} / ${allEids.length}</div></div>
+    </div>`;
+    if (pureBackup.length > 0) {
+      html += `<div class="info-card" style="border-color:#94a3b8;background:#f8fafc">
+        <div class="label">純備援電路(無任何 SPT 經過,平時無流量)</div>
+        <div class="value" style="color:#475569">${pureBackup.length} 條</div>`;
+      for (const eid of pureBackup) {
+        const e = topology.edges.find(x => x.id === eid);
+        html += `<div style="font-family:monospace;font-size:10px;color:#64748b;margin-top:2px">
+          ${eid}: ${e.source} ↔ ${e.target} (cost ${e.cost}${e.costRev != null && e.costRev !== e.cost ? `/${e.costRev}` : ''})</div>`;
+      }
+      html += '</div>';
+    } else {
+      html += '<div class="hint" style="margin-top:8px"><span class="badge pass">無純備援邊</span>每條鏈路至少被一個 SPT 使用。</div>';
+    }
+    html += '<table class="mt-2"><tr><th>Src</th><th>Dst</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
+    for (const r of rows) {
+      const ecmpBadge = r.paths.length > 1 ? `<span class="badge ecmp">×${r.paths.length}</span>` : '';
+      const pathsHtml = r.paths.map(p => `<div style="font-family:monospace">${p.join(' → ')}</div>`).join('');
+      html += `<tr><td>${r.a}</td><td>${r.b}</td><td>${r.cost}</td><td>${ecmpBadge}</td><td>${pathsHtml}</td></tr>`;
+    }
+    html += '</table>';
+    div.innerHTML = html;
+  }
+
+  function init() {
+    dom('listAllPairs').addEventListener('click', render);
+  }
+
+  return { init, activate: render };
+})();
+
+// ----------------------------------------------------------------------------
+// §5.4 C4 — Failure Simulation (節點失效模擬)
+// ----------------------------------------------------------------------------
+const C4_Failure = (() => {
+  function render() {
+    const failedNode = dom('failNode').value;
+    const r = simulateNodeFailure(topology, failedNode);
+
+    clearAllRoles();
+    setNodeRole(failedNode, 'failed-node');
+
+    // classify each edge: 'down' (attached to failed node), 'up' (load increased), 'dec' (load decreased)
+    const isAttached = (eid) => {
+      const e = topology.edges.find(x => x.id === eid);
+      return e && (e.source === failedNode || e.target === failedNode);
+    };
+    const classify = (eid, d) => {
+      if (isAttached(eid)) return 'down';
+      if (d.direction === 'inc') return 'up';
+      if (d.direction === 'dec') return 'dec';
+      return 'none';
+    };
+
+    // 透過 state machine 設定 edge role(瞬時註記,切 Tab 自動清掉)
+    // iterate 全 topology.edges,讓「接在失效節點上但平時零流量」的純備援也能被標到 down
+    const emptyDelta = { direction: 'none', changePct: 0, before: 0, after: 0 };
+    for (const e of topology.edges) {
+      const d = r.delta[e.id] || emptyDelta;
+      const cls = classify(e.id, d);
+      if (cls === 'down')      setEdgeRole(e.id, 'failed-by-node');
+      else if (cls === 'up')   setEdgeRole(e.id, 'load-inc');
+      else if (cls === 'dec')  setEdgeRole(e.id, 'load-dec');
+    }
+
+    // group rows by status for the table
+    const grouped = { down: [], up: [], dec: [] };
+    const seen = new Set();
+    // 先補:所有接在失效節點上的邊一律放進 down,不論 delta 有沒有紀錄
+    for (const e of topology.edges) {
+      if (e.source === failedNode || e.target === failedNode) {
+        grouped.down.push([e.id, r.delta[e.id] || emptyDelta]);
+        seen.add(e.id);
+      }
+    }
+    // 再補:delta 內其他 up / dec(按 |Δ%| 排序)
+    const sortedDelta = Object.entries(r.delta).sort((a,b) => Math.abs(b[1].changePct) - Math.abs(a[1].changePct));
+    for (const [eid, d] of sortedDelta) {
+      if (seen.has(eid)) continue;
+      if (d.direction === 'inc')      grouped.up.push([eid, d]);
+      else if (d.direction === 'dec') grouped.dec.push([eid, d]);
+    }
+
+    let html = '';
+    html += r.isConnected
+      ? '<span class="badge connected">Connected</span>'
+      : '<span class="badge disconnected">DISCONNECTED</span>';
+    html += `<div class="info-card" style="margin-top:6px">
+      <div class="label">Components after failure</div>
+      <div class="value">${r.components.length}</div></div>`;
+    if (!r.isConnected) {
+      html += `<div class="info-card">
+        <div class="label">Disjointed groups</div>
+        <div class="value">${r.components.map(c => '[' + c.join(',') + ']').join(' ')}</div></div>`;
+    }
+
+    html += '<h2 class="section-h mt-3">Top affected links</h2>';
+    html += `<div class="hint mb-2">
+      <span class="badge fail">斷線 ${grouped.down.length}</span>
+      <span class="badge" style="background:#dbeafe;color:#1e40af">↑ 增加 ${grouped.up.length}</span>
+      <span class="badge" style="background:#fef9c3;color:#854d0e">↓ 減少 ${grouped.dec.length}</span>
+    </div>`;
+    html += '<table><tr><th>Edge</th><th>狀態</th><th>Before</th><th>After</th><th>Δ%</th></tr>';
+
+    // order: 斷線 first, then ↑ increases (most impactful reroute hotspots), then ↓ decreases — cap at 12 rows
+    const ordered = [
+      ...grouped.down,
+      ...grouped.up,
+      ...grouped.dec,
+    ].slice(0, 12);
+
+    for (const [eid, d] of ordered) {
+      const e = topology.edges.find(x => x.id === eid);
+      const cls = classify(eid, d);
+      const statusCell =
+        cls === 'down' ? '<span class="badge fail">斷線</span>' :
+        cls === 'up'   ? '<span class="badge" style="background:#dbeafe;color:#1e40af">↑ 增加</span>' :
+                         '<span class="badge" style="background:#fef9c3;color:#854d0e">↓ 減少</span>';
+      const arrow = d.direction === 'inc' ? '↑' : '↓';
+      const color = cls === 'down' ? '#dc2626' : (cls === 'up' ? '#2563eb' : '#ca8a04');
+      const pct = isFinite(d.changePct) ? d.changePct.toFixed(0) + '%' : '∞';
+      html += `<tr><td>${eid}<br><span style="color:#9ca3af;font-size:10px">${e.source}↔${e.target}</span></td>
+        <td>${statusCell}</td>
+        <td>${d.before.toFixed(1)}</td><td>${d.after.toFixed(1)}</td>
+        <td style="color:${color};font-weight:600">${arrow} ${pct}</td></tr>`;
+    }
+    html += '</table>';
+    dom('failure-result').innerHTML = html;
+  }
+
+  function init() {
+    dom('runFailSim').addEventListener('click', render);
+  }
+
+  return { init };
+})();
+
+// ----------------------------------------------------------------------------
+// §5.5 C5 — ECMP Backup Check (ECMP 備援完整性檢查)
+// ----------------------------------------------------------------------------
+const C5_Ecmp = (() => {
   // 中文化 reason — 給 failed 的列說明為什麼掛掉
-  const fmtReason = (reason) => {
+  function fmtReason(reason) {
     if (!reason) return '';
     const m1 = reason.match(/^removing (.+) → unreachable$/);
     if (m1) return `砍掉 <b>${m1[1]}</b> 後變不可達`;
@@ -883,310 +957,360 @@ document.getElementById('runEcmpCheck').addEventListener('click', () => {
     if (reason === 'no ECMP')         return '無 ECMP(只有一條最短路)';
     if (reason === 'single first-hop') return '多條 path 共用同一出口邊';
     return reason;
-  };
+  }
 
-  let html = `<div class="mini-stat">
-    <div class="info-card"><div class="label">通過</div><div class="value" style="color:#166534">${summary.passed}</div></div>
-    <div class="info-card"><div class="label">失敗</div><div class="value" style="color:#991b1b">${summary.failed}</div></div>
-    </div>
-    <div class="info-card"><div class="label">不適用</div>
-      <div class="value">${summary['n/a']} <span style="color:#9ca3af;font-weight:400;font-size:10px">(無 ECMP ${naNoEcmp} · 單一出口 ${naSingleHop})</span></div>
-    </div>`;
+  function render() {
+    const results = ecmpBackupScanAll(topology);
+    const summary = { passed: 0, failed: 0, 'n/a': 0 };
+    for (const r of results) summary[r.status]++;
 
-  // 只列出 failed 的細項 — 通過跟不適用太多筆,平鋪沒意義
-  const failed = results.filter(r => r.status === 'failed');
-  if (failed.length === 0) {
-    html += '<div class="mt-2"><span class="badge pass">所有有 ECMP 的 pair 都通過備援檢查</span></div>';
-  } else {
-    html += '<h2 class="section-h mt-3">失敗明細</h2>';
-    html += '<table class="mt-1"><tr><th>來源 → 目的</th><th>原因</th></tr>';
-    for (const r of failed) {
-      html += `<tr><td>${r.src} → ${r.dst}</td>
-        <td style="color:#991b1b">${fmtReason(r.reason)}</td></tr>`;
+    // n/a 細分:no ECMP vs single first-hop
+    const naNoEcmp     = results.filter(r => r.status === 'n/a' && r.reason === 'no ECMP').length;
+    const naSingleHop  = results.filter(r => r.status === 'n/a' && r.reason === 'single first-hop').length;
+
+    let html = `<div class="mini-stat">
+      <div class="info-card"><div class="label">通過</div><div class="value" style="color:#166534">${summary.passed}</div></div>
+      <div class="info-card"><div class="label">失敗</div><div class="value" style="color:#991b1b">${summary.failed}</div></div>
+      </div>
+      <div class="info-card"><div class="label">不適用</div>
+        <div class="value">${summary['n/a']} <span style="color:#9ca3af;font-weight:400;font-size:10px">(無 ECMP ${naNoEcmp} · 單一出口 ${naSingleHop})</span></div>
+      </div>`;
+
+    // 只列出 failed 的細項 — 通過跟不適用太多筆,平鋪沒意義
+    const failed = results.filter(r => r.status === 'failed');
+    if (failed.length === 0) {
+      html += '<div class="mt-2"><span class="badge pass">所有有 ECMP 的 pair 都通過備援檢查</span></div>';
+    } else {
+      html += '<h2 class="section-h mt-3">失敗明細</h2>';
+      html += '<table class="mt-1"><tr><th>來源 → 目的</th><th>原因</th></tr>';
+      for (const r of failed) {
+        html += `<tr><td>${r.src} → ${r.dst}</td>
+          <td style="color:#991b1b">${fmtReason(r.reason)}</td></tr>`;
+      }
+      html += '</table>';
     }
-    html += '</table>';
+
+    // 完整明細放在 collapsible details 裡,需要才展開
+    html += `<details class="mt-3"><summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-900">展開全部 ${results.length} 對的掃描結果</summary>`;
+    html += '<table class="mt-1"><tr><th>Src</th><th>Dst</th><th>狀態</th><th>備註</th></tr>';
+    for (const r of results) {
+      const cls = r.status === 'passed' ? 'pass' : (r.status === 'failed' ? 'fail' : 'na');
+      const label = r.status === 'passed' ? '通過' : (r.status === 'failed' ? '失敗' : '不適用');
+      html += `<tr><td>${r.src}</td><td>${r.dst}</td>
+        <td><span class="badge ${cls}">${label}</span></td>
+        <td style="color:#6b7280;font-size:10px">${r.status === 'passed' ? '' : fmtReason(r.reason)}</td></tr>`;
+    }
+    html += '</table></details>';
+
+    dom('ecmp-result').innerHTML = html;
   }
 
-  // 完整明細放在 collapsible details 裡,需要才展開
-  html += `<details class="mt-3"><summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-900">展開全部 ${results.length} 對的掃描結果</summary>`;
-  html += '<table class="mt-1"><tr><th>Src</th><th>Dst</th><th>狀態</th><th>備註</th></tr>';
-  for (const r of results) {
-    const cls = r.status === 'passed' ? 'pass' : (r.status === 'failed' ? 'fail' : 'na');
-    const label = r.status === 'passed' ? '通過' : (r.status === 'failed' ? '失敗' : '不適用');
-    html += `<tr><td>${r.src}</td><td>${r.dst}</td>
-      <td><span class="badge ${cls}">${label}</span></td>
-      <td style="color:#6b7280;font-size:10px">${r.status === 'passed' ? '' : fmtReason(r.reason)}</td></tr>`;
+  function init() {
+    dom('runEcmpCheck').addEventListener('click', render);
   }
-  html += '</table></details>';
 
-  document.getElementById('ecmp-result').innerHTML = html;
-});
+  return { init };
+})();
 
-// ---------- Tab: Asymmetric (C5) ----------
-document.getElementById('runAsymScan').addEventListener('click', () => {
-  const asym = detectAsymmetric(topology);
-  clearAllRoles();
-  for (const x of asym) {
-    setNodeRole(x.a, 'asym-mark');
-    setNodeRole(x.b, 'asym-mark');
-  }
+// ----------------------------------------------------------------------------
+// §5.6 C6 — Asymmetric Path Detection (非對稱)
+// ----------------------------------------------------------------------------
+const C6_Asym = (() => {
   // 用 > 串接的路徑字串轉成箭頭顯示
   const fmtPath = (s) => s.split('>').join(' → ');
   // revPaths 在演算法裡為了能跟 fwdPaths 比對相等性,儲存時已做 reverse。
   // 顯示時需要再反轉回來,才符合 B→A 的實際封包走向。
   const fmtPathReversed = (s) => s.split('>').reverse().join(' → ');
 
-  let html = '';
-  if (asym.length === 0) {
-    html = '<span class="badge pass">所有 pair 路徑對稱</span>';
-  } else {
-    html += `<span class="badge fail">發現 ${asym.length} 組非對稱路徑</span>`;
-    html += '<div class="hint mt-2">下列 Router pair 在兩個方向上路徑或成本不同,封包來回會走不同路徑。</div>';
-
+  function render() {
+    const asym = detectAsymmetric(topology);
+    clearAllRoles();
     for (const x of asym) {
-      // 分類差異原因 — 幫助使用者快速理解
-      const costDiff = x.fwdCost !== x.revCost;
-      const pathDiff = !(x.fwdPaths.length === x.revPaths.length &&
-                         x.fwdPaths.every(p => x.revPaths.includes(p)));
-      const reasons = [];
-      if (costDiff) reasons.push(`Cost 不同 (${x.fwdCost} vs ${x.revCost})`);
-      if (pathDiff) reasons.push(`路徑集合不同`);
-
-      html += `<div class="info-card" style="margin-top:8px">
-        <div class="label" style="display:flex;justify-content:space-between;align-items:center">
-          <span>${x.a} ↔ ${x.b}</span>
-          <span style="color:#b45309">${reasons.join(' · ')}</span>
-        </div>
-        <div style="margin-top:6px">
-          <div style="font-weight:600;color:#1e40af">${x.a} → ${x.b}　<span style="color:#64748b;font-weight:400">cost ${x.fwdCost}</span></div>
-          ${x.fwdPaths.map(p => `<div style="font-family:monospace;padding-left:12px;color:#334155">${fmtPath(p)}</div>`).join('')}
-        </div>
-        <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb">
-          <div style="font-weight:600;color:#1e40af">${x.b} → ${x.a}　<span style="color:#64748b;font-weight:400">cost ${x.revCost}</span></div>
-          ${x.revPaths.map(p => `<div style="font-family:monospace;padding-left:12px;color:#334155">${fmtPathReversed(p)}</div>`).join('')}
-        </div>
-      </div>`;
+      setNodeRole(x.a, 'asym-mark');
+      setNodeRole(x.b, 'asym-mark');
     }
-  }
-  document.getElementById('asym-result').innerHTML = html;
-});
 
-// ---------- Tab: Heatmap (C6) ----------
-document.getElementById('runHeatmap').addEventListener('click', () => {
-  clearAllRoles();
-  const hm = computeHeatmap(topology, subnetIndex);
-  for (const [nid, data] of Object.entries(hm)) {
-    let role = 'heat-green';
-    if (data.ratio > 0.66) role = 'heat-red';
-    else if (data.ratio > 0.33) role = 'heat-orange';
-    else if (data.ratio > 0)    role = 'heat-yellow';
-    setNodeRole(nid, role);
-  }
-  let html = '<table><tr><th>Node</th><th>Total</th><th>Not-backed</th><th>Ratio</th></tr>';
-  for (const [nid, data] of Object.entries(hm)) {
-    const pct = (data.ratio * 100).toFixed(0) + '%';
-    html += `<tr class="clickable" data-node="${nid}"><td>${nid}</td>
-      <td>${data.total}</td><td>${data.notbackuped}</td><td>${pct}</td></tr>`;
-  }
-  html += '</table>';
-  html += '<h2 class="section-h mt-3">Subnet Index (§3.2 Rule 5)</h2>';
-  html += '<table><tr><th>Subnet</th><th>Advertisers</th><th>Status</th></tr>';
-  for (const [sn, advs] of Object.entries(subnetIndex)) {
-    const backed = advs.size >= 2;
-    html += `<tr><td>${sn}</td><td>${[...advs].join(', ')}</td>
-      <td><span class="badge ${backed?'pass':'fail'}">${backed?'backed-up':'single'}</span></td></tr>`;
-  }
-  html += '</table>';
-  document.getElementById('heatmap-result').innerHTML = html;
-});
-document.getElementById('clearHeatmap').addEventListener('click', () => {
-  clearAllRoles();
-  document.getElementById('heatmap-result').innerHTML = '';
-});
+    let html = '';
+    if (asym.length === 0) {
+      html = '<span class="badge pass">所有 pair 路徑對稱</span>';
+    } else {
+      html += `<span class="badge fail">發現 ${asym.length} 組非對稱路徑</span>`;
+      html += '<div class="hint mt-2">下列 Router pair 在兩個方向上路徑或成本不同,封包來回會走不同路徑。</div>';
 
-// ---------- Tab: N-1 Worst-case (C8) ----------
+      for (const x of asym) {
+        // 分類差異原因 — 幫助使用者快速理解
+        const costDiff = x.fwdCost !== x.revCost;
+        const pathDiff = !(x.fwdPaths.length === x.revPaths.length &&
+                           x.fwdPaths.every(p => x.revPaths.includes(p)));
+        const reasons = [];
+        if (costDiff) reasons.push(`Cost 不同 (${x.fwdCost} vs ${x.revCost})`);
+        if (pathDiff) reasons.push(`路徑集合不同`);
+
+        html += `<div class="info-card" style="margin-top:8px">
+          <div class="label" style="display:flex;justify-content:space-between;align-items:center">
+            <span>${x.a} ↔ ${x.b}</span>
+            <span style="color:#b45309">${reasons.join(' · ')}</span>
+          </div>
+          <div style="margin-top:6px">
+            <div style="font-weight:600;color:#1e40af">${x.a} → ${x.b}　<span style="color:#64748b;font-weight:400">cost ${x.fwdCost}</span></div>
+            ${x.fwdPaths.map(p => `<div style="font-family:monospace;padding-left:12px;color:#334155">${fmtPath(p)}</div>`).join('')}
+          </div>
+          <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb">
+            <div style="font-weight:600;color:#1e40af">${x.b} → ${x.a}　<span style="color:#64748b;font-weight:400">cost ${x.revCost}</span></div>
+            ${x.revPaths.map(p => `<div style="font-family:monospace;padding-left:12px;color:#334155">${fmtPathReversed(p)}</div>`).join('')}
+          </div>
+        </div>`;
+      }
+    }
+    dom('asym-result').innerHTML = html;
+  }
+
+  function init() {
+    dom('runAsymScan').addEventListener('click', render);
+  }
+
+  return { init };
+})();
+
+// ----------------------------------------------------------------------------
+// §5.7 C7 — Subnet Heatmap
+// ----------------------------------------------------------------------------
+const C7_Heatmap = (() => {
+  function render() {
+    clearAllRoles();
+    const hm = computeHeatmap(topology, subnetIndex);
+    for (const [nid, data] of Object.entries(hm)) {
+      let role = 'heat-green';
+      if (data.ratio > 0.66) role = 'heat-red';
+      else if (data.ratio > 0.33) role = 'heat-orange';
+      else if (data.ratio > 0)    role = 'heat-yellow';
+      setNodeRole(nid, role);
+    }
+    let html = '<table><tr><th>Node</th><th>Total</th><th>Not-backed</th><th>Ratio</th></tr>';
+    for (const [nid, data] of Object.entries(hm)) {
+      const pct = (data.ratio * 100).toFixed(0) + '%';
+      html += `<tr class="clickable" data-node="${nid}"><td>${nid}</td>
+        <td>${data.total}</td><td>${data.notbackuped}</td><td>${pct}</td></tr>`;
+    }
+    html += '</table>';
+    html += '<h2 class="section-h mt-3">Subnet Index (§3.2 Rule 5)</h2>';
+    html += '<table><tr><th>Subnet</th><th>Advertisers</th><th>Status</th></tr>';
+    for (const [sn, advs] of Object.entries(subnetIndex)) {
+      const backed = advs.size >= 2;
+      html += `<tr><td>${sn}</td><td>${[...advs].join(', ')}</td>
+        <td><span class="badge ${backed?'pass':'fail'}">${backed?'backed-up':'single'}</span></td></tr>`;
+    }
+    html += '</table>';
+    dom('heatmap-result').innerHTML = html;
+  }
+
+  function clear() {
+    clearAllRoles();
+    dom('heatmap-result').innerHTML = '';
+  }
+
+  function init() {
+    dom('runHeatmap').addEventListener('click', render);
+    dom('clearHeatmap').addEventListener('click', clear);
+  }
+
+  return { init };
+})();
+
+// ----------------------------------------------------------------------------
+// §5.8 C8 — N-1 Worst-case Ranking
+// ----------------------------------------------------------------------------
 // 枚舉所有單點失效(每條 edge + 每台 router),對全網每對 pair 重算 SPT,
 // 找出最差延遲(cost)以及最致命的失效情境。設計審計性質 — 忽略右鍵故障狀態。
-let n1Cache = null;
+const C8_N1 = (() => {
+  let n1Cache = null;
 
-function fmtCulprit(s) {
-  if (s.kind === 'edge') {
-    const e = s.edge;
-    return `<span style="color:#dc2626">L</span> ${s.id} (${e.source}↔${e.target}) 斷`;
-  }
-  return `<span style="color:#dc2626">R</span> ${s.id} 失效`;
-}
-
-function renderN1Visual(row) {
-  clearAllRoles();
-  setNodeRole(row.a, 'endpoint');
-  setNodeRole(row.b, 'endpoint');
-  // 取第一個 culprit 視覺化
-  const s = row.culprits[0];
-  if (!s) return;
-  const fE = s.kind === 'edge' ? new Set([s.id]) : new Set();
-  const fN = s.kind === 'node' ? new Set([s.id]) : new Set();
-  if (s.kind === 'edge') setEdgeRole(s.id, 'failed-by-node');
-  if (s.kind === 'node') setNodeRole(s.id, 'failed-node');
-  // 重繞路徑
-  const adj = buildAdjacency(topology.edges, fE, fN);
-  const r = dijkstraECMP(adj, row.a, row.b);
-  if (r.cost !== Infinity) {
-    for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
-      setEdgeRole(eid, 'backup');
+  function fmtCulprit(s) {
+    if (s.kind === 'edge') {
+      const e = s.edge;
+      return `<span style="color:#dc2626">L</span> ${s.id} (${e.source}↔${e.target}) 斷`;
     }
-  }
-}
-
-document.getElementById('runN1Scan').addEventListener('click', () => {
-  const result = computeN1WorstCase(topology);
-  n1Cache = result;
-  const { pairRows, failureRows } = result;
-
-  const unreachPairs = pairRows.filter(p => p.ratio === Infinity).length;
-  const severePairs  = pairRows.filter(p => p.ratio !== Infinity && p.ratio >= 2).length;
-  const minorPairs   = pairRows.filter(p => p.ratio !== Infinity && p.ratio < 2).length;
-  const totalRouters = topology.nodes.filter(n => n.type === 'router').length;
-  const totalPairs = totalRouters * (totalRouters - 1);
-  const okPairs = totalPairs - pairRows.length;
-
-  let html = `<div class="mini-stat">
-    <div class="info-card"><div class="label">不可達</div><div class="value" style="color:#991b1b">${unreachPairs}</div></div>
-    <div class="info-card"><div class="label">嚴重劣化 (×≥2)</div><div class="value" style="color:#c2410c">${severePairs}</div></div>
-  </div>
-  <div class="mini-stat">
-    <div class="info-card"><div class="label">輕微劣化</div><div class="value" style="color:#a16207">${minorPairs}</div></div>
-    <div class="info-card"><div class="label">不受影響</div><div class="value" style="color:#166534">${okPairs}</div></div>
-  </div>`;
-
-  html += '<h2 class="section-h mt-3">最脆弱 Pair (Top 20)</h2>';
-  if (pairRows.length === 0) {
-    html += '<span class="badge pass">所有 pair 都能撐過任一單點失效</span>';
-  } else {
-    html += '<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>cost</th><th>元凶</th></tr>';
-    for (const row of pairRows.slice(0, 20)) {
-      const ratioBadge = row.ratio === Infinity
-        ? '<span class="badge fail">∞</span>'
-        : `<span class="badge backup">×${row.ratio.toFixed(2)}</span>`;
-      const worstCell = row.worstCost === Infinity ? '∞' : row.worstCost;
-      const culpritList = row.culprits.slice(0, 3).map(fmtCulprit).join('<br>');
-      const more = row.culprits.length > 3 ? `<br><span style="color:#9ca3af;font-size:10px">+${row.culprits.length - 3} more</span>` : '';
-      html += `<tr class="clickable" data-pair-idx="${pairRows.indexOf(row)}">
-        <td>${row.a} → ${row.b}</td>
-        <td>${row.base}</td>
-        <td style="font-weight:600">${worstCell}</td>
-        <td>${ratioBadge}</td>
-        <td style="font-size:10px">${culpritList}${more}</td>
-      </tr>`;
-    }
-    html += '</table>';
+    return `<span style="color:#dc2626">R</span> ${s.id} 失效`;
   }
 
-  html += '<h2 class="section-h mt-3">最致命失效 (Top 10)</h2>';
-  if (failureRows.length === 0) {
-    html += '<span class="badge pass">無單點失效會造成任何 pair 劣化</span>';
-  } else {
-    html += '<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th></tr>';
-    for (const f of failureRows.slice(0, 10)) {
-      const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
-      html += `<tr><td>${fmtCulprit(f)}</td>
-        <td style="color:${f.unreachable > 0 ? '#991b1b' : '#9ca3af'};font-weight:${f.unreachable > 0 ? 600 : 400}">${f.unreachable}</td>
-        <td>${f.degraded}</td>
-        <td>${f.totalDelta}</td>
-        <td>${ratioStr}</td>
-      </tr>`;
-    }
-    html += '</table>';
-  }
-
-  document.getElementById('n1-result').innerHTML = html;
-
-  // 綁定 pair row 點擊事件 → 圖上視覺化
-  document.querySelectorAll('#n1-result tr.clickable').forEach(tr => {
-    tr.addEventListener('click', () => {
-      const idx = parseInt(tr.dataset.pairIdx, 10);
-      renderN1Visual(pairRows[idx]);
-      document.querySelectorAll('#n1-result tr.clickable').forEach(r => r.classList.remove('row-active'));
-      tr.classList.add('row-active');
-    });
-  });
-});
-
-// ---------- Tab: Edge Cost Editor ----------
-function edgeLabel(e) {
-  return (e.costRev != null && e.costRev !== e.cost) ? `${e.cost}/${e.costRev}` : String(e.cost);
-}
-
-function applyEdgeChange(eid) {
-  const e = topology.edges.find(x => x.id === eid);
-  cy.getElementById(eid).data('label', edgeLabel(e));
-  // auto-recompute if path tab active
-  if (document.getElementById('tab-path').classList.contains('active')) {
-    renderPath(document.getElementById('src').value, document.getElementById('dst').value);
-  }
-}
-
-function isModified(e, orig) {
-  return e.cost !== orig.cost || (e.costRev ?? null) !== (orig.costRev ?? null);
-}
-
-function renderEdgeEditor() {
-  const div = document.getElementById('edges-result');
-  let html = '<table><tr><th>ID</th><th>Link</th><th>Type</th><th>Cost →</th><th>Cost ←</th></tr>';
-  for (const e of topology.edges) {
-    const orig = originalEdges.find(o => o.id === e.id);
-    const modCls = isModified(e, orig) ? ' modified' : '';
-    const fwdInput = `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="fwd" value="${e.cost}" />`;
-    const revInput = e.type === 'p2p'
-      ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" />`
-      : '<span class="text-gray-400">—</span>';
-    html += `<tr data-edge-row="${e.id}"><td>${e.id}</td><td>${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${fwdInput}</td><td>${revInput}</td></tr>`;
-  }
-  html += '</table>';
-  div.innerHTML = html;
-
-  div.querySelectorAll('.cost-input').forEach(input => {
-    input.addEventListener('input', (ev) => {
-      const eid = ev.target.dataset.edge;
-      const dir = ev.target.dataset.dir;
-      const v = parseInt(ev.target.value, 10);
-      if (isNaN(v) || v < 1) return;
-      const edge = topology.edges.find(e => e.id === eid);
-      if (dir === 'fwd') {
-        edge.cost = v;
-      } else {
-        edge.costRev = v;
+  function renderVisual(row) {
+    clearAllRoles();
+    setNodeRole(row.a, 'endpoint');
+    setNodeRole(row.b, 'endpoint');
+    // 取第一個 culprit 視覺化
+    const s = row.culprits[0];
+    if (!s) return;
+    const fE = s.kind === 'edge' ? new Set([s.id]) : new Set();
+    const fN = s.kind === 'node' ? new Set([s.id]) : new Set();
+    if (s.kind === 'edge') setEdgeRole(s.id, 'failed-by-node');
+    if (s.kind === 'node') setNodeRole(s.id, 'failed-node');
+    // 重繞路徑
+    const adj = buildAdjacency(topology.edges, fE, fN);
+    const r = dijkstraECMP(adj, row.a, row.b);
+    if (r.cost !== Infinity) {
+      for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
+        setEdgeRole(eid, 'backup');
       }
-      // toggle modified styling on both inputs of this row
-      const orig = originalEdges.find(o => o.id === eid);
-      const modified = isModified(edge, orig);
-      div.querySelectorAll(`[data-edge="${eid}"]`).forEach(el => {
-        el.classList.toggle('modified', modified);
+    }
+  }
+
+  function render() {
+    const result = computeN1WorstCase(topology);
+    n1Cache = result;
+    const { pairRows, failureRows } = result;
+
+    const unreachPairs = pairRows.filter(p => p.ratio === Infinity).length;
+    const severePairs  = pairRows.filter(p => p.ratio !== Infinity && p.ratio >= 2).length;
+    const minorPairs   = pairRows.filter(p => p.ratio !== Infinity && p.ratio < 2).length;
+    const totalRouters = topology.nodes.filter(n => n.type === 'router').length;
+    const totalPairs = totalRouters * (totalRouters - 1);
+    const okPairs = totalPairs - pairRows.length;
+
+    let html = `<div class="mini-stat">
+      <div class="info-card"><div class="label">不可達</div><div class="value" style="color:#991b1b">${unreachPairs}</div></div>
+      <div class="info-card"><div class="label">嚴重劣化 (×≥2)</div><div class="value" style="color:#c2410c">${severePairs}</div></div>
+    </div>
+    <div class="mini-stat">
+      <div class="info-card"><div class="label">輕微劣化</div><div class="value" style="color:#a16207">${minorPairs}</div></div>
+      <div class="info-card"><div class="label">不受影響</div><div class="value" style="color:#166534">${okPairs}</div></div>
+    </div>`;
+
+    html += '<h2 class="section-h mt-3">最脆弱 Pair (Top 20)</h2>';
+    if (pairRows.length === 0) {
+      html += '<span class="badge pass">所有 pair 都能撐過任一單點失效</span>';
+    } else {
+      html += '<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>cost</th><th>元凶</th></tr>';
+      for (const row of pairRows.slice(0, 20)) {
+        const ratioBadge = row.ratio === Infinity
+          ? '<span class="badge fail">∞</span>'
+          : `<span class="badge backup">×${row.ratio.toFixed(2)}</span>`;
+        const worstCell = row.worstCost === Infinity ? '∞' : row.worstCost;
+        const culpritList = row.culprits.slice(0, 3).map(fmtCulprit).join('<br>');
+        const more = row.culprits.length > 3 ? `<br><span style="color:#9ca3af;font-size:10px">+${row.culprits.length - 3} more</span>` : '';
+        html += `<tr class="clickable" data-pair-idx="${pairRows.indexOf(row)}">
+          <td>${row.a} → ${row.b}</td>
+          <td>${row.base}</td>
+          <td style="font-weight:600">${worstCell}</td>
+          <td>${ratioBadge}</td>
+          <td style="font-size:10px">${culpritList}${more}</td>
+        </tr>`;
+      }
+      html += '</table>';
+    }
+
+    html += '<h2 class="section-h mt-3">最致命失效 (Top 10)</h2>';
+    if (failureRows.length === 0) {
+      html += '<span class="badge pass">無單點失效會造成任何 pair 劣化</span>';
+    } else {
+      html += '<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th></tr>';
+      for (const f of failureRows.slice(0, 10)) {
+        const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
+        html += `<tr><td>${fmtCulprit(f)}</td>
+          <td style="color:${f.unreachable > 0 ? '#991b1b' : '#9ca3af'};font-weight:${f.unreachable > 0 ? 600 : 400}">${f.unreachable}</td>
+          <td>${f.degraded}</td>
+          <td>${f.totalDelta}</td>
+          <td>${ratioStr}</td>
+        </tr>`;
+      }
+      html += '</table>';
+    }
+
+    dom('n1-result').innerHTML = html;
+
+    // 綁定 pair row 點擊事件 → 圖上視覺化
+    document.querySelectorAll('#n1-result tr.clickable').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const idx = parseInt(tr.dataset.pairIdx, 10);
+        renderVisual(pairRows[idx]);
+        document.querySelectorAll('#n1-result tr.clickable').forEach(r => r.classList.remove('row-active'));
+        tr.classList.add('row-active');
       });
-      applyEdgeChange(eid);
     });
-  });
-}
+  }
 
-// Serialize current topology back to JS source (one entry per line, original-style)
-function serializeTopology(topo) {
-  const fmtVal = v => JSON.stringify(v);
-  const fmtObj = obj => '{ ' +
-    Object.entries(obj).map(([k, v]) => `${k}: ${fmtVal(v)}`).join(', ') + ' }';
+  function init() {
+    dom('runN1Scan').addEventListener('click', render);
+  }
 
-  const cleanEdges = topo.edges.map(e => {
-    const out = { ...e };
-    if (out.costRev != null && out.costRev === out.cost) delete out.costRev;
-    return out;
-  });
+  return { init, activate: render };
+})();
 
-  const nodesStr = topo.nodes.map(n => '    ' + fmtObj(n)).join(',\n');
-  const edgesStr = cleanEdges.map(e => '    ' + fmtObj(e)).join(',\n');
-  const extStr   = (topo.externals || []).map(e => '    ' + fmtObj(e)).join(',\n');
-  const posStr   = Object.entries(topo.positions)
-    .map(([k, v]) => `    ${k}: ${fmtObj(v)}`).join(',\n');
+// ----------------------------------------------------------------------------
+// §5.9 Edges Editor (鏈路成本編輯)
+// ----------------------------------------------------------------------------
+const Edges_Editor = (() => {
+  function edgeLabel(e) {
+    return (e.costRev != null && e.costRev !== e.cost) ? `${e.cost}/${e.costRev}` : String(e.cost);
+  }
 
-  return `// Exported from BlastRadius POC at ${new Date().toISOString()}
+  function isModified(e, orig) {
+    return e.cost !== orig.cost || (e.costRev ?? null) !== (orig.costRev ?? null);
+  }
+
+  function applyEdgeChange(eid) {
+    const e = topology.edges.find(x => x.id === eid);
+    cy.getElementById(eid).data('label', edgeLabel(e));
+    // auto-recompute if path tab active
+    rerenderIfPathActive();
+  }
+
+  function render() {
+    const div = dom('edges-result');
+    let html = '<table><tr><th>ID</th><th>Link</th><th>Type</th><th>Cost →</th><th>Cost ←</th></tr>';
+    for (const e of topology.edges) {
+      const orig = originalEdges.find(o => o.id === e.id);
+      const modCls = isModified(e, orig) ? ' modified' : '';
+      const fwdInput = `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="fwd" value="${e.cost}" />`;
+      const revInput = e.type === 'p2p'
+        ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" />`
+        : '<span class="text-gray-400">—</span>';
+      html += `<tr data-edge-row="${e.id}"><td>${e.id}</td><td>${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${fwdInput}</td><td>${revInput}</td></tr>`;
+    }
+    html += '</table>';
+    div.innerHTML = html;
+
+    div.querySelectorAll('.cost-input').forEach(input => {
+      input.addEventListener('input', (ev) => {
+        const eid = ev.target.dataset.edge;
+        const dir = ev.target.dataset.dir;
+        const v = parseInt(ev.target.value, 10);
+        if (isNaN(v) || v < 1) return;
+        const edge = topology.edges.find(e => e.id === eid);
+        if (dir === 'fwd') {
+          edge.cost = v;
+        } else {
+          edge.costRev = v;
+        }
+        // toggle modified styling on both inputs of this row
+        const orig = originalEdges.find(o => o.id === eid);
+        const modified = isModified(edge, orig);
+        div.querySelectorAll(`[data-edge="${eid}"]`).forEach(el => {
+          el.classList.toggle('modified', modified);
+        });
+        applyEdgeChange(eid);
+      });
+    });
+  }
+
+  // Serialize current topology back to JS source (one entry per line, original-style)
+  function serializeTopology(topo) {
+    const fmtVal = v => JSON.stringify(v);
+    const fmtObj = obj => '{ ' +
+      Object.entries(obj).map(([k, v]) => `${k}: ${fmtVal(v)}`).join(', ') + ' }';
+
+    const cleanEdges = topo.edges.map(e => {
+      const out = { ...e };
+      if (out.costRev != null && out.costRev === out.cost) delete out.costRev;
+      return out;
+    });
+
+    const nodesStr = topo.nodes.map(n => '    ' + fmtObj(n)).join(',\n');
+    const edgesStr = cleanEdges.map(e => '    ' + fmtObj(e)).join(',\n');
+    const extStr   = (topo.externals || []).map(e => '    ' + fmtObj(e)).join(',\n');
+    const posStr   = Object.entries(topo.positions)
+      .map(([k, v]) => `    ${k}: ${fmtObj(v)}`).join(',\n');
+
+    return `// Exported from BlastRadius POC at ${new Date().toISOString()}
 const topology = {
   nodes: [
 ${nodesStr}
@@ -1202,73 +1326,83 @@ ${posStr}
   },
 };
 `;
-}
-
-document.getElementById('exportTopo').addEventListener('click', () => {
-  // sync current node positions from Cytoscape (capture manual drags)
-  cy.nodes().forEach(n => {
-    const p = n.position();
-    topology.positions[n.id()] = { x: Math.round(p.x), y: Math.round(p.y) };
-  });
-  const content = serializeTopology(topology);
-  const blob = new Blob([content], { type: 'application/javascript' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'topology.js';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-});
-
-document.getElementById('resetEdges').addEventListener('click', () => {
-  for (const orig of originalEdges) {
-    const e = topology.edges.find(x => x.id === orig.id);
-    e.cost = orig.cost;
-    e.costRev = orig.costRev;
-    cy.getElementById(orig.id).data('label', edgeLabel(e));
   }
-  renderEdgeEditor();
-  if (document.getElementById('tab-path').classList.contains('active')) {
-    renderPath(document.getElementById('src').value, document.getElementById('dst').value);
-  }
-});
 
-// ---------- Tab switching ----------
-// 切 Tab 時自動清掉所有「瞬時 role」(分析註記),保留「op」(使用者持久操作如鏈路故障)。
+  function exportTopo() {
+    // sync current node positions from Cytoscape (capture manual drags)
+    cy.nodes().forEach(n => {
+      const p = n.position();
+      topology.positions[n.id()] = { x: Math.round(p.x), y: Math.round(p.y) };
+    });
+    const content = serializeTopology(topology);
+    const blob = new Blob([content], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'topology.js';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function resetEdges() {
+    for (const orig of originalEdges) {
+      const e = topology.edges.find(x => x.id === orig.id);
+      e.cost = orig.cost;
+      e.costRev = orig.costRev;
+      cy.getElementById(orig.id).data('label', edgeLabel(e));
+    }
+    render();
+    rerenderIfPathActive();
+  }
+
+  function init() {
+    dom('exportTopo').addEventListener('click', exportTopo);
+    dom('resetEdges').addEventListener('click', resetEdges);
+  }
+
+  return { init, activate: render };
+})();
+
+// ============================================================================
+// §6 TAB REGISTRY — 對應 SPEC §12 Tab 行為矩陣
+// ============================================================================
+// data-tab 屬性 → 模組。切 Tab 時呼叫 activate(若有定義)就完成自動執行語意。
+const TABS = {
+  path:     C1_Path,
+  matrix:   C2_Matrix,
+  allpairs: C3_AllPairs,
+  failure:  C4_Failure,
+  ecmp:     C5_Ecmp,
+  asym:     C6_Asym,
+  heatmap:  C7_Heatmap,
+  n1:       C8_N1,
+  edges:    Edges_Editor,
+};
+
+// 一次性綁定每個模組的按鈕 listener
+for (const mod of Object.values(TABS)) mod.init?.();
+
+// Tab 切換:清掉所有「瞬時 role」(分析註記),保留「op」(使用者持久操作如鏈路故障)。
 // 這樣使用者從 Heatmap 切到 Path 不會殘留上一個 Tab 的著色。
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    dom('tab-' + tab.dataset.tab).classList.add('active');
     clearAllRoles();
-    if (tab.dataset.tab === 'edges') renderEdgeEditor();
-    // 切到矩陣 Tab 自動計算
-    if (tab.dataset.tab === 'matrix') renderMatrix();
-    // 切到全 Pair Tab 自動計算
-    if (tab.dataset.tab === 'allpairs') document.getElementById('listAllPairs').click();
-    // 切到 N-1 Tab 自動掃描
-    if (tab.dataset.tab === 'n1') document.getElementById('runN1Scan').click();
-    // 切回 Path Tab 自動重算,讓使用者看到當前 src/dst 結果
-    if (tab.dataset.tab === 'path') {
-      renderPath(document.getElementById('src').value, document.getElementById('dst').value);
-    }
+    TABS[tab.dataset.tab]?.activate?.();
   });
 });
 
-// highlight the edge editor row when an edge is tapped (visual cross-reference)
-cy.on('tap', 'edge', (evt) => {
-  const eid = evt.target.id();
-  document.querySelectorAll('[data-edge-row]').forEach(r => r.classList.remove('row-active'));
-  const row = document.querySelector(`[data-edge-row="${eid}"]`);
-  if (row) row.classList.add('row-active');
-});
+// ============================================================================
+// §7 GLOBAL HANDLERS — 左側全域按鈕 + Cytoscape 互動
+// ============================================================================
 
-// ---------- Pseudo-node toggle ----------
-document.getElementById('togglePseudo').addEventListener('click', (e) => {
+// Pseudo-node toggle
+dom('togglePseudo').addEventListener('click', (e) => {
   pseudoVisible = !pseudoVisible;
   e.target.textContent = pseudoVisible ? '隱藏 Pseudo-node' : '顯示 Pseudo-node';
   if (pseudoVisible) {
@@ -1280,15 +1414,19 @@ document.getElementById('togglePseudo').addEventListener('click', (e) => {
   }
 });
 
-// ---------- Right-click edge/node to toggle failure ----------
+// 清除所有故障 — 注意原版「無條件」呼叫 renderPath(不論當前 Tab),保留此語意
+dom('clearFailed').addEventListener('click', () => {
+  failedEdges.clear();
+  failedNodes.clear();
+  C1_Path.render(dom('src').value, dom('dst').value);
+});
+
 // 右鍵 = 切換故障(與左鍵拖曳完全分離,不會誤觸發)
 cy.on('cxttap', 'edge', (evt) => {
   const eid = evt.target.id();
   if (failedEdges.has(eid)) failedEdges.delete(eid);
   else                       failedEdges.add(eid);
-  if (document.getElementById('tab-path').classList.contains('active')) {
-    renderPath(document.getElementById('src').value, document.getElementById('dst').value);
-  }
+  rerenderIfPathActive();
 });
 
 cy.on('cxttap', 'node', (evt) => {
@@ -1297,16 +1435,22 @@ cy.on('cxttap', 'node', (evt) => {
   const nid = n.id();
   if (failedNodes.has(nid)) failedNodes.delete(nid);
   else                       failedNodes.add(nid);
-  if (document.getElementById('tab-path').classList.contains('active')) {
-    renderPath(document.getElementById('src').value, document.getElementById('dst').value);
-  }
+  rerenderIfPathActive();
 });
 
 // 抑制瀏覽器在 cytoscape 容器內的右鍵 context menu
-document.getElementById('cy').addEventListener('contextmenu', e => e.preventDefault());
+dom('cy').addEventListener('contextmenu', e => e.preventDefault());
+
+// highlight the edge editor row when an edge is tapped (visual cross-reference)
+cy.on('tap', 'edge', (evt) => {
+  const eid = evt.target.id();
+  document.querySelectorAll('[data-edge-row]').forEach(r => r.classList.remove('row-active'));
+  const row = document.querySelector(`[data-edge-row="${eid}"]`);
+  if (row) row.classList.add('row-active');
+});
 
 // initial render
-renderPath('TPE', 'AMS');
+C1_Path.render('TPE', 'AMS');
 </script>
 
 </body>

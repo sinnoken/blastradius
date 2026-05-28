@@ -148,7 +148,7 @@
 
     <div class="tab-content active" id="tab-path">
       <h2 class="section-h !border-0 !mt-0">C1 路徑分析</h2>
-      <div class="hint">計算 Source → Destination 最短路徑(SPT + ECMP),反映目前右鍵故障狀態,自動判斷 PRIMARY / BACKUP MODE。下方 Unbackup 段掃描檢查 primary 路徑上有無單點故障邊。</div>
+      <div class="hint">計算 Source → Destination 最短路徑(SPT + ECMP),反映目前右鍵故障狀態,自動判斷 PRIMARY / BACKUP MODE。下方「無保護段掃描」檢查 primary 路徑上有無單點故障邊(SPOF)。</div>
       <div class="grid grid-cols-2 gap-2 mt-2">
         <div><label class="label-sm">Source</label><select id="src" class="select-input"></select></div>
         <div><label class="label-sm">Destination</label><select id="dst" class="select-input"></select></div>
@@ -160,7 +160,7 @@
       <div id="path-result" class="mt-3">
         <div class="hint">選擇 Source / Destination 後點擊「計算最短路徑」開始分析。</div>
       </div>
-      <button class="btn-secondary mt-2.5" id="scanUnbackup">掃描 Unbackup 段 (§5.4)</button>
+      <button class="btn-secondary mt-2.5" id="scanUnbackup">掃描無保護段 (§5.4)</button>
       <div id="unbackup-result"></div>
     </div>
 
@@ -599,9 +599,9 @@ const C1_Path = (() => {
       <div class="label">Primary edges</div>
       <div class="value">${primaryEdges.join(', ')}</div></div>`;
     if (unbacked.length === 0) {
-      html += '<span class="badge pass">所有 primary edges 都有備援</span>';
+      html += '<span class="badge pass">所有 primary edges 都有保護</span>';
     } else {
-      html += `<span class="badge fail">Unbackuped: ${unbacked.length}</span>`;
+      html += `<span class="badge fail">無保護: ${unbacked.length}</span>`;
       for (const eid of unbacked) {
         const e = topology.edges.find(x => x.id === eid);
         html += `<div class="path-item fail">${eid}: ${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;

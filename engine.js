@@ -192,6 +192,34 @@ export function allPairsLoad(topo, failedEdges = new Set(), failedNodes = new Se
   return load;
 }
 
+// Freeman Node Betweenness Centrality (§6.3)
+// σ(s,t|v) / σ(s,t),ECMP 等分;strip pseudo-node;排除 endpoints。
+// 語意:純拓樸結構上,每台 router 平均扛多少 "過路" SPT 流量。
+export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new Set()) {
+  const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
+  const routers = topo.nodes
+    .filter(n => n.type === 'router' && !failedNodes.has(n.id))
+    .map(n => n.id);
+  const load = {};
+  for (const r of routers) load[r] = 0;
+  for (const a of routers) {
+    for (const b of routers) {
+      if (a === b) continue;
+      const r = dijkstraECMP(adj, a, b);
+      if (r.cost === Infinity || r.paths.length === 0) continue;
+      const w = 1 / r.paths.length;
+      for (const p of r.paths) {
+        const stripped = stripPseudo(p);
+        // 排除頭尾(endpoints 不算過路)
+        for (let i = 1; i < stripped.length - 1; i++) {
+          load[stripped[i]] = (load[stripped[i]] || 0) + w;
+        }
+      }
+    }
+  }
+  return load;
+}
+
 export function simulateNodeFailure(topo, failedNodeId) {
   const before = allPairsLoad(topo);
   const after  = allPairsLoad(topo, new Set(), new Set([failedNodeId]));

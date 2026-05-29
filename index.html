@@ -143,6 +143,14 @@
           <div class="legend-item"><span class="legend-line load-dec"></span><span>受影響減少 (失效後)</span></div>
         </div>
       </details>
+      <details class="mt-2">
+        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">已知限制 ▸</summary>
+        <ol class="mt-1 text-[10px] text-gray-500 leading-relaxed list-decimal list-inside space-y-1">
+          <li>僅支援<b>單一路由區域</b>(Area 0),不處理跨區域的路由摘要</li>
+          <li>外部路由查詢只做精確比對與預設路由,未實作完整的最長前綴匹配</li>
+          <li>路徑成本為靜態設定,尚未對接即時延遲量測資料</li>
+        </ol>
+      </details>
     </div>
   </aside>
 
@@ -334,12 +342,6 @@ import {
 // ============================================================================
 // §0 CONSTANTS
 // ============================================================================
-const EDGE_ROLES = ['primary','backup','unbacked','load-inc','load-dec','failed-by-node',
-                    'bc-hub','bc-normal','bc-rare','bc-idle',
-                    'traffic-overflow','traffic-high','traffic-mid','traffic-low'];
-const NODE_ROLES = ['endpoint','highlight','asym-mark','failed-node',
-                    'heat-green','heat-yellow','heat-orange','heat-red',
-                    'bc-hub','bc-normal','bc-rare','bc-idle'];
 const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec',
                           'bc-hub','bc-normal','bc-rare','bc-idle',
                           'traffic-overflow','traffic-high','traffic-mid','traffic-low'];
@@ -441,10 +443,13 @@ const cy = cytoscape({
 //          edge: 'healthy' | 'failed'   (manual link toggle)
 //          node: 'up'      | 'down'     (預留:目前模擬為瞬時 role)
 //   role : 瞬時註記 — 分析結果疊加在當前 Tab 上,切 Tab 時清掉
-//          edge: 'none' | 'primary' | 'backup' | 'unbacked'
-//                | 'load-inc' | 'load-dec' | 'failed-by-node'
+//          edge: 'none' | 'spt' | 'backup' | 'unbacked'
+//                | 'load-inc' | 'load-dec' | 'simulated-fail'
+//                | 'bc-{hub,normal,rare,idle}'
+//                | 'traffic-{overflow,high,mid,low}'
 //          node: 'none' | 'endpoint' | 'highlight' | 'asym-mark'
 //                | 'heat-{green,yellow,orange,red}' | 'failed-node'
+//                | 'bc-{hub,normal,rare,idle}'
 //
 // Render rule:  op=failed/down → 'failed' / 'failed-node'   (op 優先)
 //               否則由 role 直接映射到對應 class
@@ -456,9 +461,8 @@ for (const e of topology.edges) edgeStates.set(e.id, { op:'healthy', role:'none'
 for (const n of topology.nodes) nodeStates.set(n.id, { op:'up',      role:'none' });
 
 function edgeClassFor(op, role) {
-  if (op === 'failed' || role === 'failed-by-node') return 'failed';
+  if (op === 'failed' || role === 'simulated-fail') return 'failed';
   if (role === 'none') return null;
-  if (role === 'primary') return 'spt';            // CSS class name 沿用既有
   return role;
 }
 function nodeClassFor(op, role) {
@@ -606,7 +610,7 @@ const C1_Path = (() => {
       inBackup = baseR.cost !== r.cost || !sameSet;
     }
 
-    const role = inBackup ? 'backup' : 'primary';
+    const role = inBackup ? 'backup' : 'spt';
     for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
       setEdgeRole(eid, role);
     }
@@ -640,10 +644,6 @@ const C1_Path = (() => {
 
   function scanUnbackup(src, dst) {
     const { primaryEdges, unbacked } = unbackupSegmentScan(topology, src, dst);
-    // 先把任何先前留下的 unbacked role 清掉,再標記新的;primary role 由前次 render 保留
-    for (const [eid, st] of edgeStates) {
-      if (st.role === 'unbacked') setEdgeRole(eid, 'none');
-    }
     for (const eid of unbacked) setEdgeRole(eid, 'unbacked');
     const div = dom('unbackup-result');
     if (primaryEdges.length === 0) {
@@ -799,7 +799,7 @@ const C2_Matrix = (() => {
     // 在拓樸圖上高亮所有 ECMP 路徑(用 rawPaths,含 pseudo-node,才能正確匹配邊)
     const pathsForHighlight = cell.rawPaths || cell.paths;
     for (const p of pathsForHighlight) {
-      for (const eid of pathToEdgeIds(p, topology.edges)) setEdgeRole(eid, 'primary');
+      for (const eid of pathToEdgeIds(p, topology.edges)) setEdgeRole(eid, 'spt');
     }
     setNodeRole(src, 'endpoint');
     setNodeRole(dst, 'endpoint');
@@ -1172,7 +1172,7 @@ const C4_Failure = (() => {
 
       if (isAttached(eid)) {
         const before = hasDemand ? (tBefore[eid] || 0) : (r.delta[eid]?.before || 0);
-        setEdgeRole(eid, 'failed-by-node');
+        setEdgeRole(eid, 'simulated-fail');
         edgeRows.push({ eid, edge: e, cls: 'down', before, after: 0,
           changePct: before > 0 ? -100 : 0, cap, util: 0 });
         continue;
@@ -1477,7 +1477,7 @@ const C8_N1 = (() => {
     if (!s) return;
     const fE = s.kind === 'edge' ? new Set([s.id]) : new Set();
     const fN = s.kind === 'node' ? new Set([s.id]) : new Set();
-    if (s.kind === 'edge') setEdgeRole(s.id, 'failed-by-node');
+    if (s.kind === 'edge') setEdgeRole(s.id, 'simulated-fail');
     if (s.kind === 'node') setNodeRole(s.id, 'failed-node');
     // 重繞路徑
     const adj = buildAdjacency(topology.edges, fE, fN);
@@ -1494,7 +1494,7 @@ const C8_N1 = (() => {
     clearAllRoles();
     const fE = f.kind === 'edge' ? new Set([f.id]) : new Set();
     const fN = f.kind === 'node' ? new Set([f.id]) : new Set();
-    if (f.kind === 'edge') setEdgeRole(f.id, 'failed-by-node');
+    if (f.kind === 'edge') setEdgeRole(f.id, 'simulated-fail');
     if (f.kind === 'node') setNodeRole(f.id, 'failed-node');
 
     const adj = buildAdjacency(topology.edges, fE, fN);

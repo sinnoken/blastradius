@@ -112,6 +112,13 @@
         title="Pseudo-node 是交換式網段的虛擬節點,用來表示多台 Router 共用同一個 LAN。隱藏後只顯示實體 Router。">隱藏 Pseudo-node</button>
       <button class="btn-danger mt-1" id="clearFailed"
         title="清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。">清除所有故障</button>
+      <div class="mt-2">
+        <label class="label-sm">流量情境</label>
+        <select id="demandProfile" class="select-input">
+          <option value="avg">月均 (Avg)</option>
+          <option value="max">95th Percentile</option>
+        </select>
+      </div>
       <div class="text-[10px] text-gray-400 mt-1">右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版</div>
     </div>
 
@@ -151,7 +158,7 @@
       <button class="tab" data-tab="allpairs" data-group="live" title="即時分析:反映圖上標記的故障狀態">樞紐度</button>
       <button class="tab" data-tab="traffic" data-group="live" title="即時分析:依據流量矩陣計算實際負載">邊流量</button>
       <div class="w-px bg-gray-300 my-1.5" title="分隔"></div>
-      <button class="tab" data-tab="failure" data-group="whatif" title="假設模擬:指定一台 Router 故障後的全網影響">失效模擬</button>
+      <button class="tab" data-tab="failure" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">失效模擬</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
       <button class="tab" data-tab="ecmp" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">ECMP</button>
       <button class="tab" data-tab="asym" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">非對稱</button>
@@ -164,12 +171,14 @@
     <div class="tab-content active" id="tab-path">
       <h2 class="section-h !border-0 !mt-0">路徑分析</h2>
       <div class="hint">計算兩點之間的最短路徑。若存在多條相同成本的路徑會全部列出(ECMP)。如果故障導致走了繞道,會標示為「備援模式」。</div>
-      <div class="grid grid-cols-2 gap-2 mt-2">
+      <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2 items-end">
         <div><label class="label-sm">Source</label><select id="src" class="select-input"></select></div>
+        <button id="swapSrcDst" class="px-1.5 py-1.5 text-gray-400 hover:text-blue-600 cursor-pointer transition-colors" title="交換起點與終點">⇄</button>
         <div><label class="label-sm">Destination</label><select id="dst" class="select-input"></select></div>
       </div>
-      <div class="grid grid-cols-2 gap-2 mt-2">
+      <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2">
         <button class="btn-primary" id="runSpt">計算最短路徑</button>
+        <div class="px-1.5"></div>
         <button class="btn-secondary" id="resetView">重置畫面</button>
       </div>
       <div id="path-result" class="mt-3">
@@ -206,7 +215,7 @@
     <div class="tab-content" id="tab-traffic">
       <h2 class="section-h !border-0 !mt-0">邊流量視圖</h2>
       <div class="hint">
-        根據流量需求矩陣,計算每條鏈路實際承載多少 <b>Gbps</b>(等成本路徑平均分攤)。與「樞紐度」的差別:樞紐度看結構(有幾條路徑經過),本頁看實際流量大小。
+        根據流量需求矩陣,計算每條鏈路實際承載多少 <b>Gbps</b>(等成本路徑平均分攤),並對照鏈路容量算出<b>利用率</b>。分階門檻:&gt;80% 高負載 · 50–80% 中負載 · &lt;50% 低負載。超過 100% 表示容量溢出。
       </div>
       <button class="btn-primary mt-2" id="runTraffic">重新計算</button>
       <div id="traffic-result" class="mt-2.5"></div>
@@ -224,7 +233,8 @@
 
     <div class="tab-content" id="tab-failure">
       <h2 class="section-h !border-0 !mt-0">節點失效模擬</h2>
-      <div class="hint">假設一台 Router 完全故障:網路是否仍然連通?流量會怎麼重新分配?哪些鏈路負載會增加?本頁獨立模擬,不受圖上手動故障標記影響。</div>
+      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
+      <div class="hint">假設一台 Router 完全故障:網路是否仍然連通?流量會怎麼重新分配?哪些鏈路負載會增加?是否超過容量?</div>
       <div class="mt-2"><label class="label-sm">選擇要失效的節點</label><select id="failNode" class="select-input"></select></div>
       <button class="btn-primary mt-1.5" id="runFailSim">執行節點失效模擬</button>
       <div id="failure-result" class="mt-2.5"></div>
@@ -656,6 +666,11 @@ const C1_Path = (() => {
     dom('runSpt').addEventListener('click', () =>
       render(dom('src').value, dom('dst').value));
     dom('resetView').addEventListener('click', reset);
+    dom('swapSrcDst').addEventListener('click', () => {
+      const s = dom('src'), d = dom('dst');
+      [s.value, d.value] = [d.value, s.value];
+      render(s.value, d.value);
+    });
   }
 
   return {
@@ -1022,10 +1037,9 @@ const C9_Traffic = (() => {
     mid:  { label: '中負載', color: '#a16207', cardBg: '#fef3c7' },
     low:  { label: '低負載', color: '#475569', cardBg: '#f1f5f9' },
   };
-  function classify(v, max) {
-    if (max === 0) return 'low';
-    if (v > 0.6 * max) return 'high';
-    if (v > 0.2 * max) return 'mid';
+  function classify(util) {
+    if (util > 0.8) return 'high';
+    if (util > 0.5) return 'mid';
     return 'low';
   }
 
@@ -1039,18 +1053,23 @@ const C9_Traffic = (() => {
     const result = allPairsTraffic(topology, demand, failedEdges, failedNodes);
     const traffic = result.traffic;
     const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
-    const max = rankedEdges.reduce((m, e) => Math.max(m, traffic[e.id] || 0), 0);
 
     const tierCounts = { high: 0, mid: 0, low: 0 };
     const rows = [];
+    let maxUtil = 0;
+    let overflowCount = 0;
     for (const e of rankedEdges) {
       const v = traffic[e.id] || 0;
-      const tier = classify(v, max);
+      const cap = e.capacity ?? Infinity;
+      const util = (isFinite(cap) && cap > 0) ? v / cap : 0;
+      if (util > maxUtil) maxUtil = util;
+      if (util > 1) overflowCount++;
+      const tier = classify(util);
       tierCounts[tier]++;
       setEdgeRole(e.id, 'traffic-' + tier);
-      rows.push({ eid: e.id, edge: e, gbps: v, tier });
+      rows.push({ eid: e.id, edge: e, gbps: v, cap, util, tier });
     }
-    rows.sort((x, y) => y.gbps - x.gbps);
+    rows.sort((x, y) => y.util - x.util);
 
     let html = '';
 
@@ -1088,17 +1107,27 @@ const C9_Traffic = (() => {
       </div>`;
     }
     html += '</div>';
-    html += `<div class="info-card"><div class="label">最大邊負載 / 來源</div>
-      <div class="value">${max.toFixed(1)} Gbps
+    html += `<div class="info-card"><div class="label">最大利用率 / 來源</div>
+      <div class="value">${(maxUtil * 100).toFixed(1)}%
       <span style="color:#6b7280;font-weight:400;font-size:10px">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;
+    if (overflowCount > 0) {
+      html += `<div class="info-card" style="background:#fee2e2;border-color:#dc2626">
+        <div class="label" style="color:#991b1b">⚠ 容量溢出</div>
+        <div class="value" style="color:#991b1b">${overflowCount} 條鏈路超過容量</div></div>`;
+    }
 
     html += '<h2 class="section-h mt-3">邊流量排行</h2>';
-    html += '<table><tr><th>連接</th><th>Gbps</th><th>分類</th></tr>';
+    html += '<table><tr><th>連接</th><th>Gbps</th><th>Cap</th><th>Util%</th><th>分類</th></tr>';
     for (const r of rows) {
       const t = TIERS[r.tier];
+      const capStr = isFinite(r.cap) ? r.cap.toFixed(0) : '—';
+      const utilStr = (isFinite(r.cap) && r.cap > 0) ? (r.util * 100).toFixed(1) + '%' : '—';
+      const utilColor = r.util > 1 ? '#991b1b' : t.color;
       html += `<tr>
         <td title="${r.eid}">${r.edge.source} ↔ ${r.edge.target}</td>
         <td style="font-weight:600">${r.gbps.toFixed(1)}</td>
+        <td>${capStr}</td>
+        <td style="color:${utilColor};font-weight:600">${utilStr}</td>
         <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
       </tr>`;
     }
@@ -1124,46 +1153,61 @@ const C4_Failure = (() => {
     clearAllRoles();
     setNodeRole(failedNode, 'failed-node');
 
-    // classify each edge: 'down' (attached to failed node), 'up' (load increased), 'dec' (load decreased)
+    // Traffic-based before/after (if demand available)
+    const hasDemand = typeof demand !== 'undefined' && demand?.matrix;
+    let tBefore = {}, tAfter = {};
+    if (hasDemand) {
+      tBefore = allPairsTraffic(topology, demand, new Set(), new Set()).traffic;
+      tAfter  = allPairsTraffic(topology, demand, new Set(), new Set([failedNode])).traffic;
+    }
+
     const isAttached = (eid) => {
       const e = topology.edges.find(x => x.id === eid);
       return e && (e.source === failedNode || e.target === failedNode);
     };
-    const classify = (eid, d) => {
-      if (isAttached(eid)) return 'down';
-      if (d.direction === 'inc') return 'up';
-      if (d.direction === 'dec') return 'dec';
-      return 'none';
-    };
 
-    // 透過 state machine 設定 edge role(瞬時註記,切 Tab 自動清掉)
-    // iterate 全 topology.edges,讓「接在失效節點上但平時零流量」的純備援也能被標到 down
-    const emptyDelta = { direction: 'none', changePct: 0, before: 0, after: 0 };
+    // Build per-edge row data — 用 traffic Gbps(有 demand 時)或 BC path count(無 demand 時)
+    const edgeRows = [];
     for (const e of topology.edges) {
-      const d = r.delta[e.id] || emptyDelta;
-      const cls = classify(e.id, d);
-      if (cls === 'down')      setEdgeRole(e.id, 'failed-by-node');
-      else if (cls === 'up')   setEdgeRole(e.id, 'load-inc');
-      else if (cls === 'dec')  setEdgeRole(e.id, 'load-dec');
-    }
+      const eid = e.id;
+      const cap = e.capacity ?? Infinity;
 
-    // group rows by status for the table
-    const grouped = { down: [], up: [], dec: [] };
-    const seen = new Set();
-    // 先補:所有接在失效節點上的邊一律放進 down,不論 delta 有沒有紀錄
-    for (const e of topology.edges) {
-      if (e.source === failedNode || e.target === failedNode) {
-        grouped.down.push([e.id, r.delta[e.id] || emptyDelta]);
-        seen.add(e.id);
+      if (isAttached(eid)) {
+        const before = hasDemand ? (tBefore[eid] || 0) : (r.delta[eid]?.before || 0);
+        setEdgeRole(eid, 'failed-by-node');
+        edgeRows.push({ eid, edge: e, cls: 'down', before, after: 0,
+          changePct: before > 0 ? -100 : 0, cap, util: 0 });
+        continue;
+      }
+
+      const before = hasDemand ? (tBefore[eid] || 0) : (r.delta[eid]?.before || 0);
+      const after  = hasDemand ? (tAfter[eid] || 0)  : (r.delta[eid]?.after || 0);
+      if (before === 0 && after === 0) continue;
+
+      const changePct = before > 0 ? ((after - before) / before * 100) : (after > 0 ? Infinity : 0);
+      const direction = after > before ? 'inc' : (after < before ? 'dec' : 'none');
+      const util = (isFinite(cap) && cap > 0) ? after / cap : 0;
+
+      if (direction === 'inc')      setEdgeRole(eid, 'load-inc');
+      else if (direction === 'dec') setEdgeRole(eid, 'load-dec');
+
+      if (direction !== 'none') {
+        edgeRows.push({ eid, edge: e, cls: direction === 'inc' ? 'up' : 'dec',
+          before, after, changePct, cap, util });
       }
     }
-    // 再補:delta 內其他 up / dec(按 |Δ%| 排序)
-    const sortedDelta = Object.entries(r.delta).sort((a,b) => Math.abs(b[1].changePct) - Math.abs(a[1].changePct));
-    for (const [eid, d] of sortedDelta) {
-      if (seen.has(eid)) continue;
-      if (d.direction === 'inc')      grouped.up.push([eid, d]);
-      else if (d.direction === 'dec') grouped.dec.push([eid, d]);
-    }
+
+    // Sort: down first, then inc by |Δ%| desc, then dec
+    edgeRows.sort((a, b) => {
+      const order = { down: 0, up: 1, dec: 2 };
+      if (order[a.cls] !== order[b.cls]) return order[a.cls] - order[b.cls];
+      return Math.abs(b.changePct) - Math.abs(a.changePct);
+    });
+
+    const downCount = edgeRows.filter(x => x.cls === 'down').length;
+    const upCount   = edgeRows.filter(x => x.cls === 'up').length;
+    const decCount  = edgeRows.filter(x => x.cls === 'dec').length;
+    const overflows = edgeRows.filter(x => x.cls !== 'down' && x.util > 1);
 
     let html = '';
     html += r.isConnected
@@ -1177,36 +1221,47 @@ const C4_Failure = (() => {
         <div class="label">Disjointed groups</div>
         <div class="value">${r.components.map(c => '[' + c.join(',') + ']').join(' ')}</div></div>`;
     }
+    if (overflows.length > 0) {
+      const sample = overflows.slice(0, 3).map(x =>
+        `${x.edge.source}↔${x.edge.target} ${(x.util*100).toFixed(0)}%`).join(', ');
+      html += `<div class="info-card" style="background:#fee2e2;border-color:#dc2626;margin-top:6px">
+        <div class="label" style="color:#991b1b">⚠ 容量溢出</div>
+        <div class="value" style="color:#991b1b">${overflows.length} 條鏈路超過容量</div>
+        <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}</div></div>`;
+    }
 
     html += '<h2 class="section-h mt-3">Top affected links</h2>';
     html += `<div class="flex gap-2 mb-2 text-xs">
-      <span class="badge fail">✕ ${grouped.down.length}</span>
-      <span class="badge" style="background:#dbeafe;color:#1e40af">▲ ${grouped.up.length}</span>
-      <span class="badge" style="background:#fef9c3;color:#854d0e">▼ ${grouped.dec.length}</span>
+      <span class="badge fail">✕ ${downCount}</span>
+      <span class="badge" style="background:#dbeafe;color:#1e40af">▲ ${upCount}</span>
+      <span class="badge" style="background:#fef9c3;color:#854d0e">▼ ${decCount}</span>
     </div>`;
-    html += '<table><tr><th>Edge</th><th></th><th>Before</th><th>After</th><th>Δ%</th></tr>';
 
-    // order: 斷線 first, then ↑ increases (most impactful reroute hotspots), then ↓ decreases — cap at 12 rows
-    const ordered = [
-      ...grouped.down,
-      ...grouped.up,
-      ...grouped.dec,
-    ].slice(0, 12);
+    const unit = hasDemand ? ' Gbps' : '';
+    html += `<table><tr><th>Edge</th><th></th><th>Before${unit}</th><th>After${unit}</th><th>Δ%</th>${hasDemand ? '<th>Cap</th><th>Util%</th>' : ''}</tr>`;
 
-    for (const [eid, d] of ordered) {
-      const e = topology.edges.find(x => x.id === eid);
-      const cls = classify(eid, d);
+    for (const row of edgeRows.slice(0, 12)) {
       const statusCell =
-        cls === 'down' ? '<span class="badge fail" title="斷線">✕</span>' :
-        cls === 'up'   ? '<span class="badge" style="background:#dbeafe;color:#1e40af" title="負載增加">▲</span>' :
-                         '<span class="badge" style="background:#fef9c3;color:#854d0e" title="負載減少">▼</span>';
-      const arrow = d.direction === 'inc' ? '↑' : '↓';
-      const color = cls === 'down' ? '#dc2626' : (cls === 'up' ? '#2563eb' : '#ca8a04');
-      const pct = isFinite(d.changePct) ? d.changePct.toFixed(0) + '%' : '∞';
-      html += `<tr><td title="${eid}">${e.source} ↔ ${e.target}</td>
+        row.cls === 'down' ? '<span class="badge fail" title="斷線">✕</span>' :
+        row.cls === 'up'   ? '<span class="badge" style="background:#dbeafe;color:#1e40af" title="負載增加">▲</span>' :
+                             '<span class="badge" style="background:#fef9c3;color:#854d0e" title="負載減少">▼</span>';
+      const arrow = row.cls === 'down' ? '↓' : (row.cls === 'up' ? '↑' : '↓');
+      const color = row.cls === 'down' ? '#dc2626' : (row.cls === 'up' ? '#2563eb' : '#ca8a04');
+      const pct = isFinite(row.changePct) ? row.changePct.toFixed(0) + '%' : '∞';
+
+      let capCells = '';
+      if (hasDemand) {
+        const capStr = isFinite(row.cap) ? row.cap.toFixed(0) : '—';
+        const utilStr = row.cls === 'down' ? '—'
+          : ((isFinite(row.cap) && row.cap > 0) ? (row.util * 100).toFixed(1) + '%' : '—');
+        const utilColor = row.util > 1 ? '#991b1b' : (row.util > 0.8 ? '#dc2626' : '#475569');
+        capCells = `<td>${capStr}</td><td style="color:${utilColor};font-weight:${row.util > 0.8 ? 600 : 400}">${utilStr}</td>`;
+      }
+
+      html += `<tr><td title="${row.eid}">${row.edge.source} ↔ ${row.edge.target}</td>
         <td>${statusCell}</td>
-        <td>${d.before.toFixed(1)}</td><td>${d.after.toFixed(1)}</td>
-        <td style="color:${color};font-weight:600">${arrow} ${pct}</td></tr>`;
+        <td>${row.before.toFixed(1)}</td><td>${row.after.toFixed(1)}</td>
+        <td style="color:${color};font-weight:600">${arrow} ${pct}</td>${capCells}</tr>`;
     }
     html += '</table>';
     dom('failure-result').innerHTML = html;
@@ -1460,6 +1515,25 @@ const C8_N1 = (() => {
     n1Cache = result;
     const { pairRows, failureRows } = result;
 
+    // Compute capacity overflow for top 10 failures
+    const hasDemand = typeof demand !== 'undefined' && demand?.matrix;
+    const failOverflow = new Map();
+    if (hasDemand) {
+      for (const f of failureRows.slice(0, 10)) {
+        const fE = f.kind === 'edge' ? new Set([f.id]) : new Set();
+        const fN = f.kind === 'node' ? new Set([f.id]) : new Set();
+        const tar = allPairsTraffic(topology, demand, fE, fN);
+        let count = 0;
+        for (const e of topology.edges) {
+          if (fE.has(e.id)) continue;
+          if (fN.has(e.source) || fN.has(e.target)) continue;
+          const cap = e.capacity ?? Infinity;
+          if (isFinite(cap) && cap > 0 && (tar.traffic[e.id] || 0) > cap) count++;
+        }
+        failOverflow.set(f, count);
+      }
+    }
+
     const unreachPairs = pairRows.filter(p => p.ratio === Infinity).length;
     const severePairs  = pairRows.filter(p => p.ratio !== Infinity && p.ratio >= 2).length;
     const minorPairs   = pairRows.filter(p => p.ratio !== Infinity && p.ratio < 2).length;
@@ -1481,15 +1555,20 @@ const C8_N1 = (() => {
       html += '<span class="badge pass">無單點失效會造成任何 pair 劣化</span>';
     } else {
       html += '<div class="hint mb-2">點任一列模擬該失效情境 — 失效元件標紅,所有受影響 pair 的重繞路徑以橘色高亮。</div>';
-      html += '<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th></tr>';
+      html += `<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th>${hasDemand ? '<th>溢出</th>' : ''}</tr>`;
       for (const f of failureRows.slice(0, 10)) {
         const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
+        const ov = failOverflow.get(f) ?? 0;
+        const ovCell = hasDemand
+          ? `<td style="color:${ov > 0 ? '#991b1b' : '#9ca3af'};font-weight:${ov > 0 ? 600 : 400}">${ov}</td>`
+          : '';
         html += `<tr class="clickable" data-fail-idx="${failureRows.indexOf(f)}">
           <td>${fmtCulprit(f)}</td>
           <td style="color:${f.unreachable > 0 ? '#991b1b' : '#9ca3af'};font-weight:${f.unreachable > 0 ? 600 : 400}">${f.unreachable}</td>
           <td>${f.degraded}</td>
           <td>${f.totalDelta}</td>
           <td>${ratioStr}</td>
+          ${ovCell}
         </tr>`;
       }
       html += '</table>';
@@ -1727,6 +1806,13 @@ dom('clearFailed').addEventListener('click', () => {
   failedEdges.clear();
   failedNodes.clear();
   C1_Path.render(dom('src').value, dom('dst').value);
+});
+
+// 流量情境切換(avg ↔ 95th)
+dom('demandProfile').addEventListener('change', (e) => {
+  demand.active = e.target.value;
+  const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+  TABS[activeTab]?.activate?.();
 });
 
 // 右鍵 = 切換故障(與左鍵拖曳完全分離,不會誤觸發)

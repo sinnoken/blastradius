@@ -2,7 +2,7 @@
 
 **Know exactly what breaks — before it breaks.**
 
-BlastRadius is a failure-impact analyzer for IGP (OSPF / IS-IS) backbone networks. It answers the question every backbone engineer loses sleep over: *"If this component fails right now, what happens to my traffic?"*
+BlastRadius is a failure-impact analyzer for IGP (OSPF) backbone networks. It answers the question every backbone engineer loses sleep over: *"If this component fails right now, what happens to my traffic?"*
 
 ---
 

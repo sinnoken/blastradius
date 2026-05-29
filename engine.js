@@ -54,6 +54,28 @@ export function buildPrefixIndex(topo) {
   return idx;
 }
 
+// Dijkstra 距離表 — 從 src 出發,回傳 { nodeId: cost } 到所有可達節點
+export function dijkstraDist(adj, src) {
+  const dist = { [src]: 0 };
+  const visited = new Set();
+  const pq = [[0, src]];
+  while (pq.length) {
+    pq.sort((a, b) => a[0] - b[0]);
+    const [d, u] = pq.shift();
+    if (visited.has(u)) continue;
+    visited.add(u);
+    if (!adj[u]) continue;
+    for (const [v, c] of adj[u]) {
+      const nd = d + c;
+      if (dist[v] === undefined || nd < dist[v]) {
+        dist[v] = nd;
+        pq.push([nd, v]);
+      }
+    }
+  }
+  return dist;
+}
+
 // BFS 拓樸序 — 從 root 開始,按跳數展開,穿越 pseudo-node 但只收錄 router
 export function bfsOrder(adj, root) {
   const visited = new Set([root]);

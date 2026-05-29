@@ -6,6 +6,7 @@
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
 <script src="topology.js"></script>
 <script src="demand.js"></script>
+<script src="srlg.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style type="text/tailwindcss">
   @layer base {
@@ -242,11 +243,11 @@
     </div>
 
     <div class="tab-content" id="tab-failure">
-      <h2 class="section-h !border-0 !mt-0">節點失效模擬</h2>
+      <h2 class="section-h !border-0 !mt-0">失效模擬</h2>
       <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
-      <div class="hint">假設一台 Router 完全故障:網路是否仍然連通?流量會怎麼重新分配?哪些鏈路負載會增加?是否超過容量?</div>
-      <div class="mt-2"><label class="label-sm">選擇要失效的節點</label><select id="failNode" class="select-input"></select></div>
-      <button class="btn-primary mt-1.5" id="runFailSim">執行節點失效模擬</button>
+      <div class="hint">模擬單一元件或整組共同風險群組 (SRLG) 同時失效,檢視網路連通性、流量重分配與容量溢出。SRLG 涵蓋海纜系統、共管線路、機房電力、上游 ISP 等共用風險。</div>
+      <div class="mt-2"><label class="label-sm">失效情境</label><select id="failTarget" class="select-input"></select></div>
+      <button class="btn-primary mt-1.5" id="runFailSim">執行失效模擬</button>
       <div id="failure-result" class="mt-2.5"></div>
     </div>
 
@@ -334,7 +335,7 @@
 import {
   buildAdjacency, buildPrefixIndex, dijkstraECMP, stripPseudo,
   resolveLPM, pathToEdgeIds, backupPath, unbackupSegmentScan,
-  connectedComponents, allPairsLoad, allPairsTraffic, computeNodeBC, simulateNodeFailure,
+  connectedComponents, allPairsLoad, allPairsTraffic, computeNodeBC,
   firstHopEdge, ecmpBackupCheck, ecmpBackupScanAll,
   detectAsymmetric, computeHeatmap, computeN1WorstCase,
 } from './engine.js';
@@ -547,13 +548,41 @@ const originalEdges = topology.edges.map(e => ({ id: e.id, cost: e.cost, costRev
 
 // populate selects
 const routerNodes = topology.nodes.filter(n => n.type === 'router');
-for (const sel of ['src','dst','failNode']) {
+for (const sel of ['src','dst']) {
   const el = dom(sel);
   for (const n of routerNodes) el.add(new Option(n.label, n.id));
 }
 dom('src').value = 'TPE';
 dom('dst').value = 'AMS';
-dom('failNode').value = routerNodes[0].id;
+
+// SRLG support — expandSRLG + unified failure dropdown
+function expandSRLG(group) {
+  const edges = new Set(), nodes = new Set();
+  for (const m of group.affects) {
+    if (topology.edges.some(e => e.id === m)) edges.add(m);
+    else nodes.add(m);
+  }
+  return { edges, nodes };
+}
+
+{
+  const sel = dom('failTarget');
+  const typeLabels = { submarine: '海纜系統', conduit: '共管線路', site: '機房 / 電力', upstream: '上游 ISP' };
+  if (typeof srlg !== 'undefined' && srlg.length > 0) {
+    const byType = {};
+    for (const g of srlg) (byType[g.type] ??= []).push(g);
+    for (const [type, groups] of Object.entries(byType)) {
+      const og = document.createElement('optgroup');
+      og.label = typeLabels[type] || type;
+      for (const g of groups) og.appendChild(new Option(g.label, 'srlg:' + g.id));
+      sel.appendChild(og);
+    }
+  }
+  const nodeGroup = document.createElement('optgroup');
+  nodeGroup.label = '單一節點';
+  for (const n of routerNodes) nodeGroup.appendChild(new Option(n.label, 'node:' + n.id));
+  sel.appendChild(nodeGroup);
+}
 
 // 共用:右鍵故障 / 邊成本變更後,若 Path Tab 正在顯示就重算。
 // 注意:函式只是「宣告」並引用 C1_Path,直到第一次被呼叫時才會解析 — 此時 §5.1 已執行完畢。
@@ -1141,28 +1170,55 @@ const C9_Traffic = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.4 C4 — Failure Simulation (節點失效模擬)
+// §5.4 C4 — Failure Simulation (失效模擬 — 單一節點 or SRLG)
 // ----------------------------------------------------------------------------
 const C4_Failure = (() => {
+  function resolveFailureSet() {
+    const val = dom('failTarget').value;
+    if (val.startsWith('srlg:')) {
+      const group = srlg.find(g => g.id === val.slice(5));
+      if (!group) return { fE: new Set(), fN: new Set(), label: '(unknown)', group: null };
+      const { edges, nodes } = expandSRLG(group);
+      return { fE: edges, fN: nodes, label: group.label, group };
+    }
+    const nid = val.startsWith('node:') ? val.slice(5) : val;
+    return { fE: new Set(), fN: new Set([nid]), label: nid, group: null };
+  }
+
   function render() {
-    const failedNode = dom('failNode').value;
-    const r = simulateNodeFailure(topology, failedNode);
+    const { fE, fN, label, group } = resolveFailureSet();
 
     clearAllRoles();
-    setNodeRole(failedNode, 'failed-node');
 
-    // Traffic-based before/after (if demand available)
+    // Visual markup: mark all directly-affected elements
+    for (const eid of fE) setEdgeRole(eid, 'simulated-fail');
+    for (const nid of fN) setNodeRole(nid, 'failed-node');
+
+    // Determine which edges are effectively down (direct + node-attached)
+    const isDown = (eid) => {
+      if (fE.has(eid)) return true;
+      const e = topology.edges.find(x => x.id === eid);
+      return e && (fN.has(e.source) || fN.has(e.target));
+    };
+
+    // Before/after comparison
     const hasDemand = typeof demand !== 'undefined' && demand?.matrix;
-    let tBefore = {}, tAfter = {};
+    let bBefore, bAfter, tBefore = {}, tAfter = {}, tAfterFull = null;
     if (hasDemand) {
       tBefore = allPairsTraffic(topology, demand, new Set(), new Set()).traffic;
-      tAfter  = allPairsTraffic(topology, demand, new Set(), new Set([failedNode])).traffic;
+      tAfterFull = allPairsTraffic(topology, demand, fE, fN);
+      tAfter = tAfterFull.traffic;
+    } else {
+      bBefore = allPairsLoad(topology).load;
+      bAfter  = allPairsLoad(topology, fE, fN).load;
     }
 
-    const isAttached = (eid) => {
-      const e = topology.edges.find(x => x.id === eid);
-      return e && (e.source === failedNode || e.target === failedNode);
-    };
+    // Connectivity check
+    const adjAfter = buildAdjacency(topology.edges, fE, fN);
+    const survivingRouters = topology.nodes
+      .filter(n => n.type === 'router' && !fN.has(n.id))
+      .map(n => n.id);
+    const comps = connectedComponents(adjAfter, survivingRouters);
 
     // Build per-edge row data — 用 traffic Gbps(有 demand 時)或 BC path count(無 demand 時)
     const edgeRows = [];
@@ -1170,16 +1226,16 @@ const C4_Failure = (() => {
       const eid = e.id;
       const cap = e.capacity ?? Infinity;
 
-      if (isAttached(eid)) {
-        const before = hasDemand ? (tBefore[eid] || 0) : (r.delta[eid]?.before || 0);
+      if (isDown(eid)) {
+        const before = hasDemand ? (tBefore[eid] || 0) : (bBefore?.[eid] || 0);
         setEdgeRole(eid, 'simulated-fail');
         edgeRows.push({ eid, edge: e, cls: 'down', before, after: 0,
           changePct: before > 0 ? -100 : 0, cap, util: 0 });
         continue;
       }
 
-      const before = hasDemand ? (tBefore[eid] || 0) : (r.delta[eid]?.before || 0);
-      const after  = hasDemand ? (tAfter[eid] || 0)  : (r.delta[eid]?.after || 0);
+      const before = hasDemand ? (tBefore[eid] || 0) : (bBefore?.[eid] || 0);
+      const after  = hasDemand ? (tAfter[eid] || 0)  : (bAfter?.[eid] || 0);
       if (before === 0 && after === 0) continue;
 
       const changePct = before > 0 ? ((after - before) / before * 100) : (after > 0 ? Infinity : 0);
@@ -1208,16 +1264,33 @@ const C4_Failure = (() => {
     const overflows = edgeRows.filter(x => x.cls !== 'down' && x.util > 1);
 
     let html = '';
-    html += r.isConnected
+
+    // SRLG info card
+    if (group) {
+      const typeLabels = { submarine: '海纜', conduit: '共管線路', site: '機房', upstream: '上游 ISP' };
+      const affEdges = [...fE];
+      const affNodes = [...fN];
+      html += `<div class="info-card" style="background:#fef3c7;border-color:#d97706;margin-bottom:8px">
+        <div class="label" style="color:#92400e">SRLG · ${typeLabels[group.type] || group.type}</div>
+        <div class="value" style="color:#92400e">${group.label}</div>
+        <div style="font-size:10px;color:#78350f;margin-top:4px;font-family:monospace">
+          ${affNodes.length ? '節點: ' + affNodes.join(', ') : ''}
+          ${affNodes.length && affEdges.length ? ' · ' : ''}
+          ${affEdges.length ? '鏈路: ' + affEdges.join(', ') : ''}
+        </div>
+      </div>`;
+    }
+
+    html += comps.length <= 1
       ? '<span class="badge connected">Connected</span>'
       : '<span class="badge disconnected">DISCONNECTED</span>';
     html += `<div class="info-card" style="margin-top:6px">
       <div class="label">Components after failure</div>
-      <div class="value">${r.components.length}</div></div>`;
-    if (!r.isConnected) {
+      <div class="value">${comps.length}</div></div>`;
+    if (comps.length > 1) {
       html += `<div class="info-card">
         <div class="label">Disjointed groups</div>
-        <div class="value">${r.components.map(c => '[' + c.join(',') + ']').join(' ')}</div></div>`;
+        <div class="value">${comps.map(c => '[' + c.join(',') + ']').join(' ')}</div></div>`;
     }
     if (overflows.length > 0) {
       const sample = overflows.slice(0, 3).map(x =>
@@ -1226,6 +1299,27 @@ const C4_Failure = (() => {
         <div class="label" style="color:#991b1b">⚠ 過載</div>
         <div class="value" style="color:#991b1b">${overflows.length} 條鏈路超過容量</div>
         <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}</div></div>`;
+    }
+
+    if (hasDemand && tAfterFull) {
+      const lost = tAfterFull.lostDemand;
+      const total = tAfterFull.totalDemand;
+      if (lost > 0) {
+        const pct = total > 0 ? (lost / total * 100) : 0;
+        const lostSample = tAfterFull.lostDemandPairs.slice(0, 5)
+          .map(p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`).join(', ');
+        const lostMore = tAfterFull.lostDemandPairs.length > 5
+          ? ` <span style="color:#9ca3af">+${tAfterFull.lostDemandPairs.length - 5} more</span>` : '';
+        html += `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c;margin-top:6px">
+          <div class="label" style="color:#991b1b">⚠ 失去路徑的流量</div>
+          <div class="value" style="color:#991b1b">${lost.toFixed(0)} / ${total.toFixed(0)} Gbps 無法送達
+            <span style="color:#6b7280;font-weight:400;font-size:10px">(${pct.toFixed(1)}%)</span></div>
+          <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${lostSample}${lostMore}</div></div>`;
+      } else {
+        html += `<div class="info-card" style="background:#dcfce7;border-color:#15803d;margin-top:6px">
+          <div class="label" style="color:#15803d">流量可達性</div>
+          <div class="value" style="color:#15803d">${total.toFixed(0)} Gbps demand 全數有路可走</div></div>`;
+      }
     }
 
     html += '<h2 class="section-h mt-3">Top affected links</h2>';

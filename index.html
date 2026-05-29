@@ -80,8 +80,9 @@
     .legend-line.spt      { @apply bg-blue-600; }
     .legend-line.backup   { @apply bg-amber-500; }
     .legend-line.failed   { @apply bg-red-500; }
-    .legend-line.load-inc { @apply bg-blue-500; }
-    .legend-line.load-dec { @apply bg-yellow-500; }
+    .legend-line.load-inc  { @apply bg-blue-500; }
+    .legend-line.load-dec  { @apply bg-yellow-500; }
+    .legend-line.overflow  { background: #7f1d1d; height: 5px; border-style: dashed; }
   }
 </style>
 <style>
@@ -135,8 +136,9 @@
         <div class="legend-item"><span class="legend-line failed"></span><span>故障鏈路</span></div>
       </div>
       <details class="mt-1">
-        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">失效模擬圖例 ▸</summary>
+        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">流量 / 失效圖例 ▸</summary>
         <div class="legend mt-1">
+          <div class="legend-item"><span class="legend-line overflow"></span><span>過載 (&gt;100%)</span></div>
           <div class="legend-item"><span class="legend-line load-inc"></span><span>流量增 (失效後)</span></div>
           <div class="legend-item"><span class="legend-line load-dec"></span><span>受影響減少 (失效後)</span></div>
         </div>
@@ -215,7 +217,7 @@
     <div class="tab-content" id="tab-traffic">
       <h2 class="section-h !border-0 !mt-0">邊流量視圖</h2>
       <div class="hint">
-        根據流量需求矩陣,計算每條鏈路實際承載多少 <b>Gbps</b>(等成本路徑平均分攤),並對照鏈路容量算出<b>利用率</b>。分階門檻:&gt;80% 高負載 · 50–80% 中負載 · &lt;50% 低負載。超過 100% 表示容量溢出。
+        根據流量需求矩陣,計算每條鏈路實際承載多少 <b>Gbps</b>(等成本路徑平均分攤),並對照鏈路容量算出<b>利用率</b>。分 4 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · &lt;50% 低負載。
       </div>
       <button class="btn-primary mt-2" id="runTraffic">重新計算</button>
       <div id="traffic-result" class="mt-2.5"></div>
@@ -334,13 +336,13 @@ import {
 // ============================================================================
 const EDGE_ROLES = ['primary','backup','unbacked','load-inc','load-dec','failed-by-node',
                     'bc-hub','bc-normal','bc-rare','bc-idle',
-                    'traffic-high','traffic-mid','traffic-low'];
+                    'traffic-overflow','traffic-high','traffic-mid','traffic-low'];
 const NODE_ROLES = ['endpoint','highlight','asym-mark','failed-node',
                     'heat-green','heat-yellow','heat-orange','heat-red',
                     'bc-hub','bc-normal','bc-rare','bc-idle'];
 const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec',
                           'bc-hub','bc-normal','bc-rare','bc-idle',
-                          'traffic-high','traffic-mid','traffic-low'];
+                          'traffic-overflow','traffic-high','traffic-mid','traffic-low'];
 const ALL_NODE_CLASSES = ['endpoint','highlight','asym-mark','failed-node',
                           'heat-green','heat-yellow','heat-orange','heat-red',
                           'bc-hub','bc-normal','bc-rare','bc-idle'];
@@ -398,6 +400,7 @@ const cy = cytoscape({
     { selector: 'edge.bc-normal',style:{ 'line-color':'#3b82f6','width':5,'z-index':4 }},
     { selector: 'edge.bc-rare',  style:{ 'line-color':'#fde047','width':3,'z-index':3 }},
     { selector: 'edge.bc-idle',  style:{ 'line-color':'#94a3b8','line-style':'dashed','width':2,'z-index':2 }},
+    { selector: 'edge.traffic-overflow', style:{ 'line-color':'#7f1d1d','width':10,'line-style':'dashed','z-index':6 }},
     { selector: 'edge.traffic-high', style:{ 'line-color':'#dc2626','width':8,'z-index':5 }},
     { selector: 'edge.traffic-mid',  style:{ 'line-color':'#f59e0b','width':5,'z-index':4 }},
     { selector: 'edge.traffic-low',  style:{ 'line-color':'#94a3b8','width':2,'z-index':2 }},
@@ -1033,11 +1036,13 @@ const C3_AllPairs = (() => {
 // ----------------------------------------------------------------------------
 const C9_Traffic = (() => {
   const TIERS = {
-    high: { label: '高負載', color: '#dc2626', cardBg: '#fee2e2' },
-    mid:  { label: '中負載', color: '#a16207', cardBg: '#fef3c7' },
-    low:  { label: '低負載', color: '#475569', cardBg: '#f1f5f9' },
+    overflow: { label: '過載', color: '#7f1d1d', cardBg: '#fecaca' },
+    high:     { label: '高負載',   color: '#dc2626', cardBg: '#fee2e2' },
+    mid:      { label: '中負載',   color: '#a16207', cardBg: '#fef3c7' },
+    low:      { label: '低負載',   color: '#475569', cardBg: '#f1f5f9' },
   };
   function classify(util) {
+    if (util > 1)   return 'overflow';
     if (util > 0.8) return 'high';
     if (util > 0.5) return 'mid';
     return 'low';
@@ -1054,16 +1059,14 @@ const C9_Traffic = (() => {
     const traffic = result.traffic;
     const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
 
-    const tierCounts = { high: 0, mid: 0, low: 0 };
+    const tierCounts = { overflow: 0, high: 0, mid: 0, low: 0 };
     const rows = [];
     let maxUtil = 0;
-    let overflowCount = 0;
     for (const e of rankedEdges) {
       const v = traffic[e.id] || 0;
       const cap = e.capacity ?? Infinity;
       const util = (isFinite(cap) && cap > 0) ? v / cap : 0;
       if (util > maxUtil) maxUtil = util;
-      if (util > 1) overflowCount++;
       const tier = classify(util);
       tierCounts[tier]++;
       setEdgeRole(e.id, 'traffic-' + tier);
@@ -1099,7 +1102,7 @@ const C9_Traffic = (() => {
     }
 
     html += '<div class="mini-stat">';
-    for (const tier of ['high', 'mid', 'low']) {
+    for (const tier of ['overflow', 'high', 'mid', 'low']) {
       const t = TIERS[tier];
       html += `<div class="info-card" style="background:${t.cardBg};border-color:${t.color}">
         <div class="label" style="color:${t.color}">${t.label}</div>
@@ -1110,11 +1113,6 @@ const C9_Traffic = (() => {
     html += `<div class="info-card"><div class="label">最大利用率 / 來源</div>
       <div class="value">${(maxUtil * 100).toFixed(1)}%
       <span style="color:#6b7280;font-weight:400;font-size:10px">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;
-    if (overflowCount > 0) {
-      html += `<div class="info-card" style="background:#fee2e2;border-color:#dc2626">
-        <div class="label" style="color:#991b1b">⚠ 容量溢出</div>
-        <div class="value" style="color:#991b1b">${overflowCount} 條鏈路超過容量</div></div>`;
-    }
 
     html += '<h2 class="section-h mt-3">邊流量排行</h2>';
     html += '<table><tr><th>連接</th><th>Gbps</th><th>Cap</th><th>Util%</th><th>分類</th></tr>';
@@ -1225,7 +1223,7 @@ const C4_Failure = (() => {
       const sample = overflows.slice(0, 3).map(x =>
         `${x.edge.source}↔${x.edge.target} ${(x.util*100).toFixed(0)}%`).join(', ');
       html += `<div class="info-card" style="background:#fee2e2;border-color:#dc2626;margin-top:6px">
-        <div class="label" style="color:#991b1b">⚠ 容量溢出</div>
+        <div class="label" style="color:#991b1b">⚠ 過載</div>
         <div class="value" style="color:#991b1b">${overflows.length} 條鏈路超過容量</div>
         <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}</div></div>`;
     }
@@ -1271,7 +1269,7 @@ const C4_Failure = (() => {
     dom('runFailSim').addEventListener('click', render);
   }
 
-  return { init };
+  return { init, activate: render };
 })();
 
 // ----------------------------------------------------------------------------

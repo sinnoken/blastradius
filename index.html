@@ -333,7 +333,7 @@
 // ============================================================================
 
 import {
-  buildAdjacency, buildPrefixIndex, dijkstraECMP, stripPseudo,
+  buildAdjacency, buildPrefixIndex, bfsOrder, dijkstraECMP, stripPseudo,
   resolveLPM, pathToEdgeIds, backupPath, unbackupSegmentScan,
   connectedComponents, allPairsLoad, allPairsTraffic, computeNodeBC,
   firstHopEdge, ecmpBackupCheck, ecmpBackupScanAll,
@@ -721,7 +721,8 @@ const C2_Matrix = (() => {
 
   function render() {
     const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
-    const routers = topology.nodes.filter(n => n.type === 'router').map(n => n.id);
+    const root = topology.nodes.find(n => n.type === 'router')?.id;
+    const routers = root ? bfsOrder(adj, root) : [];
     const matrix = {};
     let maxCost = 0;
     for (const a of routers) {
@@ -755,15 +756,13 @@ const C2_Matrix = (() => {
       ? `<span style="color:#dc2626">目前故障:${fE} 邊 / ${fN} 節點</span>`
       : '';
 
-    // cost → 顏色(低=綠,高=紅)
+    // cost → 顏色(固定門檻,不隨 maxCost 浮動)
+    // ≤30 區域內 · 31–60 跨區域 · 61–100 跨洋 · >100 多段跨洋
     const colorFor = (cost) => {
-      if (cost === Infinity) return { bg: '#fecaca', fg: '#991b1b' };  // 不可達
-      if (maxCost === 0) return { bg: '#f0fdf4', fg: '#166534' };
-      const t = cost / maxCost;
-      // green (134,239,172) → yellow (253,224,71) → orange (251,146,60) → red (252,165,165)
-      if (t < 0.33) return { bg: '#dcfce7', fg: '#166534' };
-      if (t < 0.66) return { bg: '#fef9c3', fg: '#854d0e' };
-      if (t < 0.85) return { bg: '#fed7aa', fg: '#9a3412' };
+      if (cost === Infinity) return { bg: '#fecaca', fg: '#991b1b' };
+      if (cost <= 30)  return { bg: '#dcfce7', fg: '#166534' };
+      if (cost <= 60)  return { bg: '#fef9c3', fg: '#854d0e' };
+      if (cost <= 100) return { bg: '#fed7aa', fg: '#9a3412' };
       return { bg: '#fecaca', fg: '#991b1b' };
     };
 
@@ -795,7 +794,7 @@ const C2_Matrix = (() => {
       html += '</tr>';
     }
     html += '</table>';
-    html += `<div class="hint mt-2">最大 cost = <b>${maxCost === 0 ? 'n/a' : maxCost}</b>。底色越紅 cost 越高。<sub style="color:#a855f7;font-weight:700">*</sub> 標記表示與反方向 cost 不同(非對稱)。</div>`;
+    html += `<div class="hint mt-2">底色固定門檻:<b style="color:#166534">≤30</b> 區域內 · <b style="color:#854d0e">31–60</b> 跨區域 · <b style="color:#9a3412">61–100</b> 跨洋 · <b style="color:#991b1b">&gt;100</b> 多段跨洋。<sub style="color:#a855f7;font-weight:700">*</sub> = 非對稱。最大 cost = ${maxCost === 0 ? 'n/a' : maxCost}。</div>`;
     dom('matrix-result').innerHTML = html;
     dom('matrix-detail').innerHTML = '';
 

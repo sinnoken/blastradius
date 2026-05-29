@@ -54,6 +54,24 @@ export function buildPrefixIndex(topo) {
   return idx;
 }
 
+// BFS 拓樸序 — 從 root 開始,按跳數展開,穿越 pseudo-node 但只收錄 router
+export function bfsOrder(adj, root) {
+  const visited = new Set([root]);
+  const queue = [root];
+  const order = [];
+  while (queue.length) {
+    const u = queue.shift();
+    if (!u.startsWith('PN')) order.push(u);
+    for (const [v] of (adj[u] || [])) {
+      if (!visited.has(v)) {
+        visited.add(v);
+        queue.push(v);
+      }
+    }
+  }
+  return order;
+}
+
 // ============================================================================
 // C1 — SPT (Dijkstra + ECMP, §4)
 // ============================================================================

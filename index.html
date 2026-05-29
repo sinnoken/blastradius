@@ -102,55 +102,68 @@
   <h1 class="text-sm font-semibold tracking-wide">BlastRadius POC</h1>
 </header>
 
-<main class="flex-1 grid grid-cols-[200px_1fr_360px] min-h-0">
+<main class="flex-1 flex min-h-0">
 
-  <!-- LEFT panel: global view + legend only -->
-  <aside class="bg-white border-r border-gray-200 p-3.5 overflow-y-auto space-y-1.5">
-    <h2 class="section-h !mt-0">顯示選項</h2>
-    <div class="hint">Pseudo-node 是 OSPF LSA2 對 Transit LAN 的抽象表示,實務上是一個虛擬節點。隱藏後只看實體 Router 拓樸。</div>
-    <button class="btn-secondary mt-1.5" id="togglePseudo">隱藏 Pseudo-node</button>
+  <!-- LEFT panel: controls (top) + reserved space (middle) + legend (bottom) -->
+  <aside class="w-[200px] shrink-0 bg-white border-r border-gray-200 p-3.5 flex flex-col min-h-0">
+    <div class="space-y-1.5">
+      <h2 class="section-h !mt-0">控制</h2>
+      <button class="btn-secondary" id="togglePseudo"
+        title="Pseudo-node 是交換式網段的虛擬節點,用來表示多台 Router 共用同一個 LAN。隱藏後只顯示實體 Router。">隱藏 Pseudo-node</button>
+      <button class="btn-danger mt-1" id="clearFailed"
+        title="清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。">清除所有故障</button>
+      <div class="text-[10px] text-gray-400 mt-1">右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版</div>
+    </div>
 
-    <h2 class="section-h">故障操作</h2>
-    <div class="hint"><b>右鍵</b> 點擊鏈路或 Router 節點 → 切換故障狀態。單擊節點可拖曳排版(Pseudo-node 為 LSA2 抽象,不可故障)</div>
-    <button class="btn-danger" id="clearFailed">清除所有故障</button>
+    <div class="flex-1"></div>
 
-    <h2 class="section-h">圖例</h2>
-    <div class="legend">
-      <div class="legend-item"><span class="legend-dot"></span><span>Router</span></div>
-      <div class="legend-item"><span class="legend-dot pseudo"></span><span>Pseudo-node</span></div>
-      <div class="legend-item"><span class="legend-line normal"></span><span>一般鏈路</span></div>
-      <div class="legend-item"><span class="legend-line spt"></span><span>SPT 主路徑</span></div>
-      <div class="legend-item"><span class="legend-line backup"></span><span>備援路徑</span></div>
-      <div class="legend-item"><span class="legend-line failed"></span><span>故障鏈路</span></div>
-      <div class="legend-item"><span class="legend-line load-inc"></span><span>流量增 (失效後)</span></div>
-      <div class="legend-item"><span class="legend-line load-dec"></span><span>受影響減少 (失效後)</span></div>
+    <div>
+      <h2 class="section-h">圖例</h2>
+      <div class="legend">
+        <div class="legend-item"><span class="legend-dot"></span><span>Router</span></div>
+        <div class="legend-item"><span class="legend-dot pseudo"></span><span>Pseudo-node</span></div>
+        <div class="legend-item"><span class="legend-line normal"></span><span>一般鏈路</span></div>
+        <div class="legend-item"><span class="legend-line spt"></span><span>SPT 主路徑</span></div>
+        <div class="legend-item"><span class="legend-line backup"></span><span>備援路徑</span></div>
+        <div class="legend-item"><span class="legend-line failed"></span><span>故障鏈路</span></div>
+      </div>
+      <details class="mt-1">
+        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">失效模擬圖例 ▸</summary>
+        <div class="legend mt-1">
+          <div class="legend-item"><span class="legend-line load-inc"></span><span>流量增 (失效後)</span></div>
+          <div class="legend-item"><span class="legend-line load-dec"></span><span>受影響減少 (失效後)</span></div>
+        </div>
+      </details>
     </div>
   </aside>
 
   <!-- CENTER -->
-  <div id="cy"></div>
+  <div id="cy" class="flex-1 min-w-0"></div>
 
-  <!-- RIGHT: tabbed reports -->
-  <aside class="bg-white border-l border-gray-200 overflow-y-auto">
+  <!-- RESIZE HANDLE -->
+  <div id="panel-resize" class="w-1 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors"></div>
+
+  <!-- RIGHT: tabbed reports (resizable) -->
+  <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:360px">
     <div class="tabs">
-      <button class="tab active" data-tab="path" data-group="live" title="即時狀態(吃右鍵故障)">路徑</button>
-      <button class="tab" data-tab="matrix" data-group="live" title="即時狀態(吃右鍵故障)">矩陣</button>
-      <button class="tab" data-tab="allpairs" data-group="live" title="即時狀態(吃右鍵故障)">樞紐度</button>
-      <button class="tab" data-tab="traffic" data-group="live" title="流量視角(需 demand.js)">邊流量</button>
+      <button class="tab active" data-tab="path" data-group="live" title="即時分析:反映圖上標記的故障狀態">路徑</button>
+      <button class="tab" data-tab="matrix" data-group="live" title="即時分析:反映圖上標記的故障狀態">矩陣</button>
+      <button class="tab" data-tab="allpairs" data-group="live" title="即時分析:反映圖上標記的故障狀態">樞紐度</button>
+      <button class="tab" data-tab="traffic" data-group="live" title="即時分析:依據流量矩陣計算實際負載">邊流量</button>
       <div class="w-px bg-gray-300 my-1.5" title="分隔"></div>
-      <button class="tab" data-tab="failure" data-group="whatif" title="What-if 模擬(自選節點失效)">失效模擬</button>
+      <button class="tab" data-tab="failure" data-group="whatif" title="假設模擬:指定一台 Router 故障後的全網影響">失效模擬</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
-      <button class="tab" data-tab="ecmp" data-group="audit" title="設計審計(忽略右鍵故障)">ECMP 檢查</button>
-      <button class="tab" data-tab="asym" data-group="audit" title="設計審計(忽略右鍵故障)">非對稱</button>
-      <button class="tab" data-tab="heatmap" data-group="audit" title="設計審計(忽略右鍵故障)">Prefix 冗餘</button>
-      <button class="tab" data-tab="n1" data-group="audit" title="設計審計(忽略右鍵故障)">N-1</button>
+      <button class="tab" data-tab="ecmp" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">ECMP</button>
+      <button class="tab" data-tab="asym" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">非對稱</button>
+      <button class="tab" data-tab="heatmap" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">Prefix</button>
+      <button class="tab" data-tab="n1" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">N-1</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
-      <button class="tab" data-tab="edges" data-group="edit" title="拓樸編輯">鏈路</button>
+      <button class="tab" data-tab="edges" data-group="edit" title="修改鏈路成本,即時重算路徑">鏈路</button>
     </div>
 
     <div class="tab-content active" id="tab-path">
-      <h2 class="section-h !border-0 !mt-0">C1 路徑分析</h2>
-      <div class="hint">計算 Source → Destination 最短路徑(SPT + ECMP),反映目前右鍵故障狀態,自動判斷 PRIMARY / BACKUP MODE。下方「無保護段掃描」檢查 primary 路徑上有無單點故障邊(SPOF)。</div>
+      <h2 class="section-h !border-0 !mt-0">路徑分析</h2>
+      <div class="hint">計算兩點之間的最短路徑。若存在多條相同成本的路徑會全部列出(ECMP)。如果故障導致走了繞道,會標示為「備援模式」。</div>
       <div class="grid grid-cols-2 gap-2 mt-2">
         <div><label class="label-sm">Source</label><select id="src" class="select-input"></select></div>
         <div><label class="label-sm">Destination</label><select id="dst" class="select-input"></select></div>
@@ -160,18 +173,17 @@
         <button class="btn-secondary" id="resetView">重置畫面</button>
       </div>
       <div id="path-result" class="mt-3">
-        <div class="hint">選擇 Source / Destination 後點擊「計算最短路徑」開始分析。</div>
+        <div class="hint">選擇起點和終點後,點擊「計算最短路徑」。</div>
       </div>
-      <button class="btn-secondary mt-2.5" id="scanUnbackup">掃描無保護段 (§5.4)</button>
       <div id="unbackup-result"></div>
     </div>
 
     <div class="tab-content" id="tab-matrix">
-      <h2 class="section-h !border-0 !mt-0">C2 最短路徑矩陣</h2>
+      <h2 class="section-h !border-0 !mt-0">最短路徑矩陣</h2>
       <div class="hint">
-        全部 Router pair 的最短路徑 cost 一覽。<b>底色深淺</b> = cost 大小;
-        <b>右上 ²/³</b> = ECMP 路徑數;<b>右下 *</b> = 非對稱(與鏡像格 cost 不同)。
-        <b>點任一格</b>查看詳細路徑並在拓樸圖上高亮。
+        所有 Router 之間的最短路徑成本一覽表。<b>底色越紅</b> = 成本越高;
+        <b>右上角數字</b> = 等成本路徑數(ECMP);<b>右下 *</b> = 來回路徑不對稱。
+        點任一格查看路徑詳情並在圖上高亮。
       </div>
       <div class="mt-2 flex items-center justify-between">
         <button class="btn-primary" id="runMatrix" style="width:auto;padding-left:12px;padding-right:12px">重新計算</button>
@@ -182,23 +194,19 @@
     </div>
 
     <div class="tab-content" id="tab-allpairs">
-      <h2 class="section-h !border-0 !mt-0">C3 樞紐度盤點</h2>
+      <h2 class="section-h !border-0 !mt-0">樞紐度盤點</h2>
       <div class="hint">
-        計算每條<b>鏈路</b>與每台<b>節點</b>的樞紐度(Betweenness Centrality):被多少 SPT 路徑經過,ECMP 等分計算。
-        樞紐度高 = 過路流量重,失效衝擊大;樞紐度 0 = 純備援,平時零過路流量。
-        <div class="mt-1">分 4 階對應採購決策:<b>樞紐</b>擴容雙保 / <b>正常</b>維持 / <b>偶爾</b>降規候選 / <b>純備援</b>裁併候選。</div>
+        衡量每條鏈路和每台節點「有多少路徑經過」— 數值越高,越多流量依賴它,故障影響越大。
+        <div class="mt-1">分 4 級:<b>樞紐</b>(需擴容) / <b>正常</b>(維持) / <b>偶爾</b>(可降規) / <b>純備援</b>(可裁併)。</div>
       </div>
       <button class="btn-primary mt-2" id="listAllPairs">重新計算</button>
       <div id="all-pairs-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-traffic">
-      <h2 class="section-h !border-0 !mt-0">C9 邊流量視圖</h2>
+      <h2 class="section-h !border-0 !mt-0">邊流量視圖</h2>
       <div class="hint">
-        每條鏈路目前實際扛多少 <b>Gbps</b>。
-        <div class="mt-1">做法:把 <code>demand.js</code> 裡每對 Router 的流量需求放到最短路徑上(有 ECMP 時平均分攤),沿途每條邊累加。</div>
-        <div class="mt-1">與 C3 的差別:C3 數「有幾條路徑經過」(看結構),本頁算「實際帶幾 Gbps」(看流量) — 一條邊可能 C3 高但這裡低,表示常被用但每筆量小。</div>
-        <div class="mt-1">門檻(以最大邊負載為基準):<b>&gt; 60%</b> 高 / <b>&gt; 20%</b> 中 / 其餘低。</div>
+        根據流量需求矩陣,計算每條鏈路實際承載多少 <b>Gbps</b>(等成本路徑平均分攤)。與「樞紐度」的差別:樞紐度看結構(有幾條路徑經過),本頁看實際流量大小。
       </div>
       <button class="btn-primary mt-2" id="runTraffic">重新計算</button>
       <div id="traffic-result" class="mt-2.5"></div>
@@ -206,7 +214,7 @@
 
     <div class="tab-content" id="tab-edges">
       <h2 class="section-h !border-0 !mt-0">鏈路成本編輯</h2>
-      <div class="hint">直接改 cost → 即時更新圖上標籤 + 自動重算路徑。非對稱 p2p 可分別設 →/← 兩方向。</div>
+      <div class="hint">修改鏈路成本後,圖上標籤即時更新,路徑自動重算。點對點鏈路可分別設定去程和回程的成本。</div>
       <div class="grid grid-cols-2 gap-2 mt-2">
         <button class="btn-secondary" id="resetEdges">還原原始值</button>
         <button class="btn-primary" id="exportTopo">輸出 topology.js</button>
@@ -215,22 +223,22 @@
     </div>
 
     <div class="tab-content" id="tab-failure">
-      <h2 class="section-h !border-0 !mt-0">C4 節點失效模擬</h2>
-      <div class="hint">選一台 Router 模擬失效,重算全網 SPT。顯示連通性、分群,以及流量重分配明細(斷線 / ↑ 增加 / ↓ 減少)。本 Tab 自帶情境,獨立於右鍵故障狀態。</div>
+      <h2 class="section-h !border-0 !mt-0">節點失效模擬</h2>
+      <div class="hint">假設一台 Router 完全故障:網路是否仍然連通?流量會怎麼重新分配?哪些鏈路負載會增加?本頁獨立模擬,不受圖上手動故障標記影響。</div>
       <div class="mt-2"><label class="label-sm">選擇要失效的節點</label><select id="failNode" class="select-input"></select></div>
       <button class="btn-primary mt-1.5" id="runFailSim">執行節點失效模擬</button>
       <div id="failure-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-ecmp">
-      <h2 class="section-h !border-0 !mt-0">C5 ECMP 備援完整性檢查</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受右鍵故障影響</div>
+      <h2 class="section-h !border-0 !mt-0">ECMP 備援檢查</h2>
+      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">
-        若某 src → dst 有 <b>多條等成本路徑</b>(ECMP),理想狀況是「砍掉任一條 ECMP 鏈路,流量仍由剩下的 ECMP 鏈路接手」 — 不應該繞到 ECMP 群組外。本檢查掃描每對 Router,模擬 ECMP 邊一條條失效,看是否仍由群組內接手。
+        當兩點之間有<b>多條等成本路徑</b>(ECMP)時,斷掉其中一條,流量應由同群組的其他路徑接手。本檢查逐一模擬斷線,驗證備援是否留在群組內。
         <div class="mt-1.5">
-          <span class="badge pass">通過</span>群組內任一邊失效後,剩餘 ECMP 邊仍能接手
-          <br><span class="badge fail">失敗</span>失效後不可達 或 流量繞到 ECMP 群組外
-          <br><span class="badge na">不適用</span>本來就沒 ECMP(只有一條最短路、或多條共用同一出口)
+          <span class="badge pass">通過</span>斷任一條,群組內接手
+          <br><span class="badge fail">失敗</span>斷線後不可達或繞出群組
+          <br><span class="badge na">不適用</span>只有一條路徑,不適用此檢查
         </div>
       </div>
       <button class="btn-primary mt-2" id="runEcmpCheck">掃描所有 Router pairs</button>
@@ -238,19 +246,19 @@
     </div>
 
     <div class="tab-content" id="tab-asym">
-      <h2 class="section-h !border-0 !mt-0">C6 非對稱路徑偵測</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受右鍵故障影響</div>
-      <div class="hint">A→B 與 B→A 的路徑或成本不同時列入。</div>
+      <h2 class="section-h !border-0 !mt-0">非對稱路徑偵測</h2>
+      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
+      <div class="hint">檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。</div>
       <button class="btn-primary mt-2" id="runAsymScan">掃描所有 Router pairs</button>
       <div id="asym-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-heatmap">
-      <h2 class="section-h !border-0 !mt-0">C7 Prefix 宣告冗餘</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受右鍵故障影響</div>
+      <h2 class="section-h !border-0 !mt-0">Prefix 宣告冗餘</h2>
+      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">
-        基於 Prefix Index(§3.2 Rule 5):被 ≥2 節點宣告 = redundant(有備援),僅被 1 節點宣告 = single-advertised(單一宣告)。
-        <div class="mt-1.5">每台 router 統計 <b>single-advertised ÷ total</b> 比例,依此著色:</div>
+        每個網段(Prefix)被幾台 Router 宣告?被 2 台以上宣告 = 有備援;只被 1 台宣告 = 該台故障後網段就斷了。
+        <div class="mt-1.5">節點顏色 = 該 Router 宣告的網段中「無備援」的比例:</div>
         <div class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
           <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#86efac;border-color:#15803d"></span>
           <span><b>= 0%</b> — 全 prefix 都有冗餘宣告(理想)</span>
@@ -268,14 +276,13 @@
     </div>
 
     <div class="tab-content" id="tab-n1">
-      <h2 class="section-h !border-0 !mt-0">C8 N-1 Worst-case 排行</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受右鍵故障影響</div>
+      <h2 class="section-h !border-0 !mt-0">N-1 單點故障排行</h2>
+      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">
-        枚舉所有單點失效(每條 link、每台 router),對全網每對 pair 計算最差延遲。
-        排出<b>全網最脆弱的 pair</b> 與<b>最致命的失效情境</b>。
-        <span class="badge fail">∞</span>= 該失效下變不可達。
-        <span class="badge backup">×N</span>= 延遲變 N 倍。
-        點任一列在圖上可視化失效情境與重繞路徑。
+        逐一模擬每個元件(每條鏈路、每台 Router)單獨故障,找出哪些連線受害最深、哪個元件故障殺傷力最大。
+        <span class="badge fail">∞</span>= 故障後不可達。
+        <span class="badge backup">×N</span>= 成本變 N 倍。
+        點任一列在圖上查看影響範圍。
       </div>
       <button class="btn-primary mt-2" id="runN1Scan">執行 N-1 掃描</button>
       <div id="n1-result" class="mt-2.5"></div>
@@ -336,6 +343,9 @@ const cy = cytoscape({
   // 不可選取(避免選取殘留),允許拖曳(左鍵拖移、右鍵切換故障 — 兩種互動完全分離)
   autounselectify: true,
   autoungrabify: false,
+  wheelSensitivity: 0.3,
+  minZoom: 0.15,
+  maxZoom: 4,
   elements: [
     ...topology.nodes.map(n => ({
       data: { id: n.id, label: n.label, type: n.type },
@@ -526,7 +536,7 @@ for (const sel of ['src','dst','failNode']) {
 }
 dom('src').value = 'TPE';
 dom('dst').value = 'AMS';
-dom('failNode').value = 'LAX';
+dom('failNode').value = routerNodes[0].id;
 
 // 共用:右鍵故障 / 邊成本變更後,若 Path Tab 正在顯示就重算。
 // 注意:函式只是「宣告」並引用 C1_Path,直到第一次被呼叫時才會解析 — 此時 §5.1 已執行完畢。
@@ -556,6 +566,7 @@ const C1_Path = (() => {
     if (r.cost === Infinity) {
       div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
         <div class="hint">${src} → ${dst} 沒有可用路徑(可能因故障導致)。</div>`;
+      dom('unbackup-result').innerHTML = '';
       setNodeRole(src, 'endpoint');
       setNodeRole(dst, 'endpoint');
       return;
@@ -604,18 +615,17 @@ const C1_Path = (() => {
         <span class="cost">${r.cost}</span>${p.join(' → ')}</div>`;
     }
     div.innerHTML = html;
+    scanUnbackup(src, dst);
   }
 
   function reset() {
     clearAllRoles();
     dom('path-result').innerHTML =
-      '<div class="hint">選擇 Source / Destination 後點擊「計算最短路徑」開始分析。</div>';
+      '<div class="hint">選擇起點和終點後,點擊「計算最短路徑」。</div>';
     dom('unbackup-result').innerHTML = '';
   }
 
-  function scanUnbackup() {
-    const src = dom('src').value;
-    const dst = dom('dst').value;
+  function scanUnbackup(src, dst) {
     const { primaryEdges, unbacked } = unbackupSegmentScan(topology, src, dst);
     // 先把任何先前留下的 unbacked role 清掉,再標記新的;primary role 由前次 render 保留
     for (const [eid, st] of edgeStates) {
@@ -636,7 +646,7 @@ const C1_Path = (() => {
       html += `<span class="badge fail">無保護: ${unbacked.length}</span>`;
       for (const eid of unbacked) {
         const e = topology.edges.find(x => x.id === eid);
-        html += `<div class="path-item fail">${eid}: ${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
+        html += `<div class="path-item fail" title="${eid}">${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
       }
     }
     div.innerHTML = html;
@@ -646,7 +656,6 @@ const C1_Path = (() => {
     dom('runSpt').addEventListener('click', () =>
       render(dom('src').value, dom('dst').value));
     dom('resetView').addEventListener('click', reset);
-    dom('scanUnbackup').addEventListener('click', scanUnbackup);
   }
 
   return {
@@ -895,7 +904,12 @@ const C3_AllPairs = (() => {
         pairRows.push({ a, b, cost: r.cost, paths: disp });
       }
     }
-    pairRows.sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+    pairRows.sort((x, y) => {
+      const xKey = x.a < x.b ? x.a + x.b : x.b + x.a;
+      const yKey = y.a < y.b ? y.a + y.b : y.b + y.a;
+      if (xKey !== yKey) return xKey.localeCompare(yKey);
+      return x.a.localeCompare(y.a);
+    });
 
     // ---- 渲染 ----
     const div = dom('all-pairs-result');
@@ -938,13 +952,12 @@ const C3_AllPairs = (() => {
 
     // 鏈路樞紐度排行
     html += '<h2 class="section-h mt-3">鏈路樞紐度排行</h2>';
-    html += '<table><tr><th>Edge</th><th>連接</th><th>BC</th><th>分類</th><th>建議</th></tr>';
+    html += '<table><tr><th>連接</th><th>BC</th><th>分類</th><th>建議</th></tr>';
     for (const r of ranking) {
       const t = TIERS[r.tier];
       const cost = r.edge.cost + (r.edge.costRev != null && r.edge.costRev !== r.edge.cost ? `/${r.edge.costRev}` : '');
       html += `<tr>
-        <td>${r.eid}</td>
-        <td>${r.edge.source} ↔ ${r.edge.target}<br><span style="color:#9ca3af;font-size:10px">cost ${cost}</span></td>
+        <td title="${r.eid}">${r.edge.source} ↔ ${r.edge.target}<br><span style="color:#9ca3af;font-size:10px">cost ${cost}</span></td>
         <td style="font-weight:600">${r.bc.toFixed(1)}</td>
         <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
         <td style="color:${t.color};font-size:10px">${t.action}</td>
@@ -982,11 +995,11 @@ const C3_AllPairs = (() => {
 
     // 全 pair 最短路徑列表(保留舊版)
     html += '<h2 class="section-h mt-3">全 Pair 最短路徑</h2>';
-    html += '<table><tr><th>Src</th><th>Dst</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
+    html += '<table><tr><th>連接</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
     for (const pr of pairRows) {
       const ecmpBadge = pr.paths.length > 1 ? `<span class="badge ecmp">×${pr.paths.length}</span>` : '';
       const pathsHtml = pr.paths.map(p => `<div style="font-family:monospace">${p.join(' → ')}</div>`).join('');
-      html += `<tr><td>${pr.a}</td><td>${pr.b}</td><td>${pr.cost}</td><td>${ecmpBadge}</td><td>${pathsHtml}</td></tr>`;
+      html += `<tr><td>${pr.a} → ${pr.b}</td><td>${pr.cost}</td><td>${ecmpBadge}</td><td>${pathsHtml}</td></tr>`;
     }
     html += '</table>';
 
@@ -1080,12 +1093,11 @@ const C9_Traffic = (() => {
       <span style="color:#6b7280;font-weight:400;font-size:10px">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;
 
     html += '<h2 class="section-h mt-3">邊流量排行</h2>';
-    html += '<table><tr><th>Edge</th><th>連接</th><th>Gbps</th><th>分類</th></tr>';
+    html += '<table><tr><th>連接</th><th>Gbps</th><th>分類</th></tr>';
     for (const r of rows) {
       const t = TIERS[r.tier];
       html += `<tr>
-        <td>${r.eid}</td>
-        <td>${r.edge.source} ↔ ${r.edge.target}</td>
+        <td title="${r.eid}">${r.edge.source} ↔ ${r.edge.target}</td>
         <td style="font-weight:600">${r.gbps.toFixed(1)}</td>
         <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
       </tr>`;
@@ -1167,12 +1179,12 @@ const C4_Failure = (() => {
     }
 
     html += '<h2 class="section-h mt-3">Top affected links</h2>';
-    html += `<div class="hint mb-2">
-      <span class="badge fail">斷線 ${grouped.down.length}</span>
-      <span class="badge" style="background:#dbeafe;color:#1e40af">↑ 增加 ${grouped.up.length}</span>
-      <span class="badge" style="background:#fef9c3;color:#854d0e">↓ 減少 ${grouped.dec.length}</span>
+    html += `<div class="flex gap-2 mb-2 text-xs">
+      <span class="badge fail">✕ ${grouped.down.length}</span>
+      <span class="badge" style="background:#dbeafe;color:#1e40af">▲ ${grouped.up.length}</span>
+      <span class="badge" style="background:#fef9c3;color:#854d0e">▼ ${grouped.dec.length}</span>
     </div>`;
-    html += '<table><tr><th>Edge</th><th>狀態</th><th>Before</th><th>After</th><th>Δ%</th></tr>';
+    html += '<table><tr><th>Edge</th><th></th><th>Before</th><th>After</th><th>Δ%</th></tr>';
 
     // order: 斷線 first, then ↑ increases (most impactful reroute hotspots), then ↓ decreases — cap at 12 rows
     const ordered = [
@@ -1185,13 +1197,13 @@ const C4_Failure = (() => {
       const e = topology.edges.find(x => x.id === eid);
       const cls = classify(eid, d);
       const statusCell =
-        cls === 'down' ? '<span class="badge fail">斷線</span>' :
-        cls === 'up'   ? '<span class="badge" style="background:#dbeafe;color:#1e40af">↑ 增加</span>' :
-                         '<span class="badge" style="background:#fef9c3;color:#854d0e">↓ 減少</span>';
+        cls === 'down' ? '<span class="badge fail" title="斷線">✕</span>' :
+        cls === 'up'   ? '<span class="badge" style="background:#dbeafe;color:#1e40af" title="負載增加">▲</span>' :
+                         '<span class="badge" style="background:#fef9c3;color:#854d0e" title="負載減少">▼</span>';
       const arrow = d.direction === 'inc' ? '↑' : '↓';
       const color = cls === 'down' ? '#dc2626' : (cls === 'up' ? '#2563eb' : '#ca8a04');
       const pct = isFinite(d.changePct) ? d.changePct.toFixed(0) + '%' : '∞';
-      html += `<tr><td>${eid}<br><span style="color:#9ca3af;font-size:10px">${e.source}↔${e.target}</span></td>
+      html += `<tr><td title="${eid}">${e.source} ↔ ${e.target}</td>
         <td>${statusCell}</td>
         <td>${d.before.toFixed(1)}</td><td>${d.after.toFixed(1)}</td>
         <td style="color:${color};font-weight:600">${arrow} ${pct}</td></tr>`;
@@ -1225,6 +1237,12 @@ const C5_Ecmp = (() => {
 
   function render() {
     const results = ecmpBackupScanAll(topology);
+    results.sort((x, y) => {
+      const xKey = x.src < x.dst ? x.src + x.dst : x.dst + x.src;
+      const yKey = y.src < y.dst ? y.src + y.dst : y.dst + y.src;
+      if (xKey !== yKey) return xKey.localeCompare(yKey);
+      return x.src.localeCompare(y.src);
+    });
     const summary = { passed: 0, failed: 0, 'n/a': 0 };
     for (const r of results) summary[r.status]++;
 
@@ -1246,7 +1264,7 @@ const C5_Ecmp = (() => {
       html += '<div class="mt-2"><span class="badge pass">所有有 ECMP 的 pair 都通過備援檢查</span></div>';
     } else {
       html += '<h2 class="section-h mt-3">失敗明細</h2>';
-      html += '<table class="mt-1"><tr><th>來源 → 目的</th><th>原因</th></tr>';
+      html += '<table class="mt-1"><tr><th>連接</th><th>原因</th></tr>';
       for (const r of failed) {
         html += `<tr><td>${r.src} → ${r.dst}</td>
           <td style="color:#991b1b">${fmtReason(r.reason)}</td></tr>`;
@@ -1255,12 +1273,12 @@ const C5_Ecmp = (() => {
     }
 
     // 完整明細放在 collapsible details 裡,需要才展開
-    html += `<details class="mt-3"><summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-900">展開全部 ${results.length} 對的掃描結果</summary>`;
-    html += '<table class="mt-1"><tr><th>Src</th><th>Dst</th><th>狀態</th><th>備註</th></tr>';
+    html += `<details class="mt-3" open><summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-900">全部 ${results.length} 對的掃描結果</summary>`;
+    html += '<table class="mt-1"><tr><th>連接</th><th>狀態</th><th>備註</th></tr>';
     for (const r of results) {
       const cls = r.status === 'passed' ? 'pass' : (r.status === 'failed' ? 'fail' : 'na');
       const label = r.status === 'passed' ? '通過' : (r.status === 'failed' ? '失敗' : '不適用');
-      html += `<tr><td>${r.src}</td><td>${r.dst}</td>
+      html += `<tr><td>${r.src} → ${r.dst}</td>
         <td><span class="badge ${cls}">${label}</span></td>
         <td style="color:#6b7280;font-size:10px">${r.status === 'passed' ? '' : fmtReason(r.reason)}</td></tr>`;
     }
@@ -1392,7 +1410,7 @@ const C8_N1 = (() => {
   function fmtCulprit(s) {
     if (s.kind === 'edge') {
       const e = s.edge;
-      return `<span style="color:#dc2626">L</span> ${s.id} (${e.source}↔${e.target}) 斷`;
+      return `<span style="color:#dc2626" title="${s.id}">L</span> ${e.source} ↔ ${e.target} 斷`;
     }
     return `<span style="color:#dc2626">R</span> ${s.id} 失效`;
   }
@@ -1545,7 +1563,7 @@ const Edges_Editor = (() => {
 
   function render() {
     const div = dom('edges-result');
-    let html = '<table><tr><th>ID</th><th>Link</th><th>Type</th><th>Cost →</th><th>Cost ←</th></tr>';
+    let html = '<table><tr><th>連接</th><th>Type</th><th>Cost →</th><th>Cost ←</th></tr>';
     for (const e of topology.edges) {
       const orig = originalEdges.find(o => o.id === e.id);
       const modCls = isModified(e, orig) ? ' modified' : '';
@@ -1553,7 +1571,7 @@ const Edges_Editor = (() => {
       const revInput = e.type === 'p2p'
         ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" />`
         : '<span class="text-gray-400">—</span>';
-      html += `<tr data-edge-row="${e.id}"><td>${e.id}</td><td>${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${fwdInput}</td><td>${revInput}</td></tr>`;
+      html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${fwdInput}</td><td>${revInput}</td></tr>`;
     }
     html += '</table>';
     div.innerHTML = html;
@@ -1738,6 +1756,30 @@ cy.on('tap', 'edge', (evt) => {
   const row = document.querySelector(`[data-edge-row="${eid}"]`);
   if (row) row.classList.add('row-active');
 });
+
+// ============================================================================
+// §8 RESIZABLE RIGHT PANEL
+// ============================================================================
+{
+  const handle = dom('panel-resize');
+  const panel  = dom('right-panel');
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panel.offsetWidth;
+    const onMove = (ev) => {
+      const w = Math.min(700, Math.max(280, startW - (ev.clientX - startX)));
+      panel.style.width = w + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      cy.resize();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
 
 // initial render
 C1_Path.render('TPE', 'AMS');

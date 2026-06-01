@@ -388,7 +388,10 @@ const cy = cytoscape({
       'text-valign':'bottom','text-margin-y':6,'text-wrap':'wrap','width':36,'height':36,
     }},
     { selector: 'edge', style: {
-      'width':2,'line-color':'#94a3b8','curve-style':'bezier',
+      // bezier + 明確的 control-point-step-size:同一對節點間的平行等價鏈路
+      // (如 e_TPE_TYO / e_TPE_TYO_b)會自動扇形分開,不會疊在同一條弧線上,
+      // label 也才不會互相遮蓋。單一鏈路時 bezier 退化為近直線,不影響外觀。
+      'width':2,'line-color':'#94a3b8','curve-style':'bezier','control-point-step-size':28,
       'label':'data(label)','font-size':'11px','color':'#475569',
       'text-background-color':'#fff','text-background-opacity':0.85,
       'text-background-padding':'2px','target-arrow-shape':'none',
@@ -618,12 +621,16 @@ const C1_Path = (() => {
       return;
     }
 
-    const disp = [];
-    const seen = new Set();
-    for (const p of r.paths) {
-      const s = stripPseudo(p).join('>');
-      if (!seen.has(s)) { seen.add(s); disp.push(stripPseudo(p)); }
-    }
+    // 依 router-level node 序列分組;同一組若有多條 edgePaths 即為平行等價鏈路
+    const groups = new Map();
+    r.paths.forEach((p, i) => {
+      const nodes = stripPseudo(p);
+      const sig = nodes.join('>');
+      if (!groups.has(sig)) groups.set(sig, { nodes, variants: [] });
+      groups.get(sig).variants.push(r.edgePaths[i]);
+    });
+    const disp = [...groups.values()];
+    const ecmpCount = r.edgePaths.length;   // 真正的 ECMP 多重度(含平行鏈路)
 
     // 判斷是否為 BACKUP:跟「無故障基線」比較。若路徑集合或 cost 不同 → 走備援
     // 只看「有沒有故障」不夠 — 故障可能跟當前 src→dst 完全無關
@@ -640,25 +647,29 @@ const C1_Path = (() => {
     }
 
     const role = inBackup ? 'backup' : 'spt';
-    for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
-      setEdgeRole(eid, role);
-    }
+    // 用 edgePaths 高亮 — 平行等價鏈路的每一條都會被點亮,不會漏掉第二條
+    for (const ep of r.edgePaths) for (const eid of ep) setEdgeRole(eid, role);
     setNodeRole(src, 'endpoint');
     setNodeRole(dst, 'endpoint');
-    for (const p of disp) for (const n of p) {
+    for (const g of disp) for (const n of g.nodes) {
       if (n !== src && n !== dst) setNodeRole(n, 'highlight');
     }
 
-    const isECMP = disp.length > 1;
+    const isECMP = ecmpCount > 1;
     let html = '';
     html += inBackup ? '<span class="badge backup">BACKUP MODE</span>'
                      : '<span class="badge ecmp">PRIMARY</span>';
-    if (isECMP) html += `<span class="badge ecmp">ECMP × ${disp.length}</span>`;
+    if (isECMP) html += `<span class="badge ecmp">ECMP × ${ecmpCount}</span>`;
     html += `<div class="info-card" style="margin-top:6px">
       <div class="label">Total Cost</div><div class="value">${r.cost}</div></div>`;
-    for (const p of disp) {
+    for (const g of disp) {
       html += `<div class="path-item${inBackup ? ' backup' : ''}">
-        <span class="cost">${r.cost}</span>${p.join(' → ')}</div>`;
+        <span class="cost">${r.cost}</span>${g.nodes.join(' → ')}</div>`;
+      // 同一 router 路徑底下有多條平行等價鏈路 → 逐條列出 edgeId,讓工程師看到實體分流
+      if (g.variants.length > 1) {
+        html += `<div class="hint" style="margin:2px 0 6px 8px;color:#7c3aed">
+          ⇉ 平行等價鏈路 ×${g.variants.length}:${g.variants.map(v => v.join('+')).join('  |  ')}</div>`;
+      }
     }
     div.innerHTML = html;
     scanUnbackup(src, dst);
@@ -739,8 +750,8 @@ const C2_Matrix = (() => {
           continue;
         }
         const r = dijkstraECMP(adj, a, b);
-        // 去重 stripPseudo 後相同的 path(同一條 router-level 路徑可能因 LSA2 pseudo-node 出現多次)
-        // 保留原始 path 以便 pathToEdgeIds 能正確匹配經過 pseudo-node 的邊
+        // 去重 stripPseudo 後相同的 router-level path(LSA2 pseudo-node 會讓同一條路徑出現多次)
+        // edgePaths 已逐條帶 edgeId 供高亮用;rawPaths 保留未 strip 的原始 node 序列,僅供節點高亮
         const seen = new Set();
         const rawPaths = [];
         const uniquePaths = [];
@@ -748,7 +759,7 @@ const C2_Matrix = (() => {
           const s = stripPseudo(p).join('>');
           if (!seen.has(s)) { seen.add(s); rawPaths.push(p); uniquePaths.push(stripPseudo(p)); }
         }
-        matrix[a][b] = { cost: r.cost, paths: uniquePaths, rawPaths };
+        matrix[a][b] = { cost: r.cost, paths: uniquePaths, rawPaths, edgePaths: r.edgePaths };
         if (r.cost !== Infinity && r.cost > maxCost) maxCost = r.cost;
       }
     }
@@ -787,7 +798,7 @@ const C2_Matrix = (() => {
           continue;
         }
         const { bg, fg } = colorFor(cell.cost);
-        const ecmp = cell.paths.length;
+        const ecmp = cell.edgePaths.length;   // 平行等價鏈路也計入 ECMP 多重度
         const ecmpSup = ecmp >= 2 ? `<sup style="color:#1e40af">${ecmp >= 10 ? ecmp : ['','','²','³','⁴','⁵','⁶','⁷','⁸','⁹'][ecmp]}</sup>` : '';
         // 非對稱標記:跟鏡像格 cost 不同
         const mirror = matrix[b] && matrix[b][a];
@@ -829,14 +840,13 @@ const C2_Matrix = (() => {
       return;
     }
 
-    // 在拓樸圖上高亮所有 ECMP 路徑(用 rawPaths,含 pseudo-node,才能正確匹配邊)
-    const pathsForHighlight = cell.rawPaths || cell.paths;
-    for (const p of pathsForHighlight) {
-      for (const eid of pathToEdgeIds(p, topology.edges)) setEdgeRole(eid, 'spt');
+    // 在拓樸圖上高亮所有 ECMP 路徑 — 用 edgePaths 才能點亮平行等價鏈路的每一條
+    for (const ep of (cell.edgePaths || [])) {
+      for (const eid of ep) setEdgeRole(eid, 'spt');
     }
     setNodeRole(src, 'endpoint');
     setNodeRole(dst, 'endpoint');
-    for (const p of pathsForHighlight) for (const n of p) {
+    for (const p of (cell.rawPaths || cell.paths)) for (const n of p) {
       if (n !== src && n !== dst) setNodeRole(n, 'highlight');
     }
 
@@ -844,8 +854,9 @@ const C2_Matrix = (() => {
     const reverse = matrixCache.matrix[dst][src];
     const isAsym = reverse && reverse.cost !== Infinity && reverse.cost !== cell.cost;
 
+    const ecmpN = cell.edgePaths.length;
     let html = `<div class="info-card"><div class="label">${src} → ${dst}</div>
-      <div class="value">cost ${cell.cost}${cell.paths.length > 1 ? ` · ECMP ×${cell.paths.length}` : ''}</div></div>`;
+      <div class="value">cost ${cell.cost}${ecmpN > 1 ? ` · ECMP ×${ecmpN}` : ''}</div></div>`;
     for (const p of cell.paths) {
       html += `<div class="path-item"><span class="cost">${cell.cost}</span>${p.join(' → ')}</div>`;
     }
@@ -952,7 +963,7 @@ const C3_AllPairs = (() => {
           const s = stripPseudo(p).join('>');
           if (!seen.has(s)) { seen.add(s); disp.push(stripPseudo(p)); }
         }
-        pairRows.push({ a, b, cost: r.cost, paths: disp });
+        pairRows.push({ a, b, cost: r.cost, paths: disp, ecmp: r.edgePaths.length });
       }
     }
     pairRows.sort((x, y) => {
@@ -1048,7 +1059,7 @@ const C3_AllPairs = (() => {
     html += '<h2 class="section-h mt-3">全 Pair 最短路徑</h2>';
     html += '<table><tr><th>連接</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
     for (const pr of pairRows) {
-      const ecmpBadge = pr.paths.length > 1 ? `<span class="badge ecmp">×${pr.paths.length}</span>` : '';
+      const ecmpBadge = pr.ecmp > 1 ? `<span class="badge ecmp">×${pr.ecmp}</span>` : '';
       const pathsHtml = pr.paths.map(p => `<div style="font-family:monospace">${p.join(' → ')}</div>`).join('');
       html += `<tr><td>${pr.a} → ${pr.b}</td><td>${pr.cost}</td><td>${ecmpBadge}</td><td>${pathsHtml}</td></tr>`;
     }
@@ -1581,7 +1592,7 @@ const C8_N1 = (() => {
     const adj = buildAdjacency(topology.edges, fE, fN);
     const r = dijkstraECMP(adj, row.a, row.b);
     if (r.cost !== Infinity) {
-      for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
+      for (const ep of r.edgePaths) for (const eid of ep) {
         setEdgeRole(eid, 'backup');
       }
     }
@@ -1600,7 +1611,7 @@ const C8_N1 = (() => {
       if (aff.worst === Infinity) continue;  // 不可達就沒繞道可畫
       const r = dijkstraECMP(adj, aff.a, aff.b);
       if (r.cost === Infinity) continue;
-      for (const p of r.paths) for (const eid of pathToEdgeIds(p, topology.edges)) {
+      for (const ep of r.edgePaths) for (const eid of ep) {
         if (edgeStates.get(eid)?.role === 'none') setEdgeRole(eid, 'backup');
       }
     }

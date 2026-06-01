@@ -12,22 +12,24 @@
 // Rule 1 (p2p) + Rule 2 (transit pseudo-node) — 建有向圖鄰接表
 export function buildAdjacency(edges, failedEdges = new Set(), failedNodes = new Set()) {
   const adj = {};
-  const add = (u, v, c) => {
+  // 每筆鄰接帶上 edgeId,讓下游能區分「同一對節點之間的兩條平行等價鏈路」。
+  // 沒有 edgeId 的話,parallel equal-cost edges 在 node 層級完全無法分辨。
+  const add = (u, v, c, id) => {
     if (failedNodes.has(u) || failedNodes.has(v)) return;
     if (!adj[u]) adj[u] = [];
-    adj[u].push([v, c]);
+    adj[u].push([v, c, id]);
   };
   for (const e of edges) {
     if (failedEdges.has(e.id)) continue;
     if (e.type === 'p2p') {
-      add(e.source, e.target, e.cost);
-      add(e.target, e.source, e.costRev ?? e.cost);
+      add(e.source, e.target, e.cost, e.id);
+      add(e.target, e.source, e.costRev ?? e.cost, e.id);
     } else if (e.type === 'transit') {
       const sIsPseudo = e.source.startsWith('PN');
       const router = sIsPseudo ? e.target : e.source;
       const pseudo = sIsPseudo ? e.source : e.target;
-      add(router, pseudo, e.cost);
-      add(pseudo, router, 0);
+      add(router, pseudo, e.cost, e.id);
+      add(pseudo, router, 0, e.id);
     }
   }
   return adj;
@@ -98,9 +100,15 @@ export function bfsOrder(adj, root) {
 // C1 — SPT (Dijkstra + ECMP, §4)
 // ============================================================================
 
+// 回傳 { cost, paths, edgePaths }:
+//   paths     — node 序列陣列(顯示 / BC / 對稱比對用)
+//   edgePaths — 與 paths 索引對齊的 edgeId 序列陣列(高亮 / 負載 / ECMP 計數用)
+// 關鍵:preds 改記 (前驅節點, edgeId) tuple 而非單純節點。兩條平行等價鏈路
+// e1/e2 會各自成為一筆 pred,enumerate 因此展開成兩條 edge-distinct 路徑 —
+// ECMP 多重度、邊高亮、負載平分才會把平行鏈路算成兩條,而不是塌成一條。
 export function dijkstraECMP(adj, src, dst) {
   const dist  = { [src]: 0 };
-  const preds = {};
+  const preds = {};               // preds[v] = [{ u, id }, ...]
   const visited = new Set();
   const pq = [[0, src]];
 
@@ -110,29 +118,37 @@ export function dijkstraECMP(adj, src, dst) {
     if (visited.has(u)) continue;
     visited.add(u);
     if (!adj[u]) continue;
-    for (const [v, c] of adj[u]) {
+    for (const [v, c, id] of adj[u]) {
       const nd = d + c;
       if (dist[v] === undefined || nd < dist[v]) {
         dist[v] = nd;
-        preds[v] = new Set([u]);
+        preds[v] = [{ u, id }];
         pq.push([nd, v]);
       } else if (nd === dist[v]) {
-        preds[v].add(u);
+        // 不去重:同一個 u 但不同 edgeId(平行鏈路)必須各記一筆
+        preds[v].push({ u, id });
       }
     }
   }
-  if (dist[dst] === undefined) return { cost: Infinity, paths: [] };
+  if (dist[dst] === undefined) return { cost: Infinity, paths: [], edgePaths: [] };
 
   const enumerate = (node) => {
-    if (node === src) return [[src]];
+    if (node === src) return [{ nodes: [src], edges: [] }];
     if (!preds[node]) return [];
     const out = [];
-    for (const p of preds[node]) {
-      for (const path of enumerate(p)) out.push([...path, node]);
+    for (const { u, id } of preds[node]) {
+      for (const sub of enumerate(u)) {
+        out.push({ nodes: [...sub.nodes, node], edges: [...sub.edges, id] });
+      }
     }
     return out;
   };
-  return { cost: dist[dst], paths: enumerate(dst) };
+  const full = enumerate(dst);
+  return {
+    cost: dist[dst],
+    paths: full.map(f => f.nodes),
+    edgePaths: full.map(f => f.edges),
+  };
 }
 
 // §4.3 移除 pseudo-node 後處理
@@ -146,6 +162,8 @@ export function resolveLPM(prefixIndex, target) {
 }
 
 // 工具:把路徑(node list)轉成 edge id list — 用於高亮
+// ⚠ 平行等價鏈路無法靠 node list 還原:find() 只會回第一條。需要精準 edge
+// 對應時請改用 dijkstraECMP 回傳的 edgePaths(已逐條帶 edgeId)。
 export function pathToEdgeIds(path, edges) {
   const ids = [];
   for (let i = 0; i < path.length - 1; i++) {
@@ -174,8 +192,8 @@ export function unbackupSegmentScan(topo, src, dst) {
   const primary = dijkstraECMP(adj, src, dst);
   if (primary.cost === Infinity) return { primaryEdges: [], unbacked: [] };
   const primaryEdges = new Set();
-  for (const p of primary.paths) {
-    for (const eid of pathToEdgeIds(p, topo.edges)) primaryEdges.add(eid);
+  for (const ep of primary.edgePaths) {
+    for (const eid of ep) primaryEdges.add(eid);
   }
   const unbacked = [];
   for (const eid of primaryEdges) {
@@ -226,13 +244,14 @@ export function allPairsLoad(topo, failedEdges = new Set(), failedNodes = new Se
       if (a === b) continue;
       totalPairs++;
       const r = dijkstraECMP(adj, a, b);
-      if (r.cost === Infinity || r.paths.length === 0) {
+      if (r.cost === Infinity || r.edgePaths.length === 0) {
         lostPairs.push({ a, b });
         continue;
       }
-      const w = 1 / r.paths.length;
-      for (const p of r.paths) {
-        for (const eid of pathToEdgeIds(p, topo.edges)) {
+      // 以 edgePaths 數量為 ECMP 多重度,負載平分到每條 edge(含平行鏈路)
+      const w = 1 / r.edgePaths.length;
+      for (const ep of r.edgePaths) {
+        for (const eid of ep) {
           load[eid] = (load[eid] || 0) + w;
         }
       }
@@ -271,15 +290,16 @@ export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNod
         continue;
       }
       const r = dijkstraECMP(adj, a, b);
-      if (r.cost === Infinity || r.paths.length === 0) {
+      if (r.cost === Infinity || r.edgePaths.length === 0) {
         if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'no-path' });
         continue;
       }
       reachablePairs++;
       servedDemand += gbps;
-      const w = gbps / r.paths.length;
-      for (const p of r.paths) {
-        for (const eid of pathToEdgeIds(p, topo.edges)) {
+      // demand 平分到每條 edge-distinct 路徑 — 平行等價鏈路各分到 gbps / N
+      const w = gbps / r.edgePaths.length;
+      for (const ep of r.edgePaths) {
+        for (const eid of ep) {
           traffic[eid] = (traffic[eid] || 0) + w;
         }
       }
@@ -360,6 +380,9 @@ export function simulateNodeFailure(topo, failedNodeId) {
 // C4 — ECMP BACKUP CHECK (§7)
 // ============================================================================
 
+// 注意:node 層級的 find() 無法分辨平行鏈路。ecmpBackupCheck 已改用
+// edgePaths[i][0](每條最短路徑的第一條實體邊)取出 first-hop,保留此函式
+// 僅為相容外部 import,不再供 ECMP 檢查使用。
 export function firstHopEdge(src, nextHop, edges) {
   return edges.find(e =>
     (e.source === src && e.target === nextHop) ||
@@ -370,13 +393,12 @@ export function firstHopEdge(src, nextHop, edges) {
 export function ecmpBackupCheck(topo, src, dst) {
   const adj = buildAdjacency(topo.edges);
   const primary = dijkstraECMP(adj, src, dst);
-  if (primary.paths.length < 2) return { status: 'n/a', reason: 'no ECMP' };
+  // ECMP 多重度以 edge-distinct 路徑數計 — 兩條平行等價鏈路即構成 ECMP×2
+  if (primary.edgePaths.length < 2) return { status: 'n/a', reason: 'no ECMP' };
 
   const ecmpEdgeIds = new Set();
-  for (const p of primary.paths) {
-    if (p.length < 2) continue;
-    const e = firstHopEdge(src, p[1], topo.edges);
-    if (e) ecmpEdgeIds.add(e.id);
+  for (const ep of primary.edgePaths) {
+    if (ep.length) ecmpEdgeIds.add(ep[0]);   // 第一條實體邊 = first-hop interface
   }
   if (ecmpEdgeIds.size < 2) return { status: 'n/a', reason: 'single first-hop' };
 
@@ -386,10 +408,8 @@ export function ecmpBackupCheck(topo, src, dst) {
       return { status: 'failed', reason: `removing ${eid} → unreachable` };
     }
     const backupEdgeIds = new Set();
-    for (const p of backup.paths) {
-      if (p.length < 2) continue;
-      const e = firstHopEdge(src, p[1], topo.edges);
-      if (e) backupEdgeIds.add(e.id);
+    for (const ep of backup.edgePaths) {
+      if (ep.length) backupEdgeIds.add(ep[0]);
     }
     const remaining = new Set([...ecmpEdgeIds].filter(x => x !== eid));
     for (const bid of backupEdgeIds) {

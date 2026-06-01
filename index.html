@@ -116,10 +116,7 @@
         title="清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。">清除所有故障</button>
       <div class="mt-2">
         <label class="label-sm">流量情境</label>
-        <select id="demandProfile" class="select-input">
-          <option value="avg">月均 (Avg)</option>
-          <option value="max">95th Percentile</option>
-        </select>
+        <select id="demandProfile" class="select-input"></select>
       </div>
       <div class="text-[10px] text-gray-400 mt-1">右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版</div>
     </div>
@@ -334,21 +331,67 @@
 
 import {
   buildAdjacency, buildPrefixIndex, dijkstraDist, dijkstraECMP, stripPseudo,
-  resolveLPM, pathToEdgeIds, backupPath, unbackupSegmentScan,
+  unbackupSegmentScan,
   connectedComponents, allPairsLoad, allPairsTraffic, computeNodeBC,
-  firstHopEdge, ecmpBackupCheck, ecmpBackupScanAll,
+  ecmpBackupScanAll,
   detectAsymmetric, computeHeatmap, computeN1WorstCase,
 } from './engine.js';
 
 // ============================================================================
 // §0 CONSTANTS
 // ============================================================================
-const ALL_EDGE_CLASSES = ['failed','spt','backup','unbacked','load-inc','load-dec',
-                          'bc-hub','bc-normal','bc-rare','bc-idle',
-                          'traffic-overflow','traffic-high','traffic-mid','traffic-low'];
-const ALL_NODE_CLASSES = ['endpoint','highlight','asym-mark','failed-node',
-                          'heat-green','heat-yellow','heat-orange','heat-red',
-                          'bc-hub','bc-normal','bc-rare','bc-idle'];
+// 單一資料源:role class → Cytoscape style。
+// §1 的 style 陣列、下方的 class 清單(切 Tab 清除用)都由此表衍生,避免三處重複維護。
+const EDGE_ROLE_STYLES = {
+  'spt':              { 'line-color':'#2563eb','width':4,'z-index':10 },
+  'backup':           { 'line-color':'#f59e0b','line-style':'dashed','width':4,'z-index':9 },
+  'failed':           { 'line-color':'#ef4444','line-style':'dotted','width':3,'opacity':0.6 },
+  'unbacked':         { 'line-color':'#dc2626','width':4,'z-index':11 },
+  'load-inc':         { 'line-color':'#3b82f6','width':5,'z-index':8 },
+  'load-dec':         { 'line-color':'#eab308','width':4,'z-index':7 },
+  'bc-hub':           { 'line-color':'#16a34a','width':8,'z-index':5 },
+  'bc-normal':        { 'line-color':'#3b82f6','width':5,'z-index':4 },
+  'bc-rare':          { 'line-color':'#fde047','width':3,'z-index':3 },
+  'bc-idle':          { 'line-color':'#94a3b8','line-style':'dashed','width':2,'z-index':2 },
+  'traffic-overflow': { 'line-color':'#7f1d1d','width':10,'line-style':'dashed','z-index':6 },
+  'traffic-high':     { 'line-color':'#dc2626','width':8,'z-index':5 },
+  'traffic-mid':      { 'line-color':'#f59e0b','width':5,'z-index':4 },
+  'traffic-low':      { 'line-color':'#94a3b8','width':2,'z-index':2 },
+};
+const NODE_ROLE_STYLES = {
+  'endpoint':    { 'background-color':'#2563eb','border-color':'#1e3a8a','color':'#fff','border-width':4 },
+  'highlight':   { 'border-color':'#2563eb','border-width':5,'background-color':'#dbeafe' },
+  'failed-node': { 'background-color':'#fee2e2','border-color':'#ef4444','border-width':4,'opacity':0.5 },
+  'heat-green':  { 'background-color':'#86efac','border-color':'#15803d' },
+  'heat-yellow': { 'background-color':'#fde047','border-color':'#a16207' },
+  'heat-orange': { 'background-color':'#fdba74','border-color':'#c2410c' },
+  'heat-red':    { 'background-color':'#fca5a5','border-color':'#b91c1c' },
+  'asym-mark':   { 'border-color':'#a855f7','border-width':5,'background-color':'#f3e8ff' },
+  'bc-hub':      { 'background-color':'#86efac','border-color':'#15803d','border-width':5 },
+  'bc-normal':   { 'background-color':'#dbeafe','border-color':'#1e40af','border-width':4 },
+  'bc-rare':     { 'background-color':'#fef9c3','border-color':'#a16207','border-width':3 },
+  'bc-idle':     { 'background-color':'#f1f5f9','border-color':'#475569','border-width':2 },
+};
+const ALL_EDGE_CLASSES = Object.keys(EDGE_ROLE_STYLES);
+const ALL_NODE_CLASSES = Object.keys(NODE_ROLE_STYLES);
+
+// 分類門檻 — 集中管理,避免散落各 Tab 的魔術數字
+const THRESHOLDS = {
+  // C2 矩陣:成本→色階 (≤30 區域內 · ≤60 跨區域 · ≤100 跨洋 · 其餘/不可達 多段跨洋)
+  matrixCost: [
+    { max: 30,       bg: '#dcfce7', fg: '#166534' },
+    { max: 60,       bg: '#fef9c3', fg: '#854d0e' },
+    { max: 100,      bg: '#fed7aa', fg: '#9a3412' },
+    { max: Infinity, bg: '#fecaca', fg: '#991b1b' },
+  ],
+  // C3 樞紐度:節點介數佔最大值比例 (>40% hub · >10% normal · 其餘 rare)
+  bcHubRatio: 0.4,
+  bcNormalRatio: 0.1,
+  // C9 邊流量:利用率分級 (>1 overflow · >0.8 high · >0.5 mid · 其餘 low)
+  trafficOverflow: 1,
+  trafficHigh: 0.8,
+  trafficMid: 0.5,
+};
 
 // ============================================================================
 // §1 CYTOSCAPE INITIALIZATION
@@ -396,41 +439,9 @@ const cy = cytoscape({
       'text-background-color':'#fff','text-background-opacity':0.85,
       'text-background-padding':'2px','target-arrow-shape':'none',
     }},
-    { selector: 'edge.spt',     style:{ 'line-color':'#2563eb','width':4,'z-index':10 }},
-    { selector: 'edge.backup',  style:{ 'line-color':'#f59e0b','line-style':'dashed','width':4,'z-index':9 }},
-    { selector: 'edge.failed',  style:{ 'line-color':'#ef4444','line-style':'dotted','width':3,'opacity':0.6 }},
-    { selector: 'edge.unbacked',style:{ 'line-color':'#dc2626','width':4,'z-index':11 }},
-    { selector: 'edge.load-inc',style:{ 'line-color':'#3b82f6','width':5,'z-index':8 }},
-    { selector: 'edge.load-dec',style:{ 'line-color':'#eab308','width':4,'z-index':7 }},
-    { selector: 'edge.bc-hub',   style:{ 'line-color':'#16a34a','width':8,'z-index':5 }},
-    { selector: 'edge.bc-normal',style:{ 'line-color':'#3b82f6','width':5,'z-index':4 }},
-    { selector: 'edge.bc-rare',  style:{ 'line-color':'#fde047','width':3,'z-index':3 }},
-    { selector: 'edge.bc-idle',  style:{ 'line-color':'#94a3b8','line-style':'dashed','width':2,'z-index':2 }},
-    { selector: 'edge.traffic-overflow', style:{ 'line-color':'#7f1d1d','width':10,'line-style':'dashed','z-index':6 }},
-    { selector: 'edge.traffic-high', style:{ 'line-color':'#dc2626','width':8,'z-index':5 }},
-    { selector: 'edge.traffic-mid',  style:{ 'line-color':'#f59e0b','width':5,'z-index':4 }},
-    { selector: 'edge.traffic-low',  style:{ 'line-color':'#94a3b8','width':2,'z-index':2 }},
-    { selector: 'node.endpoint',style:{
-      'background-color':'#2563eb','border-color':'#1e3a8a','color':'#fff','border-width':4,
-    }},
-    { selector: 'node.highlight', style:{
-      'border-color':'#2563eb','border-width':5,'background-color':'#dbeafe',
-    }},
-    { selector: 'node.failed-node',style:{
-      'background-color':'#fee2e2','border-color':'#ef4444','border-width':4,
-      'opacity':0.5,
-    }},
-    { selector: 'node.heat-green',  style:{ 'background-color':'#86efac','border-color':'#15803d' }},
-    { selector: 'node.heat-yellow', style:{ 'background-color':'#fde047','border-color':'#a16207' }},
-    { selector: 'node.heat-orange', style:{ 'background-color':'#fdba74','border-color':'#c2410c' }},
-    { selector: 'node.heat-red',    style:{ 'background-color':'#fca5a5','border-color':'#b91c1c' }},
-    { selector: 'node.asym-mark',   style:{
-      'border-color':'#a855f7','border-width':5,'background-color':'#f3e8ff',
-    }},
-    { selector: 'node.bc-hub',    style:{ 'background-color':'#86efac','border-color':'#15803d','border-width':5 }},
-    { selector: 'node.bc-normal', style:{ 'background-color':'#dbeafe','border-color':'#1e40af','border-width':4 }},
-    { selector: 'node.bc-rare',   style:{ 'background-color':'#fef9c3','border-color':'#a16207','border-width':3 }},
-    { selector: 'node.bc-idle',   style:{ 'background-color':'#f1f5f9','border-color':'#475569','border-width':2 }},
+    // role-class 樣式由 §0 的單一資料源衍生(edge 先、node 後,維持原順序)
+    ...Object.entries(EDGE_ROLE_STYLES).map(([cls, style]) => ({ selector: 'edge.' + cls, style })),
+    ...Object.entries(NODE_ROLE_STYLES).map(([cls, style]) => ({ selector: 'node.' + cls, style })),
   ],
   layout: {
     name: 'preset',
@@ -445,7 +456,7 @@ const cy = cytoscape({
 // Entity has two orthogonal dimensions:
 //   op   : 持久狀態 — 使用者操作造成,跨 Tab 不清除
 //          edge: 'healthy' | 'failed'   (manual link toggle)
-//          node: 'up'      | 'down'     (預留:目前模擬為瞬時 role)
+//          node: 'up'      | 'down'     (manual router toggle)
 //   role : 瞬時註記 — 分析結果疊加在當前 Tab 上,切 Tab 時清掉
 //          edge: 'none' | 'spt' | 'backup' | 'unbacked'
 //                | 'load-inc' | 'load-dec' | 'simulated-fail'
@@ -457,13 +468,26 @@ const cy = cytoscape({
 //
 // Render rule:  op=failed/down → 'failed' / 'failed-node'   (op 優先)
 //               否則由 role 直接映射到對應 class
-// All Cytoscape class manipulation MUST go through these setters.
+// 分三層,邊界清楚:
+//   推導層 : state → class 名稱(純函式,不碰 cy / engine,可單獨在 node 測)
+//   View 層: class 名稱 → Cytoscape(唯一碰 cy 的地方,單向、無邏輯)
+//   操作層 : setter,改 state 後觸發必要的重畫(所有外部變更都走這裡)
 
+// ── 狀態(唯一可變真相源)──
 const edgeStates = new Map();
 const nodeStates = new Map();
 for (const e of topology.edges) edgeStates.set(e.id, { op:'healthy', role:'none' });
 for (const n of topology.nodes) nodeStates.set(n.id, { op:'up',      role:'none' });
 
+// 索引:避免每次重畫都做 O(E) 線性掃描(取代舊 find 與相鄰邊迴圈)
+const edgeById = new Map(topology.edges.map(e => [e.id, e]));
+const incidentEdges = new Map(topology.nodes.map(n => [n.id, []]));
+for (const e of topology.edges) {
+  incidentEdges.get(e.source)?.push(e.id);
+  incidentEdges.get(e.target)?.push(e.id);
+}
+
+// ── 推導層(純函式)──
 function edgeClassFor(op, role) {
   if (op === 'failed' || role === 'simulated-fail') return 'failed';
   if (role === 'none') return null;
@@ -474,44 +498,53 @@ function nodeClassFor(op, role) {
   if (role === 'none') return null;
   return role;
 }
-function renderEdge(eid) {
-  const st = edgeStates.get(eid); if (!st) return;
-  // 派生:任一端點 router 為 down → edge 視覺失效(不寫回 edge.op,保持單一資料源)
-  const edge = topology.edges.find(e => e.id === eid);
-  const endpointDown = !!edge && (
-    nodeStates.get(edge.source)?.op === 'down' ||
-    nodeStates.get(edge.target)?.op === 'down'
+// edge 有效 class:含 op 優先 + 任一端點 router down→視覺失效 的派生規則
+// (不寫回 edge.op,保持單一資料源)
+function effectiveEdgeClass(eid) {
+  const st = edgeStates.get(eid); if (!st) return null;
+  const e = edgeById.get(eid);
+  const endpointDown = !!e && (
+    nodeStates.get(e.source)?.op === 'down' ||
+    nodeStates.get(e.target)?.op === 'down'
   );
   const effectiveOp = (st.op === 'failed' || endpointDown) ? 'failed' : 'healthy';
+  return edgeClassFor(effectiveOp, st.role);
+}
+function effectiveNodeClass(nid) {
+  const st = nodeStates.get(nid); if (!st) return null;
+  return nodeClassFor(st.op, st.role);
+}
+
+// ── View 層(唯一碰 cy 的地方)──
+function paintEdge(eid) {
   const el = cy.getElementById(eid);
   ALL_EDGE_CLASSES.forEach(c => el.removeClass(c));
-  const cls = edgeClassFor(effectiveOp, st.role);
+  const cls = effectiveEdgeClass(eid);
   if (cls) el.addClass(cls);
 }
-function renderNode(nid) {
-  const st = nodeStates.get(nid); if (!st) return;
+function paintNode(nid) {
   const el = cy.getElementById(nid);
   ALL_NODE_CLASSES.forEach(c => el.removeClass(c));
-  const cls = nodeClassFor(st.op, st.role);
+  const cls = effectiveNodeClass(nid);
   if (cls) el.addClass(cls);
 }
-function setEdgeOp(eid, op)   { edgeStates.get(eid).op   = op; renderEdge(eid); }
-function setEdgeRole(eid, r)  { edgeStates.get(eid).role = r;  renderEdge(eid); }
+
+// ── 操作層(setter)──
+function setEdgeOp(eid, op)   { edgeStates.get(eid).op   = op; paintEdge(eid); }
+function setEdgeRole(eid, r)  { edgeStates.get(eid).role = r;  paintEdge(eid); }
 function setNodeOp(nid, op) {
   nodeStates.get(nid).op = op;
-  renderNode(nid);
-  // node op 變更會影響相鄰 edge 的派生 effectiveOp,連帶重畫
-  for (const e of topology.edges) {
-    if (e.source === nid || e.target === nid) renderEdge(e.id);
-  }
+  paintNode(nid);
+  // node op 變更會影響相鄰 edge 的派生有效狀態,連帶重畫
+  for (const eid of incidentEdges.get(nid) ?? []) paintEdge(eid);
 }
-function setNodeRole(nid, r)  { nodeStates.get(nid).role = r;  renderNode(nid); }
+function setNodeRole(nid, r)  { nodeStates.get(nid).role = r;  paintNode(nid); }
 
 // 清掉所有 role(瞬時註記),保留 op(使用者持久操作)。
 // 用在 Tab 切換、重置畫面、開始新分析前。
 function clearAllRoles() {
-  for (const [eid, st] of edgeStates) if (st.role !== 'none') { st.role = 'none'; renderEdge(eid); }
-  for (const [nid, st] of nodeStates) if (st.role !== 'none') { st.role = 'none'; renderNode(nid); }
+  for (const [eid, st] of edgeStates) if (st.role !== 'none') { st.role = 'none'; paintEdge(eid); }
+  for (const [nid, st] of nodeStates) if (st.role !== 'none') { st.role = 'none'; paintNode(nid); }
 }
 
 // 既有演算法碼使用 failedEdges.has() / .clear() / .size / iteration,
@@ -558,6 +591,16 @@ for (const sel of ['src','dst']) {
 dom('src').value = 'TPE';
 dom('dst').value = 'AMS';
 
+// 流量情境下拉 — 由 demand.profiles 自動生成,新增 profile 不需改 HTML
+{
+  const sel = dom('demandProfile');
+  sel.innerHTML = '';
+  for (const [key, p] of Object.entries(demand.profiles)) {
+    sel.add(new Option(p.label || key, key));
+  }
+  sel.value = demand.active;
+}
+
 // SRLG support — expandSRLG + unified failure dropdown
 function expandSRLG(group) {
   const edges = new Set(), nodes = new Set();
@@ -587,12 +630,11 @@ function expandSRLG(group) {
   sel.appendChild(nodeGroup);
 }
 
-// 共用:右鍵故障 / 邊成本變更後,若 Path Tab 正在顯示就重算。
-// 注意:函式只是「宣告」並引用 C1_Path,直到第一次被呼叫時才會解析 — 此時 §5.1 已執行完畢。
+// 共用:右鍵故障 / 邊成本變更後,若有 LIVE 群組的 Tab 正在顯示就重算。
+// 注意:函式只是「宣告」並引用 TABS,直到第一次被呼叫時才會解析 — 此時 §6 註冊表已建立。
 function rerenderIfPathActive() {
-  if (dom('tab-path').classList.contains('active')) {
-    C1_Path.render(dom('src').value, dom('dst').value);
-  }
+  const active = document.querySelector('.tab.active');
+  if (active?.dataset.group === 'live') TABS[active.dataset.tab]?.activate?.();
 }
 
 // ============================================================================
@@ -774,13 +816,7 @@ const C2_Matrix = (() => {
 
     // cost → 顏色(固定門檻,不隨 maxCost 浮動)
     // ≤30 區域內 · 31–60 跨區域 · 61–100 跨洋 · >100 多段跨洋
-    const colorFor = (cost) => {
-      if (cost === Infinity) return { bg: '#fecaca', fg: '#991b1b' };
-      if (cost <= 30)  return { bg: '#dcfce7', fg: '#166534' };
-      if (cost <= 60)  return { bg: '#fef9c3', fg: '#854d0e' };
-      if (cost <= 100) return { bg: '#fed7aa', fg: '#9a3412' };
-      return { bg: '#fecaca', fg: '#991b1b' };
-    };
+    const colorFor = (cost) => THRESHOLDS.matrixCost.find(s => cost <= s.max);
 
     let html = '<table style="font-size:10px"><tr><th style="background:#1e3a8a;color:#fff">↓src \\ dst→</th>';
     for (const b of routers) html += `<th>${b}</th>`;
@@ -903,8 +939,8 @@ const C3_AllPairs = (() => {
   function classify(v, maxBC) {
     if (v === 0)         return 'idle';
     if (maxBC === 0)     return 'idle';
-    if (v > 0.4 * maxBC) return 'hub';
-    if (v > 0.1 * maxBC) return 'normal';
+    if (v > THRESHOLDS.bcHubRatio * maxBC)    return 'hub';
+    if (v > THRESHOLDS.bcNormalRatio * maxBC) return 'normal';
     return 'rare';
   }
 
@@ -1086,9 +1122,9 @@ const C9_Traffic = (() => {
     low:      { label: '低負載',   color: '#475569', cardBg: '#f1f5f9' },
   };
   function classify(util) {
-    if (util > 1)   return 'overflow';
-    if (util > 0.8) return 'high';
-    if (util > 0.5) return 'mid';
+    if (util > THRESHOLDS.trafficOverflow) return 'overflow';
+    if (util > THRESHOLDS.trafficHigh)     return 'high';
+    if (util > THRESHOLDS.trafficMid)      return 'mid';
     return 'low';
   }
 
@@ -1378,7 +1414,7 @@ const C4_Failure = (() => {
     dom('runFailSim').addEventListener('click', render);
   }
 
-  return { init, activate: render };
+  return { init };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1725,7 +1761,7 @@ const C8_N1 = (() => {
     dom('runN1Scan').addEventListener('click', render);
   }
 
-  return { init, activate: render };
+  return { init };
 })();
 
 // ----------------------------------------------------------------------------

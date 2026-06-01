@@ -194,11 +194,11 @@
 
     <div class="tab-content active" id="tab-path">
       <h2 class="section-h !border-0 !mt-0">路徑分析</h2>
-      <div class="hint">計算兩點之間的最短路徑。若存在多條相同成本的路徑會全部列出(ECMP)。如果故障導致走了繞道,會標示為「備援模式」。</div>
+      <div class="hint">計算兩點之間的最短路徑。結果分兩欄:「狀態」標示正常或繞道(故障重路由),「路徑」標示單一或 ECMP 多路徑分流。</div>
       <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2 items-end">
-        <div><label class="label-sm">Source</label><select id="src" class="select-input"></select></div>
+        <div><label class="label-sm">起點</label><select id="src" class="select-input"></select></div>
         <button id="swapSrcDst" class="px-1.5 py-1.5 text-gray-400 hover:text-blue-600 cursor-pointer transition-colors" title="交換起點與終點">⇄</button>
-        <div><label class="label-sm">Destination</label><select id="dst" class="select-input"></select></div>
+        <div><label class="label-sm">終點</label><select id="dst" class="select-input"></select></div>
       </div>
       <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2">
         <button class="btn-primary" id="runSpt">計算最短路徑</button>
@@ -409,6 +409,17 @@ const THRESHOLDS = {
   trafficMid: 0.5,
 };
 
+// 混合標籤策略的單一資料源:依鏈路對稱性決定用哪一組 Cytoscape label 欄位。
+//   對稱(無 costRev 或兩端同值)→ 置中 label = cost,兩端 label 留空
+//   非對稱 → source/target-label 各標一端的去/回 cost,置中 label 留空
+// §1 初始 edge data 與 Edges Editor 的 paintEdgeLabels 都走這裡,避免兩處邏輯漂移。
+function edgeLabelFields(e) {
+  const asym = e.costRev != null && e.costRev !== e.cost;
+  return asym
+    ? { label: '', srcLabel: String(e.cost), dstLabel: String(e.costRev) }
+    : { label: String(e.cost), srcLabel: '', dstLabel: '' };
+}
+
 // ============================================================================
 // §1 CYTOSCAPE INITIALIZATION
 // ============================================================================
@@ -429,7 +440,8 @@ const cy = cytoscape({
       data: {
         id: e.id, source: e.source, target: e.target,
         cost: e.cost, costRev: e.costRev,
-        label: e.costRev ? `${e.cost}/${e.costRev}` : String(e.cost),
+        // 混合標籤欄位由 edgeLabelFields 決定:對稱→置中 label,非對稱→兩端 src/dstLabel。
+        ...edgeLabelFields(e),
         type: e.type,
       },
     })),
@@ -451,7 +463,13 @@ const cy = cytoscape({
       // (如 e_TPE_TYO / e_TPE_TYO_b)會自動扇形分開,不會疊在同一條弧線上,
       // label 也才不會互相遮蓋。單一鏈路時 bezier 退化為近直線,不影響外觀。
       'width':2,'line-color':'#94a3b8','curve-style':'bezier','control-point-step-size':28,
-      'label':'data(label)','font-size':'11px','color':'#475569',
+      // 混合標籤:對稱鏈路只標一個置中 label;非對稱用 source/target-label,
+      // 各自錨在邏輯端點(去/回兩值 N … M),隨節點擺放自動翻面。不加箭頭、不旋轉。
+      // 三個欄位由 edgeLabelFields 互斥填值,Cytoscape 只渲染有值的那個。
+      'label':'data(label)',
+      'source-label':'data(srcLabel)','target-label':'data(dstLabel)',
+      'source-text-offset':24,'target-text-offset':24,
+      'font-size':'11px','color':'#475569',
       'text-background-color':'#fff','text-background-opacity':0.85,
       'text-background-padding':'2px','target-arrow-shape':'none',
     }},
@@ -671,7 +689,7 @@ const C1_Path = (() => {
     const div = dom('path-result');
 
     if (r.cost === Infinity) {
-      div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
+      div.innerHTML = `<span class="badge unreach">不可達</span>
         <div class="hint">${src} → ${dst} 沒有可用路徑(可能因故障導致)。</div>`;
       dom('unbackup-result').innerHTML = '';
       setNodeRole(src, 'endpoint');
@@ -714,12 +732,22 @@ const C1_Path = (() => {
     }
 
     const isECMP = ecmpCount > 1;
+    // 兩個獨立的軸,分欄呈現以免混淆:
+    //   狀態 = 跟無故障基線比(正常 / 繞道) · 路徑 = 此刻有幾條等價路徑(單一 / ECMP 多路徑)
+    const stateBadge = inBackup
+      ? '<span class="badge backup">繞道</span>'
+      : '<span class="badge pass">正常</span>';
+    const pathBadge = isECMP
+      ? `<span class="badge" style="background:#dbeafe;color:#1e40af">ECMP ×${ecmpCount} 多路徑</span>`
+      : '<span class="badge na">單一路徑</span>';
+    const fieldLabel = (t) =>
+      `<span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-right:5px">${t}</span>`;
     let html = '';
-    html += inBackup ? '<span class="badge backup">BACKUP MODE</span>'
-                     : '<span class="badge ecmp">PRIMARY</span>';
-    if (isECMP) html += `<span class="badge ecmp">ECMP × ${ecmpCount}</span>`;
-    html += `<div class="info-card" style="margin-top:6px">
-      <div class="label">Total Cost</div><div class="value">${r.cost}</div></div>`;
+    html += `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <div>${fieldLabel('狀態')}${stateBadge}</div>
+      <div>${fieldLabel('路徑')}${pathBadge}</div></div>`;
+    html += `<div class="info-card" style="margin-top:0">
+      <div class="label">總成本</div><div class="value">${r.cost}</div></div>`;
     for (const g of disp) {
       html += `<div class="path-item${inBackup ? ' backup' : ''}">
         <span class="cost">${r.cost}</span>${g.nodes.join(' → ')}</div>`;
@@ -748,18 +776,21 @@ const C1_Path = (() => {
       div.innerHTML = '<div class="hint">目前沒有可分析的主路徑。</div>';
       return;
     }
+    // 收進單一卡片:主路徑鏈路清單 + 逐段備援狀態(消除浮動 badge — 選項 1)
     let html = `<div class="info-card" style="margin-top:8px">
-      <div class="label">主路徑鏈路</div>
-      <div class="value">${primaryEdges.join(', ')}</div></div>`;
+      <div class="label">主路徑逐段備援(單鏈路 N-1)</div>
+      <div class="value">${primaryEdges.join(', ')}</div>`;
     if (unbacked.length === 0) {
-      html += '<span class="badge pass">主路徑每段都有備援</span>';
+      html += '<div style="margin-top:6px"><span class="badge pass">任一單鏈路斷,終點仍可達</span></div>';
     } else {
-      html += `<span class="badge fail">無備援:${unbacked.length} 段</span>`;
+      html += `<div style="margin-top:6px"><span class="badge fail">${unbacked.length} 段斷即不可達</span></div>`;
       for (const eid of unbacked) {
         const e = topology.edges.find(x => x.id === eid);
-        html += `<div class="path-item fail" title="${eid}">${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
+        html += `<div class="path-item fail" title="${eid}" style="margin-top:4px">${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
       }
     }
+    html += '</div>';
+    html += '<div class="hint" style="margin-top:4px">僅測單一鏈路失效,判斷「斷後是否仍可達」;繞道成本可能上升,不保證等成本備援。</div>';
     div.innerHTML = html;
   }
 
@@ -1791,8 +1822,10 @@ const C8_N1 = (() => {
 // §5.9 Edges Editor (鏈路成本編輯)
 // ----------------------------------------------------------------------------
 const Edges_Editor = (() => {
-  function edgeLabel(e) {
-    return (e.costRev != null && e.costRev !== e.cost) ? `${e.cost}/${e.costRev}` : String(e.cost);
+  // 把標籤寫回 Cytoscape — 委派 edgeLabelFields,與 §1 初始 edge data 同一資料源。
+  // 對稱→置中 label;非對稱→兩端 src/dstLabel。三欄互斥填值,只渲染有值的那個。
+  function paintEdgeLabels(eid, e) {
+    cy.getElementById(eid).data(edgeLabelFields(e));
   }
 
   function isModified(e, orig) {
@@ -1801,7 +1834,7 @@ const Edges_Editor = (() => {
 
   function applyEdgeChange(eid) {
     const e = topology.edges.find(x => x.id === eid);
-    cy.getElementById(eid).data('label', edgeLabel(e));
+    paintEdgeLabels(eid, e);
     // auto-recompute if path tab active
     rerenderIfPathActive();
   }

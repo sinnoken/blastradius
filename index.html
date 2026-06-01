@@ -9,6 +9,22 @@
 <script src="srlg.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style type="text/tailwindcss">
+  /* tab group accent palette + 非 utility 圖例色 — 集中於此,避免 hex 散落各規則 */
+  :root {
+    --tab-live:          #99f6e4;  /* teal-200    — 即時狀態 (inactive) */
+    --tab-live-on:       #14b8a6;  /* teal-500    — active bar */
+    --tab-live-text:     #0f766e;  /* teal-700    — active text */
+    --tab-whatif:        #fde68a;  /* amber-200   — What-if (inactive) */
+    --tab-whatif-on:     #f59e0b;  /* amber-500   — active bar */
+    --tab-whatif-text:   #b45309;  /* amber-700   — active text */
+    --tab-audit:         #c7d2fe;  /* indigo-200  — 設計審計 (inactive) */
+    --tab-audit-on:      #6366f1;  /* indigo-500  — active bar */
+    --tab-audit-text:    #4338ca;  /* indigo-700  — active text */
+    --tab-edit:          #cbd5e1;  /* slate-300   — 編輯 (inactive) */
+    --tab-edit-on:       #64748b;  /* slate-500   — active bar */
+    --tab-edit-text:     #334155;  /* slate-700   — active text */
+    --legend-overflow:   #7f1d1d;  /* red-900     — 過載圖例線 */
+  }
   @layer base {
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif; }
     table { @apply w-full border-collapse text-xs; }
@@ -33,16 +49,16 @@
     .tabs { @apply flex border-b border-gray-200 bg-gray-50; }
     .tab  { @apply flex-1 px-1.5 py-2.5 text-xs font-medium text-gray-500 bg-transparent border-t-2 border-b-2 border-transparent cursor-pointer transition-colors hover:bg-gray-100 hover:text-gray-700; }
     /* group accent bars (desaturated when inactive) */
-    .tab[data-group="live"]   { border-top-color: #99f6e4; }  /* teal-200    — 即時狀態 */
-    .tab[data-group="whatif"] { border-top-color: #fde68a; }  /* amber-200   — What-if */
-    .tab[data-group="audit"]  { border-top-color: #c7d2fe; }  /* indigo-200  — 設計審計 */
-    .tab[data-group="edit"]   { border-top-color: #cbd5e1; }  /* slate-300   — 編輯 */
+    .tab[data-group="live"]   { border-top-color: var(--tab-live); }    /* teal-200    — 即時狀態 */
+    .tab[data-group="whatif"] { border-top-color: var(--tab-whatif); }  /* amber-200   — What-if */
+    .tab[data-group="audit"]  { border-top-color: var(--tab-audit); }   /* indigo-200  — 設計審計 */
+    .tab[data-group="edit"]   { border-top-color: var(--tab-edit); }    /* slate-300   — 編輯 */
     /* active state — saturated top + matching bottom + group-tinted text */
     .tab.active { @apply bg-white; }
-    .tab.active[data-group="live"]   { color: #0f766e; border-top-color: #14b8a6; border-bottom-color: #14b8a6; }
-    .tab.active[data-group="whatif"] { color: #b45309; border-top-color: #f59e0b; border-bottom-color: #f59e0b; }
-    .tab.active[data-group="audit"]  { color: #4338ca; border-top-color: #6366f1; border-bottom-color: #6366f1; }
-    .tab.active[data-group="edit"]   { color: #334155; border-top-color: #64748b; border-bottom-color: #64748b; }
+    .tab.active[data-group="live"]   { color: var(--tab-live-text);   border-top-color: var(--tab-live-on);   border-bottom-color: var(--tab-live-on); }
+    .tab.active[data-group="whatif"] { color: var(--tab-whatif-text); border-top-color: var(--tab-whatif-on); border-bottom-color: var(--tab-whatif-on); }
+    .tab.active[data-group="audit"]  { color: var(--tab-audit-text);  border-top-color: var(--tab-audit-on);  border-bottom-color: var(--tab-audit-on); }
+    .tab.active[data-group="edit"]   { color: var(--tab-edit-text);   border-top-color: var(--tab-edit-on);   border-bottom-color: var(--tab-edit-on); }
     .tab-content { @apply hidden p-3.5; }
     .tab-content.active { @apply block; }
 
@@ -83,7 +99,7 @@
     .legend-line.failed   { @apply bg-red-500; }
     .legend-line.load-inc  { @apply bg-blue-500; }
     .legend-line.load-dec  { @apply bg-yellow-500; }
-    .legend-line.overflow  { background: #7f1d1d; height: 5px; border-style: dashed; }
+    .legend-line.overflow  { background: var(--legend-overflow); height: 5px; border-style: dashed; }
   }
 </style>
 <style>
@@ -214,7 +230,7 @@
       <h2 class="section-h !border-0 !mt-0">樞紐度盤點</h2>
       <div class="hint">
         衡量每條鏈路和每台節點「有多少路徑經過」— 數值越高,越多流量依賴它,故障影響越大。
-        <div class="mt-1">分 4 級:<b>樞紐</b>(需擴容) / <b>正常</b>(維持) / <b>偶爾</b>(可降規) / <b>純備援</b>(可裁併)。</div>
+        <div class="mt-1">分 4 級:<b>樞紐</b>(需擴容) / <b>正常</b>(維持) / <b>偶爾</b>(可降規) / <b>純備援(鏈路)·末端(節點)</b>(零過路流量)。</div>
       </div>
       <button class="btn-primary mt-2" id="listAllPairs">重新計算</button>
       <div id="all-pairs-result" class="mt-2.5"></div>
@@ -625,7 +641,7 @@ function expandSRLG(group) {
     }
   }
   const nodeGroup = document.createElement('optgroup');
-  nodeGroup.label = '單一節點';
+  nodeGroup.label = '單一路由器';
   for (const n of routerNodes) nodeGroup.appendChild(new Option(n.label, 'node:' + n.id));
   sel.appendChild(nodeGroup);
 }
@@ -729,16 +745,16 @@ const C1_Path = (() => {
     for (const eid of unbacked) setEdgeRole(eid, 'unbacked');
     const div = dom('unbackup-result');
     if (primaryEdges.length === 0) {
-      div.innerHTML = '<div class="hint">無 primary 路徑可掃描。</div>';
+      div.innerHTML = '<div class="hint">目前沒有可分析的主路徑。</div>';
       return;
     }
     let html = `<div class="info-card" style="margin-top:8px">
-      <div class="label">Primary edges</div>
+      <div class="label">主路徑鏈路</div>
       <div class="value">${primaryEdges.join(', ')}</div></div>`;
     if (unbacked.length === 0) {
-      html += '<span class="badge pass">所有 primary edges 都有保護</span>';
+      html += '<span class="badge pass">主路徑每段都有備援</span>';
     } else {
-      html += `<span class="badge fail">無保護: ${unbacked.length}</span>`;
+      html += `<span class="badge fail">無備援:${unbacked.length} 段</span>`;
       for (const eid of unbacked) {
         const e = topology.edges.find(x => x.id === eid);
         html += `<div class="path-item fail" title="${eid}">${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
@@ -818,7 +834,14 @@ const C2_Matrix = (() => {
     // ≤30 區域內 · 31–60 跨區域 · 61–100 跨洋 · >100 多段跨洋
     const colorFor = (cost) => THRESHOLDS.matrixCost.find(s => cost <= s.max);
 
-    let html = '<table style="font-size:10px"><tr><th style="background:#1e3a8a;color:#fff">↓src \\ dst→</th>';
+    // 對角分割角落格:左下 src / 右上 dst,中間一條斜線(用 linear-gradient 畫)
+    const cornerCell = '<th style="background:#1e3a8a;color:#fff;padding:0;position:relative;'
+      + 'min-width:44px;height:30px;'
+      + 'background-image:linear-gradient(to bottom right, transparent calc(50% - 0.5px), rgba(255,255,255,0.45) 50%, transparent calc(50% + 0.5px))">'
+      + '<span style="position:absolute;top:2px;right:4px;font-size:8px;line-height:1;letter-spacing:0">dst</span>'
+      + '<span style="position:absolute;bottom:2px;left:4px;font-size:8px;line-height:1;letter-spacing:0">src</span>'
+      + '</th>';
+    let html = '<table style="font-size:10px"><tr>' + cornerCell;
     for (const b of routers) html += `<th>${b}</th>`;
     html += '</tr>';
     for (const a of routers) {
@@ -928,12 +951,12 @@ const C3_AllPairs = (() => {
     rare:   { label: '偶爾',   action: '降頻寬候選', color: '#a16207', cardBg: '#fef9c3' },
     idle:   { label: '純備援', action: '砍掉候選',   color: '#475569', cardBg: '#f1f5f9' },
   };
-  // Node 版 tier 文案 — 「砍掉」對 router 改成「裁併進鄰近 PoP」
+  // Node 版 tier 文案 — idle 對 router 是「末端/無轉送流量」(非備援,純 stub)
   const NODE_TIERS = {
     hub:    { label: '樞紐',   action: '雙機雙路',         color: '#15803d', cardBg: '#dcfce7' },
     normal: { label: '正常',   action: '維持',             color: '#1e40af', cardBg: '#dbeafe' },
     rare:   { label: '偶爾',   action: '可降規',           color: '#a16207', cardBg: '#fef9c3' },
-    idle:   { label: '純備援', action: '裁併鄰近 PoP 候選', color: '#475569', cardBg: '#f1f5f9' },
+    idle:   { label: '末端', action: '無轉送流量', color: '#475569', cardBg: '#f1f5f9' },
   };
 
   function classify(v, maxBC) {

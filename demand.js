@@ -28,7 +28,7 @@ const demand = {
       },
     },
     max: {
-      label: '95th',
+      label: '最壞情境(交集95th)',
       symmetric: false,
       default: 8,
       matrix: {
@@ -57,7 +57,7 @@ const demand = {
     // 數值為合成估計,可依實際 NetFlow/sFlow 量測微調。
     // ─────────────────────────────────────────────────────────────────────
     asia_busy: {
-      label: '亞洲忙時',
+      label: 'TPE 忙時 (UTC+8)',
       symmetric: true,
       default: 5,
       matrix: {
@@ -74,7 +74,7 @@ const demand = {
       },
     },
     amer_busy: {
-      label: '美洲忙時',
+      label: 'LAX 忙時 (UTC-8)',
       symmetric: true,
       default: 5,
       matrix: {
@@ -91,7 +91,7 @@ const demand = {
       },
     },
     eu_busy: {
-      label: '歐洲忙時',
+      label: 'FRA 忙時 (UTC+1)',
       symmetric: true,
       default: 5,
       matrix: {

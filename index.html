@@ -117,7 +117,7 @@
 
   /* tier 配色單一資料源 — 每階一組 (--tier 前景 / --tier-bg 卡片底)。
      unlayered 規則,specificity 相同時勝過 Tailwind @layer components 的 .info-card,
-     讓 .tier-card 不需 !important 就能覆蓋。C3 樞紐度 + C9 邊流量共用。 */
+     讓 .tier-card 不需 !important 就能覆蓋。C3 樞紐度 + C4 邊流量共用。 */
   .tier-hub      { --tier:#15803d; --tier-bg:#dcfce7; }
   .tier-normal   { --tier:#1e40af; --tier-bg:#dbeafe; }
   .tier-rare     { --tier:#a16207; --tier-bg:#fef9c3; }
@@ -138,17 +138,17 @@
   .cost-t3 { background:#fed7aa; color:#9a3412; }
   .cost-t4 { background:#fecaca; color:#991b1b; }
 
-  /* C8 N-1 計數格:非零 = 熱點(紅+粗),零 = 靜默(灰)。JS 只判斷有沒有,色由此定。 */
+  /* C9 N-1 計數格:非零 = 熱點(紅+粗),零 = 靜默(灰)。JS 只判斷有沒有,色由此定。 */
   .count-hot  { color:#991b1b; font-weight:600; }
   .count-zero { color:#9ca3af; }
 
-  /* C4 / C9 util% 三階 — JS 只算 >1 / >0.8 / 其餘,色由此定。
-     .util-over 同時供 C9 過載格共用(#991b1b,刻意不同於 .tier-overflow 的 #7f1d1d)。 */
+  /* C4 / C5 util% 三階 — JS 只算 >1 / >0.8 / 其餘,色由此定。
+     .util-over 同時供 C4 過載格共用(#991b1b,刻意不同於 .tier-overflow 的 #7f1d1d)。 */
   .util-over   { color:#991b1b; font-weight:600; }
   .util-high   { color:#dc2626; font-weight:600; }
   .util-normal { color:#475569; }
 
-  /* C4 Δ% 方向色 — down(斷線紅)/ up(增藍)/ dec(減黃),JS 只判方向。 */
+  /* C5 Δ% 方向色 — down(斷線紅)/ up(增藍)/ dec(減黃),JS 只判方向。 */
   .delta-down { color:#dc2626; font-weight:600; }
   .delta-up   { color:#2563eb; font-weight:600; }
   .delta-dec  { color:#ca8a04; font-weight:600; }
@@ -159,7 +159,7 @@
   .banner-sub { color:#6b7280; font-weight:400; font-size:10px; }
   .cell-sub   { color:#9ca3af; font-weight:400; font-size:10px; }
 
-  /* 數值強調格 — C2/C3/C8/C9 排行表的關鍵數字。純 font-weight;
+  /* 數值強調格 — C2/C3/C4/C9 排行表的關鍵數字。純 font-weight;
      色彩仍由 tier-fg / util-* 疊加,故只收斂 weight 這一維。 */
   .num-em { font-weight:600; }
 
@@ -167,7 +167,11 @@
      故 @layer base 的 table 規則不覆蓋,留在此 unlayered 區一次定義。 */
   .matrix-cell { text-align:center; font-weight:600; cursor:pointer; }
 
-  /* C6 非對稱:方向標題(A → B)固定藍色粗體 — 兩個方向區塊共用。 */
+  /* C2 矩陣 11 欄密排:字級沿用 base table 的 text-xs(12px,貼齊其他表格),
+     僅壓縮 cell 左右 padding(base px-2=8px → 4px)抵銷變寬。角落格 inline padding:0 不受影響。 */
+  .matrix-table th, .matrix-table td { padding-left:4px; padding-right:4px; }
+
+  /* C7 非對稱:方向標題(A → B)固定藍色粗體 — 兩個方向區塊共用。 */
   .dir-head { font-weight:600; color:#1e40af; }
 
   /* C1 欄位小標(狀態 / 路徑)— 大寫灰字 + 字距 + 右間距,封裝整組排版。 */
@@ -249,11 +253,10 @@
       <button class="tab" data-tab="traffic" data-group="live" title="即時分析:依據流量矩陣計算實際負載">邊流量</button>
       <div class="w-px bg-gray-300 my-1.5" title="分隔"></div>
       <button class="tab" data-tab="failure" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">失效模擬</button>
-      <div class="w-px bg-gray-300 my-1.5"></div>
+      <button class="tab" data-tab="n1" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">N-1</button>
       <button class="tab" data-tab="ecmp" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">ECMP</button>
       <button class="tab" data-tab="asym" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">非對稱</button>
       <button class="tab" data-tab="heatmap" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">Prefix</button>
-      <button class="tab" data-tab="n1" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">N-1</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
       <button class="tab" data-tab="edges" data-group="edit" title="修改鏈路成本,即時重算路徑">鏈路</button>
     </div>
@@ -403,8 +406,9 @@
 //                          / select 初始化 / rerenderIfPathActive()
 //   §5  TAB MODULES       — 每個 Tab 一個 IIFE,統一 { init, activate } 介面
 //     §5.1 C1 Path        §5.2 C2 Matrix      §5.3 C3 AllPairs
-//     §5.4 C4 Failure     §5.5 C5 ECMP        §5.6 C6 Asymmetric
-//     §5.7 C7 Heatmap     §5.8 C8 N-1         §5.9 Edges Editor
+//     §5.4 C4 Traffic     §5.5 C5 Failure     §5.6 C6 ECMP
+//     §5.7 C7 Asymmetric  §5.8 C8 Heatmap     §5.9 C9 N-1
+//     §5.10 C10 Edges
 //   §6  TAB REGISTRY      — TABS 註冊表 + dispatch loop
 //   §7  GLOBAL HANDLERS   — togglePseudo / clearFailed / 右鍵切換故障 / 初始 render
 //
@@ -470,7 +474,7 @@ const THRESHOLDS = {
   // C3 樞紐度:節點介數佔最大值比例 (>40% hub · >10% normal · 其餘 rare)
   bcHubRatio: 0.4,
   bcNormalRatio: 0.1,
-  // C9 邊流量:利用率分級 (>1 overflow · >0.8 high · >0.5 mid · 其餘 low)
+  // C4 邊流量:利用率分級 (>1 overflow · >0.8 high · >0.5 mid · 其餘 low)
   trafficOverflow: 1,
   trafficHigh: 0.8,
   trafficMid: 0.5,
@@ -686,7 +690,7 @@ const failedNodes = {
 // ============================================================================
 const dom = (id) => document.getElementById(id);
 
-// 2×2 採購決策卡片格 — C3 樞紐度 / C9 邊流量共用。
+// 2×2 採購決策卡片格 — C3 樞紐度 / C4 邊流量共用。
 // 配色全由 .tier-{key} CSS class 帶 (--tier / --tier-bg),不再 inline hex。
 function tierCardGrid(order, meta, counts, unit) {
   let h = '<div class="mini-stat">';
@@ -708,7 +712,7 @@ function sampleList(arr, n, fmt) {
   return head + more;
 }
 
-// 綠 (ok) / 紅 (lost) 可達性會計卡 — C3 / C9 / C4 三處共用。
+// 綠 (ok) / 紅 (lost) 可達性會計卡 — C3 / C4 / C5 三處共用。
 function reachabilityBanner({ tone, label, value, sample, note, mt }) {
   const m = mt ? ';margin-top:6px' : '';
   if (tone === 'ok') {
@@ -990,7 +994,7 @@ const C2_Matrix = (() => {
       + '<span style="position:absolute;top:2px;right:4px;font-size:8px;line-height:1;letter-spacing:0">dst</span>'
       + '<span style="position:absolute;bottom:2px;left:4px;font-size:8px;line-height:1;letter-spacing:0">src</span>'
       + '</th>';
-    let html = '<table style="font-size:10px"><tr>' + cornerCell;
+    let html = '<table class="matrix-table"><tr>' + cornerCell;
     for (const b of routers) html += `<th>${b}</th>`;
     html += '</tr>';
     for (const a of routers) {
@@ -1255,9 +1259,9 @@ const C3_AllPairs = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.3b C9 — Edge Traffic View (邊流量視圖,需 demand.js)
+// §5.4 C4 — Edge Traffic View (邊流量視圖,需 demand.js)
 // ----------------------------------------------------------------------------
-const C9_Traffic = (() => {
+const C4_Traffic = (() => {
   const TIERS = {
     overflow: { label: '過載' },
     high:     { label: '高負載' },
@@ -1348,9 +1352,9 @@ const C9_Traffic = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.4 C4 — Failure Simulation (失效模擬 — 單一節點 or SRLG)
+// §5.5 C5 — Failure Simulation (失效模擬 — 單一節點 or SRLG)
 // ----------------------------------------------------------------------------
-const C4_Failure = (() => {
+const C5_Failure = (() => {
   function resolveFailureSet() {
     const val = dom('failTarget').value;
     if (val.startsWith('srlg:')) {
@@ -1537,9 +1541,9 @@ const C4_Failure = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.5 C5 — ECMP Backup Check (ECMP 備援完整性檢查)
+// §5.6 C6 — ECMP Backup Check (ECMP 備援完整性檢查)
 // ----------------------------------------------------------------------------
-const C5_Ecmp = (() => {
+const C6_Ecmp = (() => {
   // 中文化 reason — 給 failed 的列說明為什麼掛掉
   function fmtReason(reason) {
     if (!reason) return '';
@@ -1608,9 +1612,9 @@ const C5_Ecmp = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.6 C6 — Asymmetric Path Detection (非對稱)
+// §5.7 C7 — Asymmetric Path Detection (非對稱)
 // ----------------------------------------------------------------------------
-const C6_Asym = (() => {
+const C7_Asym = (() => {
   // 用 > 串接的路徑字串轉成箭頭顯示
   const fmtPath = (s) => s.split('>').join(' → ');
   // revPaths 在演算法裡為了能跟 fwdPaths 比對相等性,儲存時已做 reverse。
@@ -1665,9 +1669,9 @@ const C6_Asym = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.7 C7 — Subnet Heatmap
+// §5.8 C8 — Subnet Heatmap
 // ----------------------------------------------------------------------------
-const C7_Heatmap = (() => {
+const C8_Heatmap = (() => {
   function render() {
     const hm = computeHeatmap(topology, prefixIndex);
     const nodeRoles = new Map();
@@ -1706,11 +1710,11 @@ const C7_Heatmap = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.8 C8 — N-1 Worst-case Ranking
+// §5.9 C9 — N-1 Worst-case Ranking
 // ----------------------------------------------------------------------------
 // 枚舉所有單點失效(每條 edge + 每台 router),對全網每對 pair 重算 SPT,
 // 找出最差延遲(cost)以及最致命的失效情境。設計審計性質 — 忽略右鍵故障狀態。
-const C8_N1 = (() => {
+const C9_N1 = (() => {
   let n1Cache = null;
 
   function fmtCulprit(s) {
@@ -1864,9 +1868,9 @@ const C8_N1 = (() => {
 })();
 
 // ----------------------------------------------------------------------------
-// §5.9 Edges Editor (鏈路成本編輯)
+// §5.10 C10 — Edges Editor (鏈路成本編輯)
 // ----------------------------------------------------------------------------
-const Edges_Editor = (() => {
+const C10_Edges = (() => {
   // 把標籤寫回 Cytoscape — 委派 edgeLabelFields,與 §1 初始 edge data 同一資料源。
   // 對稱→置中 label;非對稱→兩端 src/dstLabel。三欄互斥填值,只渲染有值的那個。
   function paintEdgeLabels(eid, e) {
@@ -1998,13 +2002,13 @@ const TABS = {
   path:     C1_Path,
   matrix:   C2_Matrix,
   allpairs: C3_AllPairs,
-  traffic:  C9_Traffic,
-  failure:  C4_Failure,
-  ecmp:     C5_Ecmp,
-  asym:     C6_Asym,
-  heatmap:  C7_Heatmap,
-  n1:       C8_N1,
-  edges:    Edges_Editor,
+  traffic:  C4_Traffic,
+  failure:  C5_Failure,
+  ecmp:     C6_Ecmp,
+  asym:     C7_Asym,
+  heatmap:  C8_Heatmap,
+  n1:       C9_N1,
+  edges:    C10_Edges,
 };
 
 // §6.1 ACTION TABLE — data-action 字串 → handler,取代每個模組的 init() click 綁定樣板。
@@ -2021,16 +2025,16 @@ const ACTIONS = {
   // 各 Tab 的「重新計算 / 執行」按鈕
   runMatrix:    () => C2_Matrix.render(),
   listAllPairs: () => C3_AllPairs.render(),
-  runTraffic:   () => C9_Traffic.render(),
-  runFailSim:   () => C4_Failure.render(),
-  runEcmpCheck: () => C5_Ecmp.render(),
-  runAsymScan:  () => C6_Asym.render(),
-  runHeatmap:   () => C7_Heatmap.render(),
-  clearHeatmap: () => C7_Heatmap.clear(),
-  runN1Scan:    () => C8_N1.render(),
+  runTraffic:   () => C4_Traffic.render(),
+  runFailSim:   () => C5_Failure.render(),
+  runEcmpCheck: () => C6_Ecmp.render(),
+  runAsymScan:  () => C7_Asym.render(),
+  runHeatmap:   () => C8_Heatmap.render(),
+  clearHeatmap: () => C8_Heatmap.clear(),
+  runN1Scan:    () => C9_N1.render(),
   // Edges 編輯器
-  exportTopo:   () => Edges_Editor.exportTopo(),
-  resetEdges:   () => Edges_Editor.resetEdges(),
+  exportTopo:   () => C10_Edges.exportTopo(),
+  resetEdges:   () => C10_Edges.resetEdges(),
   // 全域控制
   togglePseudo: (el) => {
     pseudoVisible = !pseudoVisible;

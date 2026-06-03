@@ -87,6 +87,9 @@
     .badge.backup { @apply bg-amber-100 text-amber-800; }
     .badge.fail, .badge.unreach, .badge.disconnected { @apply bg-red-100 text-red-800; }
     .badge.na { @apply bg-gray-200 text-gray-600; }
+    /* 方向 / 資訊色:info(藍)= 負載增 · ECMP 多路徑;warn(黃)= 負載減。對齊 Tailwind 色階,取代散落的 inline badge 配色 */
+    .badge.info { @apply bg-blue-100 text-blue-800; }
+    .badge.warn { @apply bg-yellow-100 text-yellow-800; }
 
     .legend { @apply text-xs text-gray-600 grid gap-1; }
     .legend-item { @apply flex items-center gap-1.5; }
@@ -111,6 +114,68 @@
       linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
     background-size: 24px 24px;
   }
+
+  /* tier 配色單一資料源 — 每階一組 (--tier 前景 / --tier-bg 卡片底)。
+     unlayered 規則,specificity 相同時勝過 Tailwind @layer components 的 .info-card,
+     讓 .tier-card 不需 !important 就能覆蓋。C3 樞紐度 + C9 邊流量共用。 */
+  .tier-hub      { --tier:#15803d; --tier-bg:#dcfce7; }
+  .tier-normal   { --tier:#1e40af; --tier-bg:#dbeafe; }
+  .tier-rare     { --tier:#a16207; --tier-bg:#fef9c3; }
+  .tier-idle     { --tier:#475569; --tier-bg:#f1f5f9; }
+  .tier-overflow { --tier:#7f1d1d; --tier-bg:#fecaca; }
+  .tier-high     { --tier:#dc2626; --tier-bg:#fee2e2; }
+  .tier-mid      { --tier:#a16207; --tier-bg:#fef3c7; }
+  .tier-low      { --tier:#475569; --tier-bg:#f1f5f9; }
+  .tier-card     { background:var(--tier-bg); border-color:var(--tier); }
+  .tier-card > .label, .tier-card > .value { color:var(--tier); }
+  .tier-badge    { background:var(--tier-bg); color:var(--tier); }
+  .tier-fg       { color:var(--tier); }
+
+  /* C2 矩陣 cost 色階 — JS 只算第幾級 (THRESHOLDS.matrixCost → cost-t{n}),hex 集中於此。
+     unlayered 同理勝過 @layer base 的 table td,格子背景不需 !important。 */
+  .cost-t1 { background:#dcfce7; color:#166534; }
+  .cost-t2 { background:#fef9c3; color:#854d0e; }
+  .cost-t3 { background:#fed7aa; color:#9a3412; }
+  .cost-t4 { background:#fecaca; color:#991b1b; }
+
+  /* C8 N-1 計數格:非零 = 熱點(紅+粗),零 = 靜默(灰)。JS 只判斷有沒有,色由此定。 */
+  .count-hot  { color:#991b1b; font-weight:600; }
+  .count-zero { color:#9ca3af; }
+
+  /* C4 / C9 util% 三階 — JS 只算 >1 / >0.8 / 其餘,色由此定。
+     .util-over 同時供 C9 過載格共用(#991b1b,刻意不同於 .tier-overflow 的 #7f1d1d)。 */
+  .util-over   { color:#991b1b; font-weight:600; }
+  .util-high   { color:#dc2626; font-weight:600; }
+  .util-normal { color:#475569; }
+
+  /* C4 Δ% 方向色 — down(斷線紅)/ up(增藍)/ dec(減黃),JS 只判方向。 */
+  .delta-down { color:#dc2626; font-weight:600; }
+  .delta-up   { color:#2563eb; font-weight:600; }
+  .delta-dec  { color:#ca8a04; font-weight:600; }
+
+  /* Category 1 靜態重複組合 — 集中於此,消除散落各 innerHTML 的 inline 字串。
+     .banner-sub:可達性會計 banner 的旁註(失去 N / source)。
+     .cell-sub  :表格 cell 內第二行的灰字註解(cost / label / +N more)。 */
+  .banner-sub { color:#6b7280; font-weight:400; font-size:10px; }
+  .cell-sub   { color:#9ca3af; font-weight:400; font-size:10px; }
+
+  /* 數值強調格 — C2/C3/C8/C9 排行表的關鍵數字。純 font-weight;
+     色彩仍由 tier-fg / util-* 疊加,故只收斂 weight 這一維。 */
+  .num-em { font-weight:600; }
+
+  /* C2 矩陣資料格固定排版 — 置中 + 粗體 + 點擊游標。td 非 tr.clickable,
+     故 @layer base 的 table 規則不覆蓋,留在此 unlayered 區一次定義。 */
+  .matrix-cell { text-align:center; font-weight:600; cursor:pointer; }
+
+  /* C6 非對稱:方向標題(A → B)固定藍色粗體 — 兩個方向區塊共用。 */
+  .dir-head { font-weight:600; color:#1e40af; }
+
+  /* C1 欄位小標(狀態 / 路徑)— 大寫灰字 + 字距 + 右間距,封裝整組排版。 */
+  .field-label { font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:.04em; margin-right:5px; }
+
+  /* 危險前景色 — failed 計數 / 不可達數 / 失敗原因等重複 #991b1b 文字。
+     僅收斂 color;weight 由既有 .value 或預設繼承。 */
+  .val-danger { color:#991b1b; }
 </style>
 </head>
 
@@ -126,13 +191,13 @@
   <aside class="w-[200px] shrink-0 bg-white border-r border-gray-200 p-3.5 flex flex-col min-h-0">
     <div class="space-y-1.5">
       <h2 class="section-h !mt-0">控制</h2>
-      <button class="btn-secondary" id="togglePseudo"
+      <button class="btn-secondary" id="togglePseudo" data-action="togglePseudo"
         title="Pseudo-node 是交換式網段的虛擬節點,用來表示多台 Router 共用同一個 LAN。隱藏後只顯示實體 Router。">隱藏 Pseudo-node</button>
-      <button class="btn-danger mt-1" id="clearFailed"
+      <button class="btn-danger mt-1" id="clearFailed" data-action="clearFailed"
         title="清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。">清除所有故障</button>
       <div class="mt-2">
         <label class="label-sm">流量情境</label>
-        <select id="demandProfile" class="select-input"></select>
+        <select id="demandProfile" data-action="demandProfile" class="select-input"></select>
       </div>
       <div class="text-[10px] text-gray-400 mt-1">右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版</div>
     </div>
@@ -197,13 +262,13 @@
       <div class="hint">計算兩點之間的最短路徑。結果分兩欄:「狀態」標示正常或繞道(故障重路由),「路徑」標示單一或 ECMP 多路徑分流。</div>
       <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2 items-end">
         <div><label class="label-sm">起點</label><select id="src" class="select-input"></select></div>
-        <button id="swapSrcDst" class="px-1.5 py-1.5 text-gray-400 hover:text-blue-600 cursor-pointer transition-colors" title="交換起點與終點">⇄</button>
+        <button id="swapSrcDst" data-action="swapSrcDst" class="px-1.5 py-1.5 text-gray-400 hover:text-blue-600 cursor-pointer transition-colors" title="交換起點與終點">⇄</button>
         <div><label class="label-sm">終點</label><select id="dst" class="select-input"></select></div>
       </div>
       <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2">
-        <button class="btn-primary" id="runSpt">計算最短路徑</button>
+        <button class="btn-primary" id="runSpt" data-action="runSpt">計算最短路徑</button>
         <div class="px-1.5"></div>
-        <button class="btn-secondary" id="resetView">重置畫面</button>
+        <button class="btn-secondary" id="resetView" data-action="resetView">重置畫面</button>
       </div>
       <div id="path-result" class="mt-3">
         <div class="hint">選擇起點和終點後,點擊「計算最短路徑」。</div>
@@ -219,7 +284,7 @@
         點任一格查看路徑詳情並在圖上高亮。
       </div>
       <div class="mt-2 flex items-center justify-between">
-        <button class="btn-primary" id="runMatrix" style="width:auto;padding-left:12px;padding-right:12px">重新計算</button>
+        <button class="btn-primary" id="runMatrix" data-action="runMatrix" style="width:auto;padding-left:12px;padding-right:12px">重新計算</button>
         <span id="matrix-fail-info" class="text-xs text-gray-500"></span>
       </div>
       <div id="matrix-result" class="mt-2.5"></div>
@@ -232,7 +297,7 @@
         衡量每條鏈路和每台節點「有多少路徑經過」— 數值越高,越多流量依賴它,故障影響越大。
         <div class="mt-1">分 4 級:<b>樞紐</b>(需擴容) / <b>正常</b>(維持) / <b>偶爾</b>(可降規) / <b>純備援(鏈路)·末端(節點)</b>(零過路流量)。</div>
       </div>
-      <button class="btn-primary mt-2" id="listAllPairs">重新計算</button>
+      <button class="btn-primary mt-2" id="listAllPairs" data-action="listAllPairs">重新計算</button>
       <div id="all-pairs-result" class="mt-2.5"></div>
     </div>
 
@@ -241,7 +306,7 @@
       <div class="hint">
         根據流量需求矩陣,計算每條鏈路實際承載多少 <b>Gbps</b>(等成本路徑平均分攤),並對照鏈路容量算出<b>利用率</b>。分 4 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · &lt;50% 低負載。
       </div>
-      <button class="btn-primary mt-2" id="runTraffic">重新計算</button>
+      <button class="btn-primary mt-2" id="runTraffic" data-action="runTraffic">重新計算</button>
       <div id="traffic-result" class="mt-2.5"></div>
     </div>
 
@@ -249,8 +314,8 @@
       <h2 class="section-h !border-0 !mt-0">鏈路成本編輯</h2>
       <div class="hint">修改鏈路成本後,圖上標籤即時更新,路徑自動重算。點對點鏈路可分別設定去程和回程的成本。</div>
       <div class="grid grid-cols-2 gap-2 mt-2">
-        <button class="btn-secondary" id="resetEdges">還原原始值</button>
-        <button class="btn-primary" id="exportTopo">輸出 topology.js</button>
+        <button class="btn-secondary" id="resetEdges" data-action="resetEdges">還原原始值</button>
+        <button class="btn-primary" id="exportTopo" data-action="exportTopo">輸出 topology.js</button>
       </div>
       <div id="edges-result" class="mt-2.5"></div>
     </div>
@@ -260,7 +325,7 @@
       <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">模擬單一元件或整組共同風險群組 (SRLG) 同時失效,檢視網路連通性、流量重分配與容量溢出。SRLG 涵蓋海纜系統、共管線路、機房電力、上游 ISP 等共用風險。</div>
       <div class="mt-2"><label class="label-sm">失效情境</label><select id="failTarget" class="select-input"></select></div>
-      <button class="btn-primary mt-1.5" id="runFailSim">執行失效模擬</button>
+      <button class="btn-primary mt-1.5" id="runFailSim" data-action="runFailSim">執行失效模擬</button>
       <div id="failure-result" class="mt-2.5"></div>
     </div>
 
@@ -275,7 +340,7 @@
           <br><span class="badge na">不適用</span>只有一條路徑,不適用此檢查
         </div>
       </div>
-      <button class="btn-primary mt-2" id="runEcmpCheck">掃描所有 Router pairs</button>
+      <button class="btn-primary mt-2" id="runEcmpCheck" data-action="runEcmpCheck">掃描所有 Router pairs</button>
       <div id="ecmp-result" class="mt-2.5"></div>
     </div>
 
@@ -283,7 +348,7 @@
       <h2 class="section-h !border-0 !mt-0">非對稱路徑偵測</h2>
       <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。</div>
-      <button class="btn-primary mt-2" id="runAsymScan">掃描所有 Router pairs</button>
+      <button class="btn-primary mt-2" id="runAsymScan" data-action="runAsymScan">掃描所有 Router pairs</button>
       <div id="asym-result" class="mt-2.5"></div>
     </div>
 
@@ -304,8 +369,8 @@
           <span><b>&gt; 66%</b> — 多數 prefix 單一宣告(高風險)</span>
         </div>
       </div>
-      <button class="btn-primary mt-2" id="runHeatmap">套用 Heatmap 著色</button>
-      <button class="btn-secondary mt-1.5" id="clearHeatmap">清除 Heatmap</button>
+      <button class="btn-primary mt-2" id="runHeatmap" data-action="runHeatmap">套用 Heatmap 著色</button>
+      <button class="btn-secondary mt-1.5" id="clearHeatmap" data-action="clearHeatmap">清除 Heatmap</button>
       <div id="heatmap-result" class="mt-2.5"></div>
     </div>
 
@@ -318,7 +383,7 @@
         <span class="badge backup">×N</span>= 成本變 N 倍。
         點任一列在圖上查看影響範圍。
       </div>
-      <button class="btn-primary mt-2" id="runN1Scan">執行 N-1 掃描</button>
+      <button class="btn-primary mt-2" id="runN1Scan" data-action="runN1Scan">執行 N-1 掃描</button>
       <div id="n1-result" class="mt-2.5"></div>
     </div>
   </aside>
@@ -393,12 +458,13 @@ const ALL_NODE_CLASSES = Object.keys(NODE_ROLE_STYLES);
 
 // 分類門檻 — 集中管理,避免散落各 Tab 的魔術數字
 const THRESHOLDS = {
-  // C2 矩陣:成本→色階 (≤30 區域內 · ≤60 跨區域 · ≤100 跨洋 · 其餘/不可達 多段跨洋)
+  // C2 矩陣:成本→色階分級 (≤30 區域內 · ≤60 跨區域 · ≤100 跨洋 · 其餘/不可達 多段跨洋)
+  // 只保留「門檻→第幾級」的邏輯;對應 hex 收斂在 <style> 的 .cost-t{n}(呈現/邏輯解耦)
   matrixCost: [
-    { max: 30,       bg: '#dcfce7', fg: '#166534' },
-    { max: 60,       bg: '#fef9c3', fg: '#854d0e' },
-    { max: 100,      bg: '#fed7aa', fg: '#9a3412' },
-    { max: Infinity, bg: '#fecaca', fg: '#991b1b' },
+    { max: 30,       t: 1 },
+    { max: 60,       t: 2 },
+    { max: 100,      t: 3 },
+    { max: Infinity, t: 4 },
   ],
   // C3 樞紐度:節點介數佔最大值比例 (>40% hub · >10% normal · 其餘 rare)
   bcHubRatio: 0.4,
@@ -581,6 +647,18 @@ function clearAllRoles() {
   for (const [nid, st] of nodeStates) if (st.role !== 'none') { st.role = 'none'; paintNode(nid); }
 }
 
+// ── role 提交點(唯一的批次 role 寫入路徑)──
+// presenter 純算出 { edgeRoles, nodeRoles } 兩張 Map(elementId → role 字串),
+// 在這裡一次性 clear → 寫 state → paint。所有 tab 的 role 著色都收斂到此函式,
+// presenter 不再直接碰 setEdgeRole / setNodeRole / cy。
+// 語意 = clearAllRoles() 後對每張 Map 逐筆套用;Map 後寫覆蓋前寫(等同原本最後一次
+// setXxxRole 勝出),最終視覺與逐筆 imperative 著色完全一致。
+function applyRoles({ edgeRoles, nodeRoles } = {}) {
+  clearAllRoles();
+  if (edgeRoles) for (const [id, r] of edgeRoles) setEdgeRole(id, r);
+  if (nodeRoles) for (const [id, r] of nodeRoles) setNodeRole(id, r);
+}
+
 // 既有演算法碼使用 failedEdges.has() / .clear() / .size / iteration,
 // 用 facade 包住 op=failed 的 edge,避免逐段改 buildAdjacency 呼叫點。
 const failedEdges = {
@@ -606,6 +684,43 @@ const failedNodes = {
 // §3 UI HELPERS
 // ============================================================================
 const dom = (id) => document.getElementById(id);
+
+// 2×2 採購決策卡片格 — C3 樞紐度 / C9 邊流量共用。
+// 配色全由 .tier-{key} CSS class 帶 (--tier / --tier-bg),不再 inline hex。
+function tierCardGrid(order, meta, counts, unit) {
+  let h = '<div class="mini-stat">';
+  for (const k of order) {
+    const m = meta[k];
+    const sub = m.action ? ` · ${m.action}` : '';
+    h += `<div class="info-card tier-card tier-${k}">
+      <div class="label">${m.label}${sub}</div>
+      <div class="value">${counts[k]} ${unit}</div></div>`;
+  }
+  return h + '</div>';
+}
+
+// 取前 n 筆做 sample,溢出時補 "+N more"。可達性 banner 共用。
+function sampleList(arr, n, fmt) {
+  const head = arr.slice(0, n).map(fmt).join(', ');
+  const more = arr.length > n
+    ? ` <span class="cell-sub">+${arr.length - n} more</span>` : '';
+  return head + more;
+}
+
+// 綠 (ok) / 紅 (lost) 可達性會計卡 — C3 / C9 / C4 三處共用。
+function reachabilityBanner({ tone, label, value, sample, note, mt }) {
+  const m = mt ? ';margin-top:6px' : '';
+  if (tone === 'ok') {
+    return `<div class="info-card" style="background:#dcfce7;border-color:#15803d${m}">
+      <div class="label" style="color:#15803d">${label}</div>
+      <div class="value" style="color:#15803d">${value}</div></div>`;
+  }
+  const s = sample ? `<div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}</div>` : '';
+  const nt = note ? `<div style="font-size:10px;color:#7f1d1d;margin-top:4px">${note}</div>` : '';
+  return `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c${m}">
+    <div class="label" style="color:#991b1b">${label}</div>
+    <div class="value" style="color:#991b1b">${value}</div>${s}${nt}</div>`;
+}
 
 // ============================================================================
 // §4 SHARED CONTEXT — module-scope state + cross-tab helpers
@@ -683,17 +798,19 @@ function rerenderIfPathActive() {
 // ----------------------------------------------------------------------------
 const C1_Path = (() => {
   function render(src, dst) {
-    clearAllRoles();
     const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
     const r = dijkstraECMP(adj, src, dst);
     const div = dom('path-result');
+    const edgeRoles = new Map();
+    const nodeRoles = new Map();
 
     if (r.cost === Infinity) {
+      nodeRoles.set(src, 'endpoint');
+      nodeRoles.set(dst, 'endpoint');
+      applyRoles({ edgeRoles, nodeRoles });
       div.innerHTML = `<span class="badge unreach">不可達</span>
         <div class="hint">${src} → ${dst} 沒有可用路徑(可能因故障導致)。</div>`;
       dom('unbackup-result').innerHTML = '';
-      setNodeRole(src, 'endpoint');
-      setNodeRole(dst, 'endpoint');
       return;
     }
 
@@ -724,11 +841,11 @@ const C1_Path = (() => {
 
     const role = inBackup ? 'backup' : 'spt';
     // 用 edgePaths 高亮 — 平行等價鏈路的每一條都會被點亮,不會漏掉第二條
-    for (const ep of r.edgePaths) for (const eid of ep) setEdgeRole(eid, role);
-    setNodeRole(src, 'endpoint');
-    setNodeRole(dst, 'endpoint');
+    for (const ep of r.edgePaths) for (const eid of ep) edgeRoles.set(eid, role);
+    nodeRoles.set(src, 'endpoint');
+    nodeRoles.set(dst, 'endpoint');
     for (const g of disp) for (const n of g.nodes) {
-      if (n !== src && n !== dst) setNodeRole(n, 'highlight');
+      if (n !== src && n !== dst) nodeRoles.set(n, 'highlight');
     }
 
     const isECMP = ecmpCount > 1;
@@ -738,10 +855,10 @@ const C1_Path = (() => {
       ? '<span class="badge backup">繞道</span>'
       : '<span class="badge pass">正常</span>';
     const pathBadge = isECMP
-      ? `<span class="badge" style="background:#dbeafe;color:#1e40af">ECMP ×${ecmpCount} 多路徑</span>`
+      ? `<span class="badge info">ECMP ×${ecmpCount} 多路徑</span>`
       : '<span class="badge na">單一路徑</span>';
     const fieldLabel = (t) =>
-      `<span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-right:5px">${t}</span>`;
+      `<span class="field-label">${t}</span>`;
     let html = '';
     html += `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
       <div>${fieldLabel('狀態')}${stateBadge}</div>
@@ -758,7 +875,8 @@ const C1_Path = (() => {
       }
     }
     div.innerHTML = html;
-    scanUnbackup(src, dst);
+    scanUnbackup(src, dst, edgeRoles);
+    applyRoles({ edgeRoles, nodeRoles });
   }
 
   function reset() {
@@ -768,9 +886,9 @@ const C1_Path = (() => {
     dom('unbackup-result').innerHTML = '';
   }
 
-  function scanUnbackup(src, dst) {
+  function scanUnbackup(src, dst, edgeRoles) {
     const { primaryEdges, unbacked } = unbackupSegmentScan(topology, src, dst);
-    for (const eid of unbacked) setEdgeRole(eid, 'unbacked');
+    for (const eid of unbacked) edgeRoles.set(eid, 'unbacked');
     const div = dom('unbackup-result');
     if (primaryEdges.length === 0) {
       div.innerHTML = '<div class="hint">目前沒有可分析的主路徑。</div>';
@@ -785,7 +903,7 @@ const C1_Path = (() => {
     } else {
       html += `<div style="margin-top:6px"><span class="badge fail">${unbacked.length} 段斷即不可達</span></div>`;
       for (const eid of unbacked) {
-        const e = topology.edges.find(x => x.id === eid);
+        const e = edgeById.get(eid);
         html += `<div class="path-item fail" title="${eid}" style="margin-top:4px">${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
       }
     }
@@ -794,21 +912,10 @@ const C1_Path = (() => {
     div.innerHTML = html;
   }
 
-  function init() {
-    dom('runSpt').addEventListener('click', () =>
-      render(dom('src').value, dom('dst').value));
-    dom('resetView').addEventListener('click', reset);
-    dom('swapSrcDst').addEventListener('click', () => {
-      const s = dom('src'), d = dom('dst');
-      [s.value, d.value] = [d.value, s.value];
-      render(s.value, d.value);
-    });
-  }
-
   return {
-    init,
     activate: () => render(dom('src').value, dom('dst').value),
     render,
+    reset,
   };
 })();
 
@@ -861,9 +968,9 @@ const C2_Matrix = (() => {
       ? `<span style="color:#dc2626">目前故障:${fE} 邊 / ${fN} 節點</span>`
       : '';
 
-    // cost → 顏色(固定門檻,不隨 maxCost 浮動)
+    // cost → 色階級數(固定門檻,不隨 maxCost 浮動)。回傳第幾級,hex 由 .cost-t{n} 決定。
     // ≤30 區域內 · 31–60 跨區域 · 61–100 跨洋 · >100 多段跨洋
-    const colorFor = (cost) => THRESHOLDS.matrixCost.find(s => cost <= s.max);
+    const tierFor = (cost) => THRESHOLDS.matrixCost.find(s => cost <= s.max).t;
 
     // 對角分割角落格:左下 src / 右上 dst,中間一條斜線(用 linear-gradient 畫)
     const cornerCell = '<th style="background:#1e3a8a;color:#fff;padding:0;position:relative;'
@@ -884,18 +991,17 @@ const C2_Matrix = (() => {
           continue;
         }
         if (cell.cost === Infinity) {
-          html += `<td class="clickable" data-src="${a}" data-dst="${b}" style="background:#fecaca;color:#991b1b;text-align:center;font-weight:600">∞</td>`;
+          html += `<td class="clickable cost-t4 matrix-cell" data-src="${a}" data-dst="${b}">∞</td>`;
           continue;
         }
-        const { bg, fg } = colorFor(cell.cost);
+        const t = tierFor(cell.cost);
         const ecmp = cell.edgePaths.length;   // 平行等價鏈路也計入 ECMP 多重度
         const ecmpSup = ecmp >= 2 ? `<sup style="color:#1e40af">${ecmp >= 10 ? ecmp : ['','','²','³','⁴','⁵','⁶','⁷','⁸','⁹'][ecmp]}</sup>` : '';
         // 非對稱標記:跟鏡像格 cost 不同
         const mirror = matrix[b] && matrix[b][a];
         const asym = mirror && mirror.cost !== Infinity && mirror.cost !== cell.cost
           ? '<sub style="color:#a855f7;font-weight:700">*</sub>' : '';
-        html += `<td class="clickable" data-src="${a}" data-dst="${b}"
-          style="background:${bg};color:${fg};text-align:center;font-weight:600;cursor:pointer">${cell.cost}${ecmpSup}${asym}</td>`;
+        html += `<td class="clickable cost-t${t} matrix-cell" data-src="${a}" data-dst="${b}">${cell.cost}${ecmpSup}${asym}</td>`;
       }
       html += '</tr>';
     }
@@ -914,17 +1020,18 @@ const C2_Matrix = (() => {
     if (!matrixCache) return;
     const cell = matrixCache.matrix[src][dst];
     const div = dom('matrix-detail');
+    const edgeRoles = new Map();
+    const nodeRoles = new Map();
 
     // 視覺反饋:選取狀態
     document.querySelectorAll('#matrix-result td.clickable').forEach(td => {
       td.style.outline = (td.dataset.src === src && td.dataset.dst === dst) ? '3px solid #2563eb' : 'none';
     });
 
-    clearAllRoles();
-
     if (cell.cost === Infinity) {
-      setNodeRole(src, 'endpoint');
-      setNodeRole(dst, 'endpoint');
+      nodeRoles.set(src, 'endpoint');
+      nodeRoles.set(dst, 'endpoint');
+      applyRoles({ edgeRoles, nodeRoles });
       div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
         <div class="hint">${src} → ${dst} 沒有可用路徑。</div>`;
       return;
@@ -932,13 +1039,14 @@ const C2_Matrix = (() => {
 
     // 在拓樸圖上高亮所有 ECMP 路徑 — 用 edgePaths 才能點亮平行等價鏈路的每一條
     for (const ep of (cell.edgePaths || [])) {
-      for (const eid of ep) setEdgeRole(eid, 'spt');
+      for (const eid of ep) edgeRoles.set(eid, 'spt');
     }
-    setNodeRole(src, 'endpoint');
-    setNodeRole(dst, 'endpoint');
+    nodeRoles.set(src, 'endpoint');
+    nodeRoles.set(dst, 'endpoint');
     for (const p of (cell.rawPaths || cell.paths)) for (const n of p) {
-      if (n !== src && n !== dst) setNodeRole(n, 'highlight');
+      if (n !== src && n !== dst) nodeRoles.set(n, 'highlight');
     }
+    applyRoles({ edgeRoles, nodeRoles });
 
     // 反方向資訊(非對稱比對)
     const reverse = matrixCache.matrix[dst][src];
@@ -962,11 +1070,7 @@ const C2_Matrix = (() => {
     div.innerHTML = html;
   }
 
-  function init() {
-    dom('runMatrix').addEventListener('click', render);
-  }
-
-  return { init, activate: render };
+  return { activate: render, render };
 })();
 
 // ----------------------------------------------------------------------------
@@ -976,18 +1080,19 @@ const C2_Matrix = (() => {
 // → 依相對 maxBC 分 4 階,對應採購決策:擴容雙保 / 維持 / 降頻寬 / 砍掉。
 // 用 SPEC §11 狀態機:setEdgeRole(eid, 'bc-' + tier) — 切 Tab 自動清除。
 const C3_AllPairs = (() => {
+  // 配色已移至 .tier-{key} CSS class — 此處只保留文案 (label/action)。
   const TIERS = {
-    hub:    { label: '樞紐',   action: '擴容雙保',   color: '#15803d', cardBg: '#dcfce7' },
-    normal: { label: '正常',   action: '維持',       color: '#1e40af', cardBg: '#dbeafe' },
-    rare:   { label: '偶爾',   action: '降頻寬候選', color: '#a16207', cardBg: '#fef9c3' },
-    idle:   { label: '純備援', action: '砍掉候選',   color: '#475569', cardBg: '#f1f5f9' },
+    hub:    { label: '樞紐',   action: '擴容雙保' },
+    normal: { label: '正常',   action: '維持' },
+    rare:   { label: '偶爾',   action: '降頻寬候選' },
+    idle:   { label: '純備援', action: '砍掉候選' },
   };
   // Node 版 tier 文案 — idle 對 router 是「末端/無轉送流量」(非備援,純 stub)
   const NODE_TIERS = {
-    hub:    { label: '樞紐',   action: '雙機雙路',         color: '#15803d', cardBg: '#dcfce7' },
-    normal: { label: '正常',   action: '維持',             color: '#1e40af', cardBg: '#dbeafe' },
-    rare:   { label: '偶爾',   action: '可降規',           color: '#a16207', cardBg: '#fef9c3' },
-    idle:   { label: '末端', action: '無轉送流量', color: '#475569', cardBg: '#f1f5f9' },
+    hub:    { label: '樞紐',   action: '雙機雙路' },
+    normal: { label: '正常',   action: '維持' },
+    rare:   { label: '偶爾',   action: '可降規' },
+    idle:   { label: '末端',   action: '無轉送流量' },
   };
 
   function classify(v, maxBC) {
@@ -999,7 +1104,8 @@ const C3_AllPairs = (() => {
   }
 
   function render() {
-    clearAllRoles();
+    const edgeRoles = new Map();
+    const nodeRoles = new Map();
 
     // ---- Edge 樞紐度計算(吃右鍵故障,反映當前營運狀態)----
     // 包含 transit 邊:它們是真實的 Router↔IX 連線,採購視角不可省略。
@@ -1015,7 +1121,7 @@ const C3_AllPairs = (() => {
       const v = bc[e.id] || 0;
       const tier = classify(v, maxBC);
       tierCounts[tier]++;
-      setEdgeRole(e.id, 'bc-' + tier);
+      edgeRoles.set(e.id, 'bc-' + tier);
       ranking.push({ eid: e.id, edge: e, bc: v, tier });
     }
     ranking.sort((x, y) => y.bc - x.bc);
@@ -1032,10 +1138,11 @@ const C3_AllPairs = (() => {
       const v = nodeBC[n.id] || 0;
       const tier = classify(v, maxNodeBC);
       nodeTierCounts[tier]++;
-      setNodeRole(n.id, 'bc-' + tier);
+      nodeRoles.set(n.id, 'bc-' + tier);
       nodeRanking.push({ nid: n.id, node: n, bc: v, tier });
     }
     nodeRanking.sort((x, y) => y.bc - x.bc);
+    applyRoles({ edgeRoles, nodeRoles });
 
     // ---- 全 pair SPT 列舉(吃右鍵故障)— 收集最短路徑供下方 listing 用 ----
     // (lost pair 計數已由 bcResult.lostPairs 提供,本迴圈只負責 reachable pair 的路徑)
@@ -1071,33 +1178,16 @@ const C3_AllPairs = (() => {
     // 所以要先讓使用者看到「有多少 pair 連不通」,才不會誤把劣化中的網路看成樞紐均衡。
     const lostPairs = bcResult.lostPairs;
     const totalForBanner = bcResult.totalPairs;
-    if (lostPairs.length === 0) {
-      html += `<div class="info-card" style="background:#dcfce7;border-color:#15803d">
-        <div class="label" style="color:#15803d">可達性</div>
-        <div class="value" style="color:#15803d">${totalForBanner} 對 pair 全數可達</div>
-      </div>`;
-    } else {
-      const sample = lostPairs.slice(0, 6).map(p => `${p.a}→${p.b}`).join(', ');
-      const more = lostPairs.length > 6 ? ` <span style="color:#9ca3af">+${lostPairs.length - 6} more</span>` : '';
-      html += `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c">
-        <div class="label" style="color:#991b1b">可達性會計 — ⚠ 部分 pair 不可達</div>
-        <div class="value" style="color:#991b1b">${bcResult.reachablePairs} / ${totalForBanner} 可達
-          &nbsp;<span style="color:#6b7280;font-weight:400;font-size:10px">(失去 ${lostPairs.length} 對)</span></div>
-        <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}${more}</div>
-        <div style="font-size:10px;color:#7f1d1d;margin-top:4px">以下 BC 排名僅統計 ${bcResult.reachablePairs} 對可達 pair。失效節點 / 鏈路若是 hub,真實衝擊比表面數字更大。</div>
-      </div>`;
-    }
+    html += lostPairs.length === 0
+      ? reachabilityBanner({ tone: 'ok', label: '可達性',
+          value: `${totalForBanner} 對 pair 全數可達` })
+      : reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 pair 不可達',
+          value: `${bcResult.reachablePairs} / ${totalForBanner} 可達 &nbsp;<span class="banner-sub">(失去 ${lostPairs.length} 對)</span>`,
+          sample: sampleList(lostPairs, 6, p => `${p.a}→${p.b}`),
+          note: `以下 BC 排名僅統計 ${bcResult.reachablePairs} 對可達 pair。失效節點 / 鏈路若是 hub,真實衝擊比表面數字更大。` });
 
     // 4 階採購決策卡(用 grid 2×2 排列)
-    html += '<div class="mini-stat">';
-    for (const tier of ['hub', 'normal', 'rare', 'idle']) {
-      const t = TIERS[tier];
-      html += `<div class="info-card" style="background:${t.cardBg};border-color:${t.color}">
-        <div class="label" style="color:${t.color}">${t.label} · ${t.action}</div>
-        <div class="value" style="color:${t.color}">${tierCounts[tier]} 條</div>
-      </div>`;
-    }
-    html += '</div>';
+    html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], TIERS, tierCounts, '條');
 
     html += `<div class="info-card"><div class="label">maxBC</div>
       <div class="value">${maxBC.toFixed(1)}</div></div>`;
@@ -1109,38 +1199,30 @@ const C3_AllPairs = (() => {
       const t = TIERS[r.tier];
       const cost = r.edge.cost + (r.edge.costRev != null && r.edge.costRev !== r.edge.cost ? `/${r.edge.costRev}` : '');
       html += `<tr>
-        <td title="${r.eid}">${r.edge.source} ↔ ${r.edge.target}<br><span style="color:#9ca3af;font-size:10px">cost ${cost}</span></td>
-        <td style="font-weight:600">${r.bc.toFixed(1)}</td>
-        <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
-        <td style="color:${t.color};font-size:10px">${t.action}</td>
+        <td title="${r.eid}">${r.edge.source} ↔ ${r.edge.target}<br><span class="cell-sub">cost ${cost}</span></td>
+        <td class="num-em">${r.bc.toFixed(1)}</td>
+        <td><span class="badge tier-badge tier-${r.tier}">${t.label}</span></td>
+        <td class="tier-fg tier-${r.tier}" style="font-size:10px">${t.action}</td>
       </tr>`;
     }
     html += '</table>';
 
     // 節點樞紐度排行
     html += '<h2 class="section-h mt-3">節點樞紐度排行</h2>';
-    html += '<div class="mini-stat">';
-    for (const tier of ['hub', 'normal', 'rare', 'idle']) {
-      const t = NODE_TIERS[tier];
-      html += `<div class="info-card" style="background:${t.cardBg};border-color:${t.color}">
-        <div class="label" style="color:${t.color}">${t.label} · ${t.action}</div>
-        <div class="value" style="color:${t.color}">${nodeTierCounts[tier]} 台</div>
-      </div>`;
-    }
-    html += '</div>';
+    html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], NODE_TIERS, nodeTierCounts, '台');
     html += `<div class="info-card"><div class="label">最大 Node BC</div>
       <div class="value">${maxNodeBC.toFixed(1)}</div></div>`;
     html += '<table><tr><th>Node</th><th>BC</th><th>分類</th><th>建議</th></tr>';
     for (const r of nodeRanking) {
       const t = NODE_TIERS[r.tier];
       const subLabel = r.node.label && r.node.label.replace(/\n/g, ' ') !== r.nid
-        ? `<br><span style="color:#9ca3af;font-size:10px">${r.node.label.replace(/\n/g, ' ')}</span>`
+        ? `<br><span class="cell-sub">${r.node.label.replace(/\n/g, ' ')}</span>`
         : '';
       html += `<tr>
         <td>${r.nid}${subLabel}</td>
-        <td style="font-weight:600">${r.bc.toFixed(1)}</td>
-        <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
-        <td style="color:${t.color};font-size:10px">${t.action}</td>
+        <td class="num-em">${r.bc.toFixed(1)}</td>
+        <td><span class="badge tier-badge tier-${r.tier}">${t.label}</span></td>
+        <td class="tier-fg tier-${r.tier}" style="font-size:10px">${t.action}</td>
       </tr>`;
     }
     html += '</table>';
@@ -1158,11 +1240,7 @@ const C3_AllPairs = (() => {
     div.innerHTML = html;
   }
 
-  function init() {
-    dom('listAllPairs').addEventListener('click', render);
-  }
-
-  return { init, activate: render };
+  return { activate: render, render };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1170,10 +1248,10 @@ const C3_AllPairs = (() => {
 // ----------------------------------------------------------------------------
 const C9_Traffic = (() => {
   const TIERS = {
-    overflow: { label: '過載', color: '#7f1d1d', cardBg: '#fecaca' },
-    high:     { label: '高負載',   color: '#dc2626', cardBg: '#fee2e2' },
-    mid:      { label: '中負載',   color: '#a16207', cardBg: '#fef3c7' },
-    low:      { label: '低負載',   color: '#475569', cardBg: '#f1f5f9' },
+    overflow: { label: '過載' },
+    high:     { label: '高負載' },
+    mid:      { label: '中負載' },
+    low:      { label: '低負載' },
   };
   function classify(util) {
     if (util > THRESHOLDS.trafficOverflow) return 'overflow';
@@ -1183,16 +1261,17 @@ const C9_Traffic = (() => {
   }
 
   function render() {
-    clearAllRoles();
     const div = dom('traffic-result');
     if (typeof demand === 'undefined' || !demand?.matrix) {
-      div.innerHTML = '<div class="hint" style="color:#991b1b">未載入 demand.js,無法顯示流量視圖。</div>';
+      clearAllRoles();
+      div.innerHTML = '<div class="hint val-danger">未載入 demand.js,無法顯示流量視圖。</div>';
       return;
     }
     const result = allPairsTraffic(topology, demand, failedEdges, failedNodes);
     const traffic = result.traffic;
     const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
 
+    const edgeRoles = new Map();
     const tierCounts = { overflow: 0, high: 0, mid: 0, low: 0 };
     const rows = [];
     let maxUtil = 0;
@@ -1203,10 +1282,11 @@ const C9_Traffic = (() => {
       if (util > maxUtil) maxUtil = util;
       const tier = classify(util);
       tierCounts[tier]++;
-      setEdgeRole(e.id, 'traffic-' + tier);
+      edgeRoles.set(e.id, 'traffic-' + tier);
       rows.push({ eid: e.id, edge: e, gbps: v, cap, util, tier });
     }
     rows.sort((x, y) => y.util - x.util);
+    applyRoles({ edgeRoles });
 
     let html = '';
 
@@ -1216,37 +1296,20 @@ const C9_Traffic = (() => {
     const lostGbps = result.lostDemand;
     const totalGbps = result.totalDemand;
     if (lostGbps === 0) {
-      html += `<div class="info-card" style="background:#dcfce7;border-color:#15803d">
-        <div class="label" style="color:#15803d">可達性</div>
-        <div class="value" style="color:#15803d">${totalGbps.toFixed(0)} Gbps demand 全數有路可走</div>
-      </div>`;
+      html += reachabilityBanner({ tone: 'ok', label: '可達性',
+        value: `${totalGbps.toFixed(0)} Gbps demand 全數有路可走` });
     } else {
       const lostPct = totalGbps > 0 ? (lostGbps / totalGbps * 100) : 0;
-      const sample = result.lostDemandPairs.slice(0, 5)
-        .map(p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`).join(', ');
-      const more = result.lostDemandPairs.length > 5
-        ? ` <span style="color:#9ca3af">+${result.lostDemandPairs.length - 5} more</span>` : '';
-      html += `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c">
-        <div class="label" style="color:#991b1b">可達性會計 — ⚠ 部分 demand 失去路徑</div>
-        <div class="value" style="color:#991b1b">${result.servedDemand.toFixed(0)} / ${totalGbps.toFixed(0)} Gbps 可達
-          &nbsp;<span style="color:#6b7280;font-weight:400;font-size:10px">(失去 ${lostGbps.toFixed(0)} Gbps · ${lostPct.toFixed(1)}%)</span></div>
-        <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}${more}</div>
-        <div style="font-size:10px;color:#7f1d1d;margin-top:4px">以下流量排行僅基於剩餘可達 demand。現實裡這 ${lostGbps.toFixed(0)} Gbps 不會憑空消失,代表「客戶斷線」或「BGP 倒換出域」。</div>
-      </div>`;
+      html += reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 demand 失去路徑',
+        value: `${result.servedDemand.toFixed(0)} / ${totalGbps.toFixed(0)} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${lostGbps.toFixed(0)} Gbps · ${lostPct.toFixed(1)}%)</span>`,
+        sample: sampleList(result.lostDemandPairs, 5, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
+        note: `以下流量排行僅基於剩餘可達 demand。現實裡這 ${lostGbps.toFixed(0)} Gbps 不會憑空消失,代表「客戶斷線」或「BGP 倒換出域」。` });
     }
 
-    html += '<div class="mini-stat">';
-    for (const tier of ['overflow', 'high', 'mid', 'low']) {
-      const t = TIERS[tier];
-      html += `<div class="info-card" style="background:${t.cardBg};border-color:${t.color}">
-        <div class="label" style="color:${t.color}">${t.label}</div>
-        <div class="value" style="color:${t.color}">${tierCounts[tier]} 條</div>
-      </div>`;
-    }
-    html += '</div>';
+    html += tierCardGrid(['overflow', 'high', 'mid', 'low'], TIERS, tierCounts, '條');
     html += `<div class="info-card"><div class="label">最大利用率 / 來源</div>
       <div class="value">${(maxUtil * 100).toFixed(1)}%
-      <span style="color:#6b7280;font-weight:400;font-size:10px">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;
+      <span class="banner-sub">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;
 
     html += '<h2 class="section-h mt-3">邊流量排行</h2>';
     html += '<table><tr><th>連接</th><th>Gbps</th><th>Cap</th><th>Util%</th><th>分類</th></tr>';
@@ -1254,24 +1317,22 @@ const C9_Traffic = (() => {
       const t = TIERS[r.tier];
       const capStr = isFinite(r.cap) ? r.cap.toFixed(0) : '—';
       const utilStr = (isFinite(r.cap) && r.cap > 0) ? (r.util * 100).toFixed(1) + '%' : '—';
-      const utilColor = r.util > 1 ? '#991b1b' : t.color;
+      // util>1 ⟺ tier=overflow:過載走 .util-over(#991b1b,刻意不同於 .tier-overflow 的 #7f1d1d),
+      // 其餘走 tier-fg class。weight 由 .num-em 疊加(與其他排行表一致)。
+      const utilCls = r.util > 1 ? 'util-over' : 'tier-fg tier-' + r.tier;
       html += `<tr>
         <td title="${r.eid}">${r.edge.source} ↔ ${r.edge.target}</td>
-        <td style="font-weight:600">${r.gbps.toFixed(1)}</td>
+        <td class="num-em">${r.gbps.toFixed(1)}</td>
         <td>${capStr}</td>
-        <td style="color:${utilColor};font-weight:600">${utilStr}</td>
-        <td><span class="badge" style="background:${t.cardBg};color:${t.color}">${t.label}</span></td>
+        <td class="${utilCls} num-em">${utilStr}</td>
+        <td><span class="badge tier-badge tier-${r.tier}">${t.label}</span></td>
       </tr>`;
     }
     html += '</table>';
     div.innerHTML = html;
   }
 
-  function init() {
-    dom('runTraffic').addEventListener('click', render);
-  }
-
-  return { init, activate: render };
+  return { activate: render, render };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1293,16 +1354,16 @@ const C4_Failure = (() => {
   function render() {
     const { fE, fN, label, group } = resolveFailureSet();
 
-    clearAllRoles();
+    const edgeRoles = new Map(), nodeRoles = new Map();
 
     // Visual markup: mark all directly-affected elements
-    for (const eid of fE) setEdgeRole(eid, 'simulated-fail');
-    for (const nid of fN) setNodeRole(nid, 'failed-node');
+    for (const eid of fE) edgeRoles.set(eid, 'simulated-fail');
+    for (const nid of fN) nodeRoles.set(nid, 'failed-node');
 
     // Determine which edges are effectively down (direct + node-attached)
     const isDown = (eid) => {
       if (fE.has(eid)) return true;
-      const e = topology.edges.find(x => x.id === eid);
+      const e = edgeById.get(eid);
       return e && (fN.has(e.source) || fN.has(e.target));
     };
 
@@ -1333,7 +1394,7 @@ const C4_Failure = (() => {
 
       if (isDown(eid)) {
         const before = hasDemand ? (tBefore[eid] || 0) : (bBefore?.[eid] || 0);
-        setEdgeRole(eid, 'simulated-fail');
+        edgeRoles.set(eid, 'simulated-fail');
         edgeRows.push({ eid, edge: e, cls: 'down', before, after: 0,
           changePct: before > 0 ? -100 : 0, cap, util: 0 });
         continue;
@@ -1347,8 +1408,8 @@ const C4_Failure = (() => {
       const direction = after > before ? 'inc' : (after < before ? 'dec' : 'none');
       const util = (isFinite(cap) && cap > 0) ? after / cap : 0;
 
-      if (direction === 'inc')      setEdgeRole(eid, 'load-inc');
-      else if (direction === 'dec') setEdgeRole(eid, 'load-dec');
+      if (direction === 'inc')      edgeRoles.set(eid, 'load-inc');
+      else if (direction === 'dec') edgeRoles.set(eid, 'load-dec');
 
       if (direction !== 'none') {
         edgeRows.push({ eid, edge: e, cls: direction === 'inc' ? 'up' : 'dec',
@@ -1367,6 +1428,8 @@ const C4_Failure = (() => {
     const upCount   = edgeRows.filter(x => x.cls === 'up').length;
     const decCount  = edgeRows.filter(x => x.cls === 'dec').length;
     const overflows = edgeRows.filter(x => x.cls !== 'down' && x.util > 1);
+
+    applyRoles({ edgeRoles, nodeRoles });
 
     let html = '';
 
@@ -1411,27 +1474,21 @@ const C4_Failure = (() => {
       const total = tAfterFull.totalDemand;
       if (lost > 0) {
         const pct = total > 0 ? (lost / total * 100) : 0;
-        const lostSample = tAfterFull.lostDemandPairs.slice(0, 5)
-          .map(p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`).join(', ');
-        const lostMore = tAfterFull.lostDemandPairs.length > 5
-          ? ` <span style="color:#9ca3af">+${tAfterFull.lostDemandPairs.length - 5} more</span>` : '';
-        html += `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c;margin-top:6px">
-          <div class="label" style="color:#991b1b">⚠ 失去路徑的流量</div>
-          <div class="value" style="color:#991b1b">${lost.toFixed(0)} / ${total.toFixed(0)} Gbps 無法送達
-            <span style="color:#6b7280;font-weight:400;font-size:10px">(${pct.toFixed(1)}%)</span></div>
-          <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${lostSample}${lostMore}</div></div>`;
+        html += reachabilityBanner({ tone: 'lost', mt: true, label: '⚠ 失去路徑的流量',
+          value: `${lost.toFixed(0)} / ${total.toFixed(0)} Gbps 無法送達
+            <span class="banner-sub">(${pct.toFixed(1)}%)</span>`,
+          sample: sampleList(tAfterFull.lostDemandPairs, 5, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`) });
       } else {
-        html += `<div class="info-card" style="background:#dcfce7;border-color:#15803d;margin-top:6px">
-          <div class="label" style="color:#15803d">流量可達性</div>
-          <div class="value" style="color:#15803d">${total.toFixed(0)} Gbps demand 全數有路可走</div></div>`;
+        html += reachabilityBanner({ tone: 'ok', mt: true, label: '流量可達性',
+          value: `${total.toFixed(0)} Gbps demand 全數有路可走` });
       }
     }
 
     html += '<h2 class="section-h mt-3">Top affected links</h2>';
     html += `<div class="flex gap-2 mb-2 text-xs">
       <span class="badge fail">✕ ${downCount}</span>
-      <span class="badge" style="background:#dbeafe;color:#1e40af">▲ ${upCount}</span>
-      <span class="badge" style="background:#fef9c3;color:#854d0e">▼ ${decCount}</span>
+      <span class="badge info">▲ ${upCount}</span>
+      <span class="badge warn">▼ ${decCount}</span>
     </div>`;
 
     const unit = hasDemand ? ' Gbps' : '';
@@ -1440,10 +1497,10 @@ const C4_Failure = (() => {
     for (const row of edgeRows.slice(0, 12)) {
       const statusCell =
         row.cls === 'down' ? '<span class="badge fail" title="斷線">✕</span>' :
-        row.cls === 'up'   ? '<span class="badge" style="background:#dbeafe;color:#1e40af" title="負載增加">▲</span>' :
-                             '<span class="badge" style="background:#fef9c3;color:#854d0e" title="負載減少">▼</span>';
+        row.cls === 'up'   ? '<span class="badge info" title="負載增加">▲</span>' :
+                             '<span class="badge warn" title="負載減少">▼</span>';
       const arrow = row.cls === 'down' ? '↓' : (row.cls === 'up' ? '↑' : '↓');
-      const color = row.cls === 'down' ? '#dc2626' : (row.cls === 'up' ? '#2563eb' : '#ca8a04');
+      const deltaCls = row.cls === 'down' ? 'delta-down' : (row.cls === 'up' ? 'delta-up' : 'delta-dec');
       const pct = isFinite(row.changePct) ? row.changePct.toFixed(0) + '%' : '∞';
 
       let capCells = '';
@@ -1451,24 +1508,20 @@ const C4_Failure = (() => {
         const capStr = isFinite(row.cap) ? row.cap.toFixed(0) : '—';
         const utilStr = row.cls === 'down' ? '—'
           : ((isFinite(row.cap) && row.cap > 0) ? (row.util * 100).toFixed(1) + '%' : '—');
-        const utilColor = row.util > 1 ? '#991b1b' : (row.util > 0.8 ? '#dc2626' : '#475569');
-        capCells = `<td>${capStr}</td><td style="color:${utilColor};font-weight:${row.util > 0.8 ? 600 : 400}">${utilStr}</td>`;
+        const utilCls = row.util > 1 ? 'util-over' : (row.util > 0.8 ? 'util-high' : 'util-normal');
+        capCells = `<td>${capStr}</td><td class="${utilCls}">${utilStr}</td>`;
       }
 
       html += `<tr><td title="${row.eid}">${row.edge.source} ↔ ${row.edge.target}</td>
         <td>${statusCell}</td>
         <td>${row.before.toFixed(1)}</td><td>${row.after.toFixed(1)}</td>
-        <td style="color:${color};font-weight:600">${arrow} ${pct}</td>${capCells}</tr>`;
+        <td class="${deltaCls}">${arrow} ${pct}</td>${capCells}</tr>`;
     }
     html += '</table>';
     dom('failure-result').innerHTML = html;
   }
 
-  function init() {
-    dom('runFailSim').addEventListener('click', render);
-  }
-
-  return { init };
+  return { render };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1504,10 +1557,10 @@ const C5_Ecmp = (() => {
 
     let html = `<div class="mini-stat">
       <div class="info-card"><div class="label">通過</div><div class="value" style="color:#166534">${summary.passed}</div></div>
-      <div class="info-card"><div class="label">失敗</div><div class="value" style="color:#991b1b">${summary.failed}</div></div>
+      <div class="info-card"><div class="label">失敗</div><div class="value val-danger">${summary.failed}</div></div>
       </div>
       <div class="info-card"><div class="label">不適用</div>
-        <div class="value">${summary['n/a']} <span style="color:#9ca3af;font-weight:400;font-size:10px">(無 ECMP ${naNoEcmp} · 單一出口 ${naSingleHop})</span></div>
+        <div class="value">${summary['n/a']} <span class="cell-sub">(無 ECMP ${naNoEcmp} · 單一出口 ${naSingleHop})</span></div>
       </div>`;
 
     // 只列出 failed 的細項 — 通過跟不適用太多筆,平鋪沒意義
@@ -1519,7 +1572,7 @@ const C5_Ecmp = (() => {
       html += '<table class="mt-1"><tr><th>連接</th><th>原因</th></tr>';
       for (const r of failed) {
         html += `<tr><td>${r.src} → ${r.dst}</td>
-          <td style="color:#991b1b">${fmtReason(r.reason)}</td></tr>`;
+          <td class="val-danger">${fmtReason(r.reason)}</td></tr>`;
       }
       html += '</table>';
     }
@@ -1532,18 +1585,14 @@ const C5_Ecmp = (() => {
       const label = r.status === 'passed' ? '通過' : (r.status === 'failed' ? '失敗' : '不適用');
       html += `<tr><td>${r.src} → ${r.dst}</td>
         <td><span class="badge ${cls}">${label}</span></td>
-        <td style="color:#6b7280;font-size:10px">${r.status === 'passed' ? '' : fmtReason(r.reason)}</td></tr>`;
+        <td class="banner-sub">${r.status === 'passed' ? '' : fmtReason(r.reason)}</td></tr>`;
     }
     html += '</table></details>';
 
     dom('ecmp-result').innerHTML = html;
   }
 
-  function init() {
-    dom('runEcmpCheck').addEventListener('click', render);
-  }
-
-  return { init };
+  return { render };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1558,11 +1607,12 @@ const C6_Asym = (() => {
 
   function render() {
     const asym = detectAsymmetric(topology);
-    clearAllRoles();
+    const nodeRoles = new Map();
     for (const x of asym) {
-      setNodeRole(x.a, 'asym-mark');
-      setNodeRole(x.b, 'asym-mark');
+      nodeRoles.set(x.a, 'asym-mark');
+      nodeRoles.set(x.b, 'asym-mark');
     }
+    applyRoles({ nodeRoles });
 
     let html = '';
     if (asym.length === 0) {
@@ -1586,11 +1636,11 @@ const C6_Asym = (() => {
             <span style="color:#b45309">${reasons.join(' · ')}</span>
           </div>
           <div style="margin-top:6px">
-            <div style="font-weight:600;color:#1e40af">${x.a} → ${x.b}　<span style="color:#64748b;font-weight:400">cost ${x.fwdCost}</span></div>
+            <div class="dir-head">${x.a} → ${x.b}　<span style="color:#64748b;font-weight:400">cost ${x.fwdCost}</span></div>
             ${x.fwdPaths.map(p => `<div style="font-family:monospace;padding-left:12px;color:#334155">${fmtPath(p)}</div>`).join('')}
           </div>
           <div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e5e7eb">
-            <div style="font-weight:600;color:#1e40af">${x.b} → ${x.a}　<span style="color:#64748b;font-weight:400">cost ${x.revCost}</span></div>
+            <div class="dir-head">${x.b} → ${x.a}　<span style="color:#64748b;font-weight:400">cost ${x.revCost}</span></div>
             ${x.revPaths.map(p => `<div style="font-family:monospace;padding-left:12px;color:#334155">${fmtPathReversed(p)}</div>`).join('')}
           </div>
         </div>`;
@@ -1599,11 +1649,7 @@ const C6_Asym = (() => {
     dom('asym-result').innerHTML = html;
   }
 
-  function init() {
-    dom('runAsymScan').addEventListener('click', render);
-  }
-
-  return { init };
+  return { render };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1611,15 +1657,16 @@ const C6_Asym = (() => {
 // ----------------------------------------------------------------------------
 const C7_Heatmap = (() => {
   function render() {
-    clearAllRoles();
     const hm = computeHeatmap(topology, prefixIndex);
+    const nodeRoles = new Map();
     for (const [nid, data] of Object.entries(hm)) {
       let role = 'heat-green';
       if (data.ratio > 0.66) role = 'heat-red';
       else if (data.ratio > 0.33) role = 'heat-orange';
       else if (data.ratio > 0)    role = 'heat-yellow';
-      setNodeRole(nid, role);
+      nodeRoles.set(nid, role);
     }
+    applyRoles({ nodeRoles });
     let html = '<table><tr><th>Node</th><th>Total</th><th>Not-backed</th><th>Ratio</th></tr>';
     for (const [nid, data] of Object.entries(hm)) {
       const pct = (data.ratio * 100).toFixed(0) + '%';
@@ -1643,12 +1690,7 @@ const C7_Heatmap = (() => {
     dom('heatmap-result').innerHTML = '';
   }
 
-  function init() {
-    dom('runHeatmap').addEventListener('click', render);
-    dom('clearHeatmap').addEventListener('click', clear);
-  }
-
-  return { init };
+  return { render, clear };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1667,44 +1709,39 @@ const C8_N1 = (() => {
     return `<span style="color:#dc2626">R</span> ${s.id} 失效`;
   }
 
-  function renderVisual(row) {
-    clearAllRoles();
-    setNodeRole(row.a, 'endpoint');
-    setNodeRole(row.b, 'endpoint');
-    // 取第一個 culprit 視覺化
-    const s = row.culprits[0];
-    if (!s) return;
-    const fE = s.kind === 'edge' ? new Set([s.id]) : new Set();
-    const fN = s.kind === 'node' ? new Set([s.id]) : new Set();
-    if (s.kind === 'edge') setEdgeRole(s.id, 'simulated-fail');
-    if (s.kind === 'node') setNodeRole(s.id, 'failed-node');
-    // 重繞路徑
+  // 共用重繞著色:失效元件標紅(simulated-fail / failed-node),
+  // 對每組 pair 重算 SPT,倖存的繞道邊疊 backup。endpoints 先標(維持原 renderVisual
+  // 的「端點先於失效節點」順序);pairs 為空時等同只標 endpoints(原 no-culprit early-return)。
+  function paintReroute({ fE, fN, pairs, endpoints }) {
+    const edgeRoles = new Map(), nodeRoles = new Map();
+    if (endpoints) for (const n of endpoints) nodeRoles.set(n, 'endpoint');
+    for (const eid of fE) edgeRoles.set(eid, 'simulated-fail');
+    for (const nid of fN) nodeRoles.set(nid, 'failed-node');
     const adj = buildAdjacency(topology.edges, fE, fN);
-    const r = dijkstraECMP(adj, row.a, row.b);
-    if (r.cost !== Infinity) {
+    for (const [a, b] of pairs) {
+      const r = dijkstraECMP(adj, a, b);
+      if (r.cost === Infinity) continue;
       for (const ep of r.edgePaths) for (const eid of ep) {
-        setEdgeRole(eid, 'backup');
+        if (!edgeRoles.has(eid)) edgeRoles.set(eid, 'backup');
       }
     }
+    applyRoles({ edgeRoles, nodeRoles });
+  }
+
+  // 單一 pair 在其最糟失效(第一個 culprit)下的繞道
+  function renderVisual(row) {
+    const s = row.culprits[0];
+    const fE = s && s.kind === 'edge' ? new Set([s.id]) : new Set();
+    const fN = s && s.kind === 'node' ? new Set([s.id]) : new Set();
+    paintReroute({ fE, fN, endpoints: [row.a, row.b], pairs: s ? [[row.a, row.b]] : [] });
   }
 
   // 災難演練視角:把失效元件標紅,所有受影響 pair 的重繞路徑全部疊上去
   function renderFailureVisual(f) {
-    clearAllRoles();
     const fE = f.kind === 'edge' ? new Set([f.id]) : new Set();
     const fN = f.kind === 'node' ? new Set([f.id]) : new Set();
-    if (f.kind === 'edge') setEdgeRole(f.id, 'simulated-fail');
-    if (f.kind === 'node') setNodeRole(f.id, 'failed-node');
-
-    const adj = buildAdjacency(topology.edges, fE, fN);
-    for (const aff of f.affected) {
-      if (aff.worst === Infinity) continue;  // 不可達就沒繞道可畫
-      const r = dijkstraECMP(adj, aff.a, aff.b);
-      if (r.cost === Infinity) continue;
-      for (const ep of r.edgePaths) for (const eid of ep) {
-        if (edgeStates.get(eid)?.role === 'none') setEdgeRole(eid, 'backup');
-      }
-    }
+    const pairs = f.affected.filter(a => a.worst !== Infinity).map(a => [a.a, a.b]);
+    paintReroute({ fE, fN, pairs });
   }
 
   function render() {
@@ -1739,7 +1776,7 @@ const C8_N1 = (() => {
     const okPairs = totalPairs - pairRows.length;
 
     let html = `<div class="mini-stat">
-      <div class="info-card"><div class="label">不可達</div><div class="value" style="color:#991b1b">${unreachPairs}</div></div>
+      <div class="info-card"><div class="label">不可達</div><div class="value val-danger">${unreachPairs}</div></div>
       <div class="info-card"><div class="label">嚴重劣化 (×≥2)</div><div class="value" style="color:#c2410c">${severePairs}</div></div>
     </div>
     <div class="mini-stat">
@@ -1757,11 +1794,11 @@ const C8_N1 = (() => {
         const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
         const ov = failOverflow.get(f) ?? 0;
         const ovCell = hasDemand
-          ? `<td style="color:${ov > 0 ? '#991b1b' : '#9ca3af'};font-weight:${ov > 0 ? 600 : 400}">${ov}</td>`
+          ? `<td class="${ov > 0 ? 'count-hot' : 'count-zero'}">${ov}</td>`
           : '';
         html += `<tr class="clickable" data-fail-idx="${failureRows.indexOf(f)}">
           <td>${fmtCulprit(f)}</td>
-          <td style="color:${f.unreachable > 0 ? '#991b1b' : '#9ca3af'};font-weight:${f.unreachable > 0 ? 600 : 400}">${f.unreachable}</td>
+          <td class="${f.unreachable > 0 ? 'count-hot' : 'count-zero'}">${f.unreachable}</td>
           <td>${f.degraded}</td>
           <td>${f.totalDelta}</td>
           <td>${ratioStr}</td>
@@ -1783,11 +1820,11 @@ const C8_N1 = (() => {
           : `<span class="badge backup">×${row.ratio.toFixed(2)}</span>`;
         const worstCell = row.worstCost === Infinity ? '∞' : row.worstCost;
         const culpritList = row.culprits.slice(0, 3).map(fmtCulprit).join('<br>');
-        const more = row.culprits.length > 3 ? `<br><span style="color:#9ca3af;font-size:10px">+${row.culprits.length - 3} more</span>` : '';
+        const more = row.culprits.length > 3 ? `<br><span class="cell-sub">+${row.culprits.length - 3} more</span>` : '';
         html += `<tr class="clickable" data-pair-idx="${pairRows.indexOf(row)}">
           <td>${row.a} → ${row.b}</td>
           <td>${row.base}</td>
-          <td style="font-weight:600">${worstCell}</td>
+          <td class="num-em">${worstCell}</td>
           <td>${ratioBadge}</td>
           <td style="font-size:10px">${culpritList}${more}</td>
         </tr>`;
@@ -1811,11 +1848,7 @@ const C8_N1 = (() => {
     });
   }
 
-  function init() {
-    dom('runN1Scan').addEventListener('click', render);
-  }
-
-  return { init };
+  return { render };
 })();
 
 // ----------------------------------------------------------------------------
@@ -1833,7 +1866,7 @@ const Edges_Editor = (() => {
   }
 
   function applyEdgeChange(eid) {
-    const e = topology.edges.find(x => x.id === eid);
+    const e = edgeById.get(eid);
     paintEdgeLabels(eid, e);
     // auto-recompute if path tab active
     rerenderIfPathActive();
@@ -1860,7 +1893,7 @@ const Edges_Editor = (() => {
         const dir = ev.target.dataset.dir;
         const v = parseInt(ev.target.value, 10);
         if (isNaN(v) || v < 1) return;
-        const edge = topology.edges.find(e => e.id === eid);
+        const edge = edgeById.get(eid);
         if (dir === 'fwd') {
           edge.cost = v;
         } else {
@@ -1933,21 +1966,16 @@ ${posStr}
 
   function resetEdges() {
     for (const orig of originalEdges) {
-      const e = topology.edges.find(x => x.id === orig.id);
+      const e = edgeById.get(orig.id);
       e.cost = orig.cost;
       e.costRev = orig.costRev;
-      cy.getElementById(orig.id).data('label', edgeLabel(e));
+      paintEdgeLabels(orig.id, e);
     }
     render();
     rerenderIfPathActive();
   }
 
-  function init() {
-    dom('exportTopo').addEventListener('click', exportTopo);
-    dom('resetEdges').addEventListener('click', resetEdges);
-  }
-
-  return { init, activate: render };
+  return { activate: render, exportTopo, resetEdges };
 })();
 
 // ============================================================================
@@ -1967,8 +1995,60 @@ const TABS = {
   edges:    Edges_Editor,
 };
 
-// 一次性綁定每個模組的按鈕 listener
-for (const mod of Object.values(TABS)) mod.init?.();
+// §6.1 ACTION TABLE — data-action 字串 → handler,取代每個模組的 init() click 綁定樣板。
+// 單一 document-level 委派(click + change 共用此表);Cytoscape cxttap/tap、resize 仍走 imperative。
+const ACTIONS = {
+  // C1 Path
+  runSpt:      () => C1_Path.render(dom('src').value, dom('dst').value),
+  resetView:   () => C1_Path.reset(),
+  swapSrcDst:  () => {
+    const s = dom('src'), d = dom('dst');
+    [s.value, d.value] = [d.value, s.value];
+    C1_Path.render(s.value, d.value);
+  },
+  // 各 Tab 的「重新計算 / 執行」按鈕
+  runMatrix:    () => C2_Matrix.render(),
+  listAllPairs: () => C3_AllPairs.render(),
+  runTraffic:   () => C9_Traffic.render(),
+  runFailSim:   () => C4_Failure.render(),
+  runEcmpCheck: () => C5_Ecmp.render(),
+  runAsymScan:  () => C6_Asym.render(),
+  runHeatmap:   () => C7_Heatmap.render(),
+  clearHeatmap: () => C7_Heatmap.clear(),
+  runN1Scan:    () => C8_N1.render(),
+  // Edges 編輯器
+  exportTopo:   () => Edges_Editor.exportTopo(),
+  resetEdges:   () => Edges_Editor.resetEdges(),
+  // 全域控制
+  togglePseudo: (el) => {
+    pseudoVisible = !pseudoVisible;
+    el.textContent = pseudoVisible ? '隱藏 Pseudo-node' : '顯示 Pseudo-node';
+    const disp = pseudoVisible ? 'element' : 'none';
+    cy.nodes('.pseudonode').style('display', disp);
+    cy.edges('[type = "transit"]').style('display', disp);
+  },
+  // 原版語意:無條件呼叫 renderPath(不論當前 Tab)
+  clearFailed: () => {
+    failedEdges.clear();
+    failedNodes.clear();
+    C1_Path.render(dom('src').value, dom('dst').value);
+  },
+  // 流量情境切換(avg ↔ 95th)— change 事件
+  demandProfile: (el) => {
+    demand.active = el.value;
+    const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+    TABS[activeTab]?.activate?.();
+  },
+};
+
+// 單一委派:從事件源往上找最近的 [data-action],查表執行。click 與 change 共用。
+function dispatchAction(ev) {
+  const el = ev.target.closest('[data-action]');
+  if (!el) return;
+  ACTIONS[el.dataset.action]?.(el, ev);
+}
+document.addEventListener('click', dispatchAction);
+document.addEventListener('change', dispatchAction);
 
 // Tab 切換:清掉所有「瞬時 role」(分析註記),保留「op」(使用者持久操作如鏈路故障)。
 // 這樣使用者從 Heatmap 切到 Path 不會殘留上一個 Tab 的著色。
@@ -1987,32 +2067,7 @@ document.querySelectorAll('.tab').forEach(tab => {
 // §7 GLOBAL HANDLERS — 左側全域按鈕 + Cytoscape 互動
 // ============================================================================
 
-// Pseudo-node toggle
-dom('togglePseudo').addEventListener('click', (e) => {
-  pseudoVisible = !pseudoVisible;
-  e.target.textContent = pseudoVisible ? '隱藏 Pseudo-node' : '顯示 Pseudo-node';
-  if (pseudoVisible) {
-    cy.nodes('.pseudonode').style('display','element');
-    cy.edges('[type = "transit"]').style('display','element');
-  } else {
-    cy.nodes('.pseudonode').style('display','none');
-    cy.edges('[type = "transit"]').style('display','none');
-  }
-});
-
-// 清除所有故障 — 注意原版「無條件」呼叫 renderPath(不論當前 Tab),保留此語意
-dom('clearFailed').addEventListener('click', () => {
-  failedEdges.clear();
-  failedNodes.clear();
-  C1_Path.render(dom('src').value, dom('dst').value);
-});
-
-// 流量情境切換(avg ↔ 95th)
-dom('demandProfile').addEventListener('change', (e) => {
-  demand.active = e.target.value;
-  const activeTab = document.querySelector('.tab.active')?.dataset.tab;
-  TABS[activeTab]?.activate?.();
-});
+// togglePseudo / clearFailed / demandProfile 已移入 §6.1 ACTIONS 表,透過 data-action 委派觸發。
 
 // 右鍵 = 切換故障(與左鍵拖曳完全分離,不會誤觸發)
 cy.on('cxttap', 'edge', (evt) => {

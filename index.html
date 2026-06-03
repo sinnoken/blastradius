@@ -181,8 +181,9 @@
 
 <body class="h-screen flex flex-col bg-gray-50 text-gray-800">
 
-<header class="bg-blue-900 text-white px-5 py-2 shadow-sm">
-  <h1 class="text-sm font-semibold tracking-wide">BlastRadius POC</h1>
+<header class="bg-blue-900 text-white px-5 py-2 shadow-sm flex items-baseline gap-3 flex-wrap">
+  <h1 class="text-sm font-semibold tracking-wide shrink-0">BlastRadius POC</h1>
+  <span class="text-xs text-blue-200">國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出</span>
 </header>
 
 <main class="flex-1 flex min-h-0">
@@ -1318,13 +1319,14 @@ const C9_Traffic = (() => {
       const capStr = isFinite(r.cap) ? r.cap.toFixed(0) : '—';
       const utilStr = (isFinite(r.cap) && r.cap > 0) ? (r.util * 100).toFixed(1) + '%' : '—';
       // util>1 ⟺ tier=overflow:過載走 .util-over(#991b1b,刻意不同於 .tier-overflow 的 #7f1d1d),
-      // 其餘走 tier-fg class。weight 由 .num-em 疊加(與其他排行表一致)。
-      const utilCls = r.util > 1 ? 'util-over' : 'tier-fg tier-' + r.tier;
+      // 其餘走 tier-fg class(只給色)。util-over 自帶 600;故 num-em 只補在 tier-fg 分支,
+      // 避免 util-over 再疊 num-em 重複宣告同一個 weight。
+      const utilCls = r.util > 1 ? 'util-over' : 'tier-fg num-em tier-' + r.tier;
       html += `<tr>
         <td title="${r.eid}">${r.edge.source} ↔ ${r.edge.target}</td>
         <td class="num-em">${r.gbps.toFixed(1)}</td>
         <td>${capStr}</td>
-        <td class="${utilCls} num-em">${utilStr}</td>
+        <td class="${utilCls}">${utilStr}</td>
         <td><span class="badge tier-badge tier-${r.tier}">${t.label}</span></td>
       </tr>`;
     }

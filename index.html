@@ -830,9 +830,10 @@ const C1_Path = (() => {
     // 只看「有沒有故障」不夠 — 故障可能跟當前 src→dst 完全無關
     const hasFailure = failedEdges.size + failedNodes.size > 0;
     let inBackup = false;
+    let baseR = null;
     if (hasFailure) {
       const baseAdj = buildAdjacency(topology.edges);  // 不傳 failed*,即無故障基線
-      const baseR = dijkstraECMP(baseAdj, src, dst);
+      baseR = dijkstraECMP(baseAdj, src, dst);
       const currentSig = new Set(r.paths.map(p => stripPseudo(p).join('>')));
       const baseSig    = new Set(baseR.paths.map(p => stripPseudo(p).join('>')));
       const sameSet = currentSig.size === baseSig.size &&
@@ -842,7 +843,16 @@ const C1_Path = (() => {
 
     const role = inBackup ? 'backup' : 'spt';
     // 用 edgePaths 高亮 — 平行等價鏈路的每一條都會被點亮,不會漏掉第二條
-    for (const ep of r.edgePaths) for (const eid of ep) edgeRoles.set(eid, role);
+    // 繞道時:與無故障基線重疊的邊維持 SPT(藍),真正岔出的邊才標 backup(琥珀),
+    // 讓工程師一眼看出「哪一段才是真正改道」。基線缺席(無故障)時退回單一 role。
+    if (inBackup && baseR) {
+      const baseEdges = new Set();
+      for (const ep of baseR.edgePaths) for (const eid of ep) baseEdges.add(eid);
+      for (const ep of r.edgePaths) for (const eid of ep)
+        edgeRoles.set(eid, baseEdges.has(eid) ? 'spt' : 'backup');   // 重疊→藍,岔出→琥珀
+    } else {
+      for (const ep of r.edgePaths) for (const eid of ep) edgeRoles.set(eid, role);
+    }
     nodeRoles.set(src, 'endpoint');
     nodeRoles.set(dst, 'endpoint');
     for (const g of disp) for (const n of g.nodes) {

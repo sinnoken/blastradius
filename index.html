@@ -65,9 +65,7 @@
     .hint { @apply text-xs text-gray-500 leading-relaxed bg-gray-50 rounded px-2.5 py-2; }
     .audit-banner { @apply text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 flex items-center gap-1; }
 
-    .info-card { @apply bg-gray-50 border border-gray-200 rounded px-2.5 py-2 mb-1.5 text-xs; }
-    .info-card > .label { @apply text-[10px] uppercase tracking-wide text-gray-500 mb-0.5; }
-    .info-card > .value { @apply text-gray-900 font-medium font-mono; }
+    /* .info-card 家族已移至下方 unlayered <style> 區(避免 CDN 對動態卡片的 @apply 失效) */
 
     .path-item { @apply bg-blue-50 border-l-[3px] border-blue-500 px-2.5 py-1.5 mb-1 rounded font-mono text-xs; }
     .path-item.backup { @apply bg-amber-50 border-amber-500; }
@@ -75,7 +73,7 @@
     .path-item > .cost { @apply float-right text-gray-500 font-semibold; }
 
     .mini-stat { @apply grid grid-cols-2 gap-1.5 mb-2; }
-    .mini-stat .info-card { @apply mb-0; }
+    /* .mini-stat .info-card 的 mb-0 已移至下方 unlayered 區隨 .info-card 家族 */
 
     .cost-input { @apply w-16 px-1.5 py-0.5 border border-gray-300 rounded text-xs font-mono text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500; }
     .cost-input.modified { @apply border-amber-500 bg-amber-50; }
@@ -115,6 +113,26 @@
     background-size: 24px 24px;
   }
 
+  /* .info-card 家族 — 由 @layer components 的 @apply 移來此 unlayered 區。
+     原因:Tailwind Play CDN 對 innerHTML 動態注入卡片套用 @apply 規則會間歇失效,
+     導致各 Tab render() 注入的卡片掉樣式;純 CSS 不經 JIT,動態卡片即穩定。
+     色票即原 @apply 對應的 Tailwind 色階(gray-50 / gray-200 / gray-500 / gray-900)。
+     置於 .tier-card 之前,維持「.info-card 先、.tier-card 後覆蓋」的等 specificity 源序。 */
+  .info-card {
+    background:#f9fafb; border:1px solid #e5e7eb; border-radius:.25rem;
+    padding:.5rem .625rem; margin-bottom:.375rem;
+    font-size:.75rem; line-height:1rem;
+  }
+  .info-card > .label {
+    font-size:10px; text-transform:uppercase; letter-spacing:.025em;
+    color:#6b7280; margin-bottom:.125rem;
+  }
+  .info-card > .value {
+    color:#111827; font-weight:500;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+  }
+  .mini-stat .info-card { margin-bottom:0; }
+
   /* tier 配色單一資料源 — 每階一組 (--tier 前景 / --tier-bg 卡片底)。
      unlayered 規則,specificity 相同時勝過 Tailwind @layer components 的 .info-card,
      讓 .tier-card 不需 !important 就能覆蓋。C3 樞紐度 + C4 邊流量共用。 */
@@ -141,6 +159,23 @@
   /* C9 N-1 計數格:非零 = 熱點(紅+粗),零 = 靜默(灰)。JS 只判斷有沒有,色由此定。 */
   .count-hot  { color:#991b1b; font-weight:600; }
   .count-zero { color:#9ca3af; }
+
+  /* C9 N-1 嚴重度四階摘要卡 — 整張卡上色(背景 + 邊框 + label/value 文字),比照 .tier-card 機制。
+     var 定義 class (.sev-*) 與消費 class (.sev-card) 同掛在 .info-card 上;
+     .sev-card > .value 為 (0,2,0),源序晚於 .info-card > .value 故覆蓋其 color。 */
+  .sev-unreach { --sev:#991b1b; --sev-bg:#fee2e2; }
+  .sev-severe  { --sev:#c2410c; --sev-bg:#ffedd5; }
+  .sev-minor   { --sev:#a16207; --sev-bg:#fef9c3; }
+  .sev-ok      { --sev:#166534; --sev-bg:#dcfce7; }
+  .sev-card { background:var(--sev-bg); border-color:var(--sev); }
+  .sev-card > .label, .sev-card > .value { color:var(--sev); }
+
+  /* C6 ECMP 備援檢查狀態摘要卡 — 整張卡上色(通過綠 / 失敗紅 / 不適用灰),比照 .sev-card。 */
+  .stat-pass { --stat:#166534; --stat-bg:#dcfce7; }
+  .stat-fail { --stat:#991b1b; --stat-bg:#fee2e2; }
+  .stat-na   { --stat:#475569; --stat-bg:#f1f5f9; }
+  .stat-card { background:var(--stat-bg); border-color:var(--stat); }
+  .stat-card > .label, .stat-card > .value { color:var(--stat); }
 
   /* C4 / C5 util% 三階 — JS 只算 >1 / >0.8 / 其餘,色由此定。
      .util-over 同時供 C4 過載格共用(#991b1b,刻意不同於 .tier-overflow 的 #7f1d1d)。 */
@@ -283,14 +318,24 @@
     <div class="tab-content" id="tab-matrix">
       <h2 class="section-h !border-0 !mt-0">最短路徑矩陣</h2>
       <div class="hint">
-        所有 Router 之間的最短路徑成本一覽表。<b>底色越紅</b> = 成本越高;
-        <b>右上角數字</b> = 等成本路徑數(ECMP);<b>右下 *</b> = 來回路徑不對稱。
-        點任一格查看路徑詳情並在圖上高亮。
+        所有 Router 之間的最短路徑成本一覽表,底色依成本分 4 階。點任一格查看路徑詳情並在圖上高亮。
+        <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
+          <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t1"></span>
+          <span><b>≤30</b> — 區域內</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t2"></span>
+          <span><b>31–60</b> — 跨區域</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t3"></span>
+          <span><b>61–100</b> — 跨洋</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t4"></span>
+          <span><b>&gt;100</b> — 多段跨洋</span>
+          <span class="text-center font-bold text-blue-800">²</span>
+          <span>= 等成本路徑數(ECMP)</span>
+          <span class="text-center font-bold text-purple-500">*</span>
+          <span>= 來回路徑非對稱</span>
+        </div>
       </div>
-      <div class="mt-2 flex items-center justify-between">
-        <button class="btn-primary" id="runMatrix" data-action="runMatrix" style="width:auto;padding-left:12px;padding-right:12px">重新計算</button>
-        <span id="matrix-fail-info" class="text-xs text-gray-500"></span>
-      </div>
+      <button class="btn-primary mt-2" id="runMatrix" data-action="runMatrix">重新計算</button>
+      <div id="matrix-fail-info" class="text-xs text-gray-500 mt-1"></div>
       <div id="matrix-result" class="mt-2.5"></div>
       <div id="matrix-detail" class="mt-3"></div>
     </div>
@@ -351,7 +396,17 @@
     <div class="tab-content" id="tab-asym">
       <h2 class="section-h !border-0 !mt-0">非對稱路徑偵測</h2>
       <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
-      <div class="hint">檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。</div>
+      <div class="hint">檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。
+        <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-center">
+          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#f3e8ff;border-color:#a855f7"></span>
+          <span>圖上<b>紫框節點</b> — 非對稱 pair 的兩端</span>
+          <span><span class="badge pass">對稱</span></span>
+          <span>去回程路徑與成本完全相同</span>
+          <span><span class="badge fail">非對稱</span></span>
+          <span>去回程成本不同,或路徑集合不同</span>
+        </div>
+        <div class="mt-1">每組明細以藍色方向標題(<span class="dir-head">A → B</span>)分列兩方向的成本與路徑,並標注差異原因。</div>
+      </div>
       <button class="btn-primary mt-2" id="runAsymScan" data-action="runAsymScan">掃描所有 Router pairs</button>
       <div id="asym-result" class="mt-2.5"></div>
     </div>
@@ -1021,7 +1076,7 @@ const C2_Matrix = (() => {
       html += '</tr>';
     }
     html += '</table>';
-    html += `<div class="hint mt-2">底色固定門檻:<b style="color:#166534">≤30</b> 區域內 · <b style="color:#854d0e">31–60</b> 跨區域 · <b style="color:#9a3412">61–100</b> 跨洋 · <b style="color:#991b1b">&gt;100</b> 多段跨洋。<sub style="color:#a855f7;font-weight:700">*</sub> = 非對稱。最大 cost = ${maxCost === 0 ? 'n/a' : maxCost}。</div>`;
+    html += `<div class="hint mt-2">最大 cost = ${maxCost === 0 ? 'n/a' : maxCost}。色階門檻與符號說明見上方圖例。</div>`;
     dom('matrix-result').innerHTML = html;
     dom('matrix-detail').innerHTML = '';
 
@@ -1572,10 +1627,10 @@ const C6_Ecmp = (() => {
     const naSingleHop  = results.filter(r => r.status === 'n/a' && r.reason === 'single first-hop').length;
 
     let html = `<div class="mini-stat">
-      <div class="info-card"><div class="label">通過</div><div class="value" style="color:#166534">${summary.passed}</div></div>
-      <div class="info-card"><div class="label">失敗</div><div class="value val-danger">${summary.failed}</div></div>
+      <div class="info-card stat-card stat-pass"><div class="label">通過</div><div class="value">${summary.passed}</div></div>
+      <div class="info-card stat-card stat-fail"><div class="label">失敗</div><div class="value">${summary.failed}</div></div>
       </div>
-      <div class="info-card"><div class="label">不適用</div>
+      <div class="info-card stat-card stat-na"><div class="label">不適用</div>
         <div class="value">${summary['n/a']} <span class="cell-sub">(無 ECMP ${naNoEcmp} · 單一出口 ${naSingleHop})</span></div>
       </div>`;
 
@@ -1792,12 +1847,12 @@ const C9_N1 = (() => {
     const okPairs = totalPairs - pairRows.length;
 
     let html = `<div class="mini-stat">
-      <div class="info-card"><div class="label">不可達</div><div class="value val-danger">${unreachPairs}</div></div>
-      <div class="info-card"><div class="label">嚴重劣化 (×≥2)</div><div class="value" style="color:#c2410c">${severePairs}</div></div>
+      <div class="info-card sev-card sev-unreach"><div class="label">不可達</div><div class="value">${unreachPairs}</div></div>
+      <div class="info-card sev-card sev-severe"><div class="label">嚴重劣化 (×≥2)</div><div class="value">${severePairs}</div></div>
     </div>
     <div class="mini-stat">
-      <div class="info-card"><div class="label">輕微劣化</div><div class="value" style="color:#a16207">${minorPairs}</div></div>
-      <div class="info-card"><div class="label">不受影響</div><div class="value" style="color:#166534">${okPairs}</div></div>
+      <div class="info-card sev-card sev-minor"><div class="label">輕微劣化</div><div class="value">${minorPairs}</div></div>
+      <div class="info-card sev-card sev-ok"><div class="label">不受影響</div><div class="value">${okPairs}</div></div>
     </div>`;
 
     html += '<h2 class="section-h mt-3">最致命失效 (Top 10)</h2>';

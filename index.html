@@ -797,8 +797,9 @@ for (const sel of ['src','dst']) {
   const el = dom(sel);
   for (const n of routerNodes) el.add(new Option(n.label, n.id));
 }
-dom('src').value = 'TPE';
-dom('dst').value = 'AMS';
+const opts = dom('src').options;
+dom('src').value = opts[0]?.value;
+dom('dst').value = opts[opts.length - 1]?.value;
 
 // 流量情境下拉 — 由 demand.profiles 自動生成,新增 profile 不需改 HTML
 {
@@ -2193,7 +2194,7 @@ cy.on('tap', 'edge', (evt) => {
 }
 
 // initial render
-C1_Path.render('TPE', 'AMS');
+C1_Path.render(dom('src').value, dom('dst').value);
 </script>
 
 </body>

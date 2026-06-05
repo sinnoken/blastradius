@@ -7,6 +7,7 @@
 <script src="topology.js"></script>
 <script src="demand.js"></script>
 <script src="srlg.js"></script>
+<script src="rtt.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style type="text/tailwindcss">
   /* tab group accent palette + 非 utility 圖例色 — 集中於此,避免 hex 散落各規則 */
@@ -77,6 +78,11 @@
 
     .cost-input { @apply w-16 px-1.5 py-0.5 border border-gray-300 rounded text-xs font-mono text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500; }
     .cost-input.modified { @apply border-amber-500 bg-amber-50; }
+    /* RTT 參考晶片:點擊把建議成本帶入去/回程輸入框 */
+    .ref-chip { @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-gray-300 bg-gray-50 hover:bg-blue-50 hover:border-blue-400 cursor-pointer text-[11px] font-mono whitespace-nowrap; }
+    .ref-chip .ref-cost { @apply font-semibold text-blue-700; }
+    .ref-none { @apply text-gray-300; }
+    .ref-flag { @apply inline-block ml-1 text-[10px] text-amber-600 font-semibold align-middle; }
     tr.row-active { @apply bg-blue-50; }
     tr.row-active:hover { @apply bg-blue-100; }
 
@@ -361,7 +367,17 @@
 
     <div class="tab-content" id="tab-edges">
       <h2 class="section-h !border-0 !mt-0">鏈路成本編輯</h2>
-      <div class="hint">修改鏈路成本後,圖上標籤即時更新,路徑自動重算。點對點鏈路可分別設定去程和回程的成本。</div>
+      <div class="hint">「成本」是 OSPF 用來挑路徑的權重 — 數字越小,這條鏈路越容易被選為主要路徑。改了成本,圖上標籤會即時更新、路徑自動重算。
+        <div class="mt-1.5">兩台路由器直連的鏈路(點對點),可分開設定<b>去程</b>(A→B)和<b>回程</b>(B→A)的成本,兩個方向不一定要一樣。</div>
+        <div class="mt-1.5">「參考」欄會依實際<b>來回延遲(RTT)</b>換算出一個建議成本,點一下就能帶入去/回程欄位。若目前成本和建議值差距 &gt; 1,會標上
+          <span class="ref-flag">⚠ 可能人工調校</span>,表示這條鏈路的成本可能是人為刻意設定的(例如兩個方向故意設不同值)。</div>
+        <div class="mt-1.5">換算公式:<code class="bg-gray-100 px-1 rounded font-mono text-[11px]">建議成本 = round( RTT ÷ (每公里來回延遲 × 90) )</code>,再夾在 <b>5–250</b> 之間(太短不低於 5、太長不超過 250)。目前每公里來回延遲 <span id="rtt-fiber-const" class="font-mono">—</span>,換算後約每 <span id="rtt-cost-step" class="font-mono">—</span> ms 延遲對應 1 級成本。</div>
+        <div class="legend mt-1.5">建議成本背後的延遲資料有三種來源,可信度由高到低:
+          <span class="legend-item">🟢 直測 — 直接量到的實際延遲(最準)</span>
+          <span class="legend-item">🔵 城市參考 — 查公開的「城市對城市」延遲資料庫</span>
+          <span class="legend-item">⚪ 模型估計 — 用兩地直線距離推算(最粗略)</span>
+        </div>
+      </div>
       <div class="grid grid-cols-2 gap-2 mt-2">
         <button class="btn-secondary" id="resetEdges" data-action="resetEdges">還原原始值</button>
         <button class="btn-primary" id="exportTopo" data-action="exportTopo">輸出 topology.js</button>
@@ -1944,9 +1960,43 @@ const C10_Edges = (() => {
     rerenderIfPathActive();
   }
 
+  // ── RTT 參考來源(諮詢用,非權威覆寫)──────────────────────────────────
+  // rtt.edges 已由 gen.py 依優先序(直測 > 城市參考 > 模型)解析出每條鏈路的
+  // 「最佳可用 RTT」並標記 src;此處據以推導建議成本,讓使用者一鍵帶入或比對。
+  // 註:當前 topology.js 的 cost 即「人為/有效值」(編輯基準),參考晶片不會自動覆寫它。
+  const RTT_OK  = typeof rtt !== 'undefined' && rtt && Array.isArray(rtt.edges);
+  const FIBER_RTT_PER_KM = (RTT_OK && rtt.fiberRttPerKm) ? rtt.fiberRttPerKm : 0.01014;
+  const COST_DIV = FIBER_RTT_PER_KM * 90;
+  // 把實際常數填入說明區公式(避免在靜態 HTML 寫死可變 dataset 數值)
+  {
+    const c1 = dom('rtt-fiber-const'); if (c1) c1.textContent = `${FIBER_RTT_PER_KM} ms/km`;
+    const c2 = dom('rtt-cost-step');   if (c2) c2.textContent = COST_DIV.toFixed(2);
+  }
+  const SRC_META = {
+    'measured': { icon: '🟢', label: '直測' },
+    'city-ref': { icon: '🔵', label: '城市參考' },
+    'model':    { icon: '⚪', label: '模型估計' },
+  };
+  // node 對 → rtt.edges 記錄(雙向皆登錄,查無回 undefined)
+  const rttByPair = new Map();
+  if (RTT_OK) for (const r of rtt.edges) {
+    rttByPair.set(r.a + '|' + r.b, r);
+    rttByPair.set(r.b + '|' + r.a, r);
+  }
+  // 成本公式與 gen.py 一致:cost = clamp(round(rtt / (fiberRttPerKm × 90)), 5, 250)
+  const impliedCost = ms => Math.max(5, Math.min(250, Math.round(ms / COST_DIV)));
+  function edgeRef(e) {
+    if (!RTT_OK || e.type !== 'p2p') return null;
+    const r = rttByPair.get(e.source + '|' + e.target);
+    if (!r) return null;
+    const meta = SRC_META[r.src] || { icon: '⚪', label: r.src };
+    return { rtt: r.rtt, src: r.src, icon: meta.icon, label: meta.label, cost: impliedCost(r.rtt) };
+  }
+
   function render() {
     const div = dom('edges-result');
-    let html = '<table><tr><th>連接</th><th>Type</th><th>Cost →</th><th>Cost ←</th></tr>';
+    const refCol = RTT_OK ? '<th>參考 (延遲→建議成本)</th>' : '';
+    let html = `<table><tr><th>連接</th><th>類型</th><th>去程成本 →</th><th>回程成本 ←</th>${refCol}</tr>`;
     for (const e of topology.edges) {
       const orig = originalEdges.find(o => o.id === e.id);
       const modCls = isModified(e, orig) ? ' modified' : '';
@@ -1954,10 +2004,47 @@ const C10_Edges = (() => {
       const revInput = e.type === 'p2p'
         ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" />`
         : '<span class="text-gray-400">—</span>';
-      html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${fwdInput}</td><td>${revInput}</td></tr>`;
+      let refCell = '';
+      if (RTT_OK) {
+        const ref = edgeRef(e);
+        if (ref) {
+          // 當前成本 vs 最佳參考:去程或回程任一邊差距 > 1 → 旗標「可能人工調校」
+          // (非對稱鏈路為典型案例:回程被刻意調離參考,必須一起檢查)
+          const revCost = e.costRev ?? e.cost;
+          const diverge = Math.abs(e.cost - ref.cost) > 1 || Math.abs(revCost - ref.cost) > 1;
+          const flag = diverge ? '<span class="ref-flag" title="目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過">⚠ 可能人工調校</span>' : '';
+          const chip = `<span class="ref-chip" data-ref-edge="${e.id}" data-ref-cost="${ref.cost}"`
+            + ` title="${ref.label}:來回延遲 ${ref.rtt} ms → 建議成本 ${ref.cost}(點一下帶入去/回程)">`
+            + `${ref.icon} ${ref.rtt}ms → <span class="ref-cost">${ref.cost}</span></span>`;
+          refCell = `<td>${chip}${flag}</td>`;
+        } else {
+          refCell = '<td><span class="ref-none">—</span></td>';
+        }
+      }
+      html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${fwdInput}</td><td>${revInput}</td>${refCell}</tr>`;
     }
     html += '</table>';
     div.innerHTML = html;
+
+    // 晶片點擊 → 把建議成本帶入該列去/回程輸入框並套用
+    div.querySelectorAll('.ref-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const eid = chip.dataset.refEdge;
+        const v = parseInt(chip.dataset.refCost, 10);
+        if (isNaN(v)) return;
+        const edge = edgeById.get(eid);
+        edge.cost = v;
+        if (edge.costRev != null) edge.costRev = v;
+        div.querySelectorAll(`.cost-input[data-edge="${eid}"]`).forEach(inp => { inp.value = v; });
+        const orig = originalEdges.find(o => o.id === eid);
+        const modified = isModified(edge, orig);
+        div.querySelectorAll(`.cost-input[data-edge="${eid}"]`).forEach(el => {
+          el.classList.toggle('modified', modified);
+        });
+        applyEdgeChange(eid);
+        render();  // 重繪以更新旗標(帶入後差距歸零 → 旗標消失)
+      });
+    });
 
     div.querySelectorAll('.cost-input').forEach(input => {
       input.addEventListener('input', (ev) => {
@@ -1977,9 +2064,33 @@ const C10_Edges = (() => {
         div.querySelectorAll(`[data-edge="${eid}"]`).forEach(el => {
           el.classList.toggle('modified', modified);
         });
+        refreshFlag(eid, edge);
         applyEdgeChange(eid);
       });
     });
+
+    // 就地更新該列「⚠ 可能人工調校」旗標(不全表重繪,避免輸入失焦)
+    function refreshFlag(eid, edge) {
+      if (!RTT_OK) return;
+      const cell = div.querySelector(`tr[data-edge-row="${eid}"] td:last-child`);
+      if (!cell) return;
+      const chip = cell.querySelector('.ref-chip');
+      if (!chip) return;
+      const refCost = parseInt(chip.dataset.refCost, 10);
+      // 去程或回程任一邊與參考差距 > 1 → 旗標(與 render() 同邏輯,非對稱鏈路必須一起檢查)
+      const revCost = edge.costRev ?? edge.cost;
+      const diverge = Math.abs(edge.cost - refCost) > 1 || Math.abs(revCost - refCost) > 1;
+      let flag = cell.querySelector('.ref-flag');
+      if (diverge && !flag) {
+        flag = document.createElement('span');
+        flag.className = 'ref-flag';
+        flag.title = '目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過';
+        flag.textContent = '⚠ 可能人工調校';
+        cell.appendChild(flag);
+      } else if (!diverge && flag) {
+        flag.remove();
+      }
+    }
   }
 
   // Serialize current topology back to JS source (one entry per line, original-style)

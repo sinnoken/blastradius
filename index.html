@@ -1999,11 +1999,23 @@ const C10_Edges = (() => {
     let html = `<table><tr><th>連接</th><th>類型</th><th>成本 (去 / 回)</th>${refCol}</tr>`;
 
     // 無向表:一條實體鏈路一列。
-    // 排序:transit 先、p2p 後;同型內按正規化 pair key(a<b? a+b : b+a)字母序。
+    // 排序:transit 先、p2p 後;同型內 flagged(⚠ 可能人工調校)置頂,再按正規化 pair key(a<b? a+b : b+a)字母序。
+    // 審計優先:成本偏離 RTT 建議值(diverge)的鏈路浮到組內最前,讓問題自己跳出來;
+    // 組內仍維持字母序,避免每次編輯就整表跳動(穩定 vs 優先級的折衷)。
+    // isDiverged 委派 edgeRef(p2p-only);transit / 無 RTT 一律 false → 退回 transit-first → 字母序。
+    const isDiverged = (e) => {
+      const ref = edgeRef(e);
+      if (!ref) return false;
+      return Math.abs(e.cost - ref.cost) > 1 ||
+        (e.type === 'p2p' && Math.abs((e.costRev ?? e.cost) - ref.cost) > 1);
+    };
     const rows = [...topology.edges].sort((x, y) => {
       const xt = x.type === 'transit' ? 0 : 1;
       const yt = y.type === 'transit' ? 0 : 1;
       if (xt !== yt) return xt - yt;
+      const xf = isDiverged(x) ? 0 : 1;
+      const yf = isDiverged(y) ? 0 : 1;
+      if (xf !== yf) return xf - yf;
       const xk = x.source < x.target ? x.source + x.target : x.target + x.source;
       const yk = y.source < y.target ? y.source + y.target : y.target + y.source;
       return xk.localeCompare(yk);

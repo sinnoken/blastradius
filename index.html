@@ -1996,22 +1996,35 @@ const C10_Edges = (() => {
   function render() {
     const div = dom('edges-result');
     const refCol = RTT_OK ? '<th>參考 (延遲→建議成本)</th>' : '';
-    let html = `<table><tr><th>連接</th><th>類型</th><th>去程成本 →</th><th>回程成本 ←</th>${refCol}</tr>`;
-    for (const e of topology.edges) {
+    let html = `<table><tr><th>連接</th><th>類型</th><th>成本 (去 / 回)</th>${refCol}</tr>`;
+
+    // 無向表:一條實體鏈路一列。
+    // 排序:transit 先、p2p 後;同型內按正規化 pair key(a<b? a+b : b+a)字母序。
+    const rows = [...topology.edges].sort((x, y) => {
+      const xt = x.type === 'transit' ? 0 : 1;
+      const yt = y.type === 'transit' ? 0 : 1;
+      if (xt !== yt) return xt - yt;
+      const xk = x.source < x.target ? x.source + x.target : x.target + x.source;
+      const yk = y.source < y.target ? y.source + y.target : y.target + y.source;
+      return xk.localeCompare(yk);
+    });
+
+    for (const e of rows) {
       const orig = originalEdges.find(o => o.id === e.id);
       const modCls = isModified(e, orig) ? ' modified' : '';
-      const fwdInput = `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="fwd" value="${e.cost}" />`;
+      // 去程 = cost;回程 = costRev(p2p 可不對稱)。transit 無回程,僅顯示「—」。
+      const fwdInput = `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="fwd" value="${e.cost}" title="去程 ${e.source}→${e.target}" />`;
       const revInput = e.type === 'p2p'
-        ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" />`
-        : '<span class="text-gray-400">—</span>';
+        ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" title="回程 ${e.target}→${e.source}" />`
+        : '<span class="ref-none">—</span>';
+      const costCell = `${fwdInput} <span style="color:#cbd5e1">/</span> ${revInput}`;
       let refCell = '';
       if (RTT_OK) {
         const ref = edgeRef(e);
         if (ref) {
-          // 當前成本 vs 最佳參考:去程或回程任一邊差距 > 1 → 旗標「可能人工調校」
-          // (非對稱鏈路為典型案例:回程被刻意調離參考,必須一起檢查)
-          const revCost = e.costRev ?? e.cost;
-          const diverge = Math.abs(e.cost - ref.cost) > 1 || Math.abs(revCost - ref.cost) > 1;
+          // 任一方向成本與最佳參考差距 > 1 → 旗標「可能人工調校」
+          const diverge = Math.abs(e.cost - ref.cost) > 1 ||
+            (e.type === 'p2p' && Math.abs((e.costRev ?? e.cost) - ref.cost) > 1);
           const flag = diverge ? '<span class="ref-flag" title="目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過">⚠ 可能人工調校</span>' : '';
           const chip = `<span class="ref-chip" data-ref-edge="${e.id}" data-ref-cost="${ref.cost}"`
             + ` title="${ref.label}:來回延遲 ${ref.rtt} ms → 建議成本 ${ref.cost}(點一下帶入去/回程)">`
@@ -2021,12 +2034,12 @@ const C10_Edges = (() => {
           refCell = '<td><span class="ref-none">—</span></td>';
         }
       }
-      html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${fwdInput}</td><td>${revInput}</td>${refCell}</tr>`;
+      html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${costCell}</td>${refCell}</tr>`;
     }
     html += '</table>';
     div.innerHTML = html;
 
-    // 晶片點擊 → 把建議成本帶入該列去/回程輸入框並套用
+    // 晶片點擊 → 把建議成本帶入去/回程並套用(全表重繪以更新旗標;click 不怕失焦)。
     div.querySelectorAll('.ref-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const eid = chip.dataset.refEdge;
@@ -2034,15 +2047,9 @@ const C10_Edges = (() => {
         if (isNaN(v)) return;
         const edge = edgeById.get(eid);
         edge.cost = v;
-        if (edge.costRev != null) edge.costRev = v;
-        div.querySelectorAll(`.cost-input[data-edge="${eid}"]`).forEach(inp => { inp.value = v; });
-        const orig = originalEdges.find(o => o.id === eid);
-        const modified = isModified(edge, orig);
-        div.querySelectorAll(`.cost-input[data-edge="${eid}"]`).forEach(el => {
-          el.classList.toggle('modified', modified);
-        });
+        if (edge.type === 'p2p') edge.costRev = v;
         applyEdgeChange(eid);
-        render();  // 重繪以更新旗標(帶入後差距歸零 → 旗標消失)
+        render();
       });
     });
 
@@ -2053,33 +2060,31 @@ const C10_Edges = (() => {
         const v = parseInt(ev.target.value, 10);
         if (isNaN(v) || v < 1) return;
         const edge = edgeById.get(eid);
-        if (dir === 'fwd') {
-          edge.cost = v;
-        } else {
-          edge.costRev = v;
-        }
-        // toggle modified styling on both inputs of this row
+        if (dir === 'fwd') edge.cost = v;
+        else               edge.costRev = v;
         const orig = originalEdges.find(o => o.id === eid);
         const modified = isModified(edge, orig);
         div.querySelectorAll(`[data-edge="${eid}"]`).forEach(el => {
           el.classList.toggle('modified', modified);
         });
-        refreshFlag(eid, edge);
+        refreshFlag(eid);
         applyEdgeChange(eid);
       });
     });
 
-    // 就地更新該列「⚠ 可能人工調校」旗標(不全表重繪,避免輸入失焦)
-    function refreshFlag(eid, edge) {
+    // 就地更新該 edge 那一列的「⚠ 可能人工調校」旗標(不全表重繪,避免輸入失焦)。
+    // 去/回任一方向偏離建議值即亮旗。
+    function refreshFlag(eid) {
       if (!RTT_OK) return;
-      const cell = div.querySelector(`tr[data-edge-row="${eid}"] td:last-child`);
-      if (!cell) return;
-      const chip = cell.querySelector('.ref-chip');
-      if (!chip) return;
-      const refCost = parseInt(chip.dataset.refCost, 10);
-      // 去程或回程任一邊與參考差距 > 1 → 旗標(與 render() 同邏輯,非對稱鏈路必須一起檢查)
-      const revCost = edge.costRev ?? edge.cost;
-      const diverge = Math.abs(edge.cost - refCost) > 1 || Math.abs(revCost - refCost) > 1;
+      const edge = edgeById.get(eid);
+      const ref = edgeRef(edge);
+      if (!ref) return;
+      const tr = document.querySelector(`tr[data-edge-row="${eid}"]`);
+      if (!tr) return;
+      const cell = tr.querySelector('td:last-child');
+      if (!cell || !cell.querySelector('.ref-chip')) return;
+      const diverge = Math.abs(edge.cost - ref.cost) > 1 ||
+        (edge.type === 'p2p' && Math.abs((edge.costRev ?? edge.cost) - ref.cost) > 1);
       let flag = cell.querySelector('.ref-flag');
       if (diverge && !flag) {
         flag = document.createElement('span');

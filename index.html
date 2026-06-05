@@ -221,6 +221,11 @@
   /* 危險前景色 — failed 計數 / 不可達數 / 失敗原因等重複 #991b1b 文字。
      僅收斂 color;weight 由既有 .value 或預設繼承。 */
   .val-danger { color:#991b1b; }
+
+  /* C10 參考晶片:成本偏離 RTT 建議值時,把建議成本數字由藍(.ref-cost 預設)改染琥珀,
+     與旁邊的 ⚠ 圖示一起把「可能人工調校」訊號收進晶片本身。unlayered 規則,
+     specificity (0,2,0) 勝過 @layer components 的 .ref-cost,免 !important 即可覆蓋藍色。 */
+  .ref-cost.diverged { color:#b45309; }
 </style>
 </head>
 
@@ -1995,7 +2000,7 @@ const C10_Edges = (() => {
 
   function render() {
     const div = dom('edges-result');
-    const refCol = RTT_OK ? '<th>參考 (延遲→建議成本)</th>' : '';
+    const refCol = RTT_OK ? '<th>參考</th>' : '';
     let html = `<table><tr><th>連接</th><th>類型</th><th>成本 (去 / 回)</th>${refCol}</tr>`;
 
     // 無向表:一條實體鏈路一列。
@@ -2037,10 +2042,11 @@ const C10_Edges = (() => {
           // 任一方向成本與最佳參考差距 > 1 → 旗標「可能人工調校」
           const diverge = Math.abs(e.cost - ref.cost) > 1 ||
             (e.type === 'p2p' && Math.abs((e.costRev ?? e.cost) - ref.cost) > 1);
-          const flag = diverge ? '<span class="ref-flag" title="目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過">⚠ 可能人工調校</span>' : '';
+          const flag = diverge ? '<span class="ref-flag" title="目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過">⚠</span>' : '';
+          const costCls = diverge ? 'ref-cost diverged' : 'ref-cost';
           const chip = `<span class="ref-chip" data-ref-edge="${e.id}" data-ref-cost="${ref.cost}"`
             + ` title="${ref.label}:來回延遲 ${ref.rtt} ms → 建議成本 ${ref.cost}(點一下帶入去/回程)">`
-            + `${ref.icon} ${ref.rtt}ms → <span class="ref-cost">${ref.cost}</span></span>`;
+            + `${ref.icon} ${ref.rtt}ms → <span class="${costCls}">${ref.cost}</span></span>`;
           refCell = `<td>${chip}${flag}</td>`;
         } else {
           refCell = '<td><span class="ref-none">—</span></td>';

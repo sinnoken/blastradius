@@ -399,7 +399,7 @@
 
       <div class="mt-3 border-t border-gray-200 pt-2">
         <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
-        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率 (MLU)</b>。約束:RTT 下限 + 整數 [5,250](VIP / 保護紅線之後加)。需 demand.js + 鏈路 capacity。算完先預覽,確認再套用。</div>
+        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率 (MLU)</b>。MLU 計入<b>所有有容量的邊(含 transit/LAN 段)</b>,與「邊流量」視圖同口徑。約束:RTT 下限 + 整數 [5,250](VIP / 保護紅線之後加)。目前只調 p2p 權重(transit 段靠重繞間接分流)。需 demand.js + 鏈路 capacity。算完先預覽,確認再套用。</div>
         <div class="grid grid-cols-[1fr_auto] gap-2 mt-2 items-end">
           <div><label class="label-sm">目標 MLU (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="目標最大利用率(%)" /></div>
           <button class="btn-primary !w-auto px-3" id="runOptimize" data-action="runOptimize">最佳化</button>
@@ -2286,6 +2286,12 @@ ${posStr}
     </div>
     <div class="info-card"><div class="label">profile · 迭代 · 改動 · 耗時</div>
       <div class="value">${profLabel} · ${r.iterations} 輪 · ${changed.length} 條 · ${r.elapsedMs}ms</div></div>`;
+
+    // 瓶頸若落在 transit/LAN 段:優化器只能靠 p2p 重繞間接分流,無法直接調其 cost(出向 Type-2 固定 0)
+    const transitBn = r.bottleneck.filter(id => edgeById.get(id)?.type === 'transit');
+    if (transitBn.length) {
+      html += `<div class="hint mt-1" style="color:#854d0e">瓶頸含 transit/LAN 段(${transitBn.map(edgeName).join(', ')})——目前只能靠 p2p 重繞分流入口,無法直接調該段成本。</div>`;
+    }
 
     if (!r.feasible) {
       const note = r.binding.length

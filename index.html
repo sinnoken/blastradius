@@ -76,13 +76,12 @@
     .mini-stat { @apply grid grid-cols-2 gap-1.5 mb-2; }
     /* .mini-stat .info-card 的 mb-0 已移至下方 unlayered 區隨 .info-card 家族 */
 
-    .cost-input { @apply w-16 px-1.5 py-0.5 border border-gray-300 rounded text-xs font-mono text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500; }
+    .cost-input { @apply w-14 px-1.5 py-0.5 border border-gray-300 rounded text-xs font-mono text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500; }
     .cost-input.modified { @apply border-amber-500 bg-amber-50; }
     /* RTT 參考晶片:點擊把建議成本帶入去/回程輸入框 */
     .ref-chip { @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-gray-300 bg-gray-50 hover:bg-blue-50 hover:border-blue-400 cursor-pointer text-[11px] font-mono whitespace-nowrap; }
     .ref-chip .ref-cost { @apply font-semibold text-blue-700; }
     .ref-none { @apply text-gray-300; }
-    .ref-flag { @apply inline-block ml-1 text-[10px] text-amber-600 font-semibold align-middle; }
     tr.row-active { @apply bg-blue-50; }
     tr.row-active:hover { @apply bg-blue-100; }
 
@@ -243,6 +242,15 @@
   .np-mode:last-of-type  { border-radius:0 4px 4px 0; border-left:none; }
   .np-mode.active { background:#1e40af; border-color:#1e40af; color:#fff; }
   .np-mode:disabled { opacity:.4; cursor:not-allowed; }
+
+  /* C10 去≠回(非對稱 p2p)標示:分隔符由灰 `/` 轉紫 `⇄` + 「非對稱」紫標。
+     紫 = 全站非對稱語言(對齊矩陣斜紋 / asym-mark 節點),與琥珀的 RTT「⚠ 可能人工調校」分流。 */
+  .cost-sep { font-weight:700; padding:0 2px; color:#cbd5e1; }
+  .cost-sep.asym { color:#7c3aed; }
+  /* 成本格左緣紫條:box-shadow inset 不進 box model、不影響 border-collapse、不位移、不占欄寬。 */
+  .cost-asym { box-shadow: inset 3px 0 0 0 #7c3aed; }
+  /* 參考格左緣琥珀條 = 偏離 RTT 延遲建議(可能人工調校);與 .cost-asym 同手法、異欄不衝突。 */
+  .ref-diverged { box-shadow: inset 3px 0 0 0 #d97706; }
 </style>
 </head>
 
@@ -308,7 +316,7 @@
   <div id="panel-resize" class="w-1 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors"></div>
 
   <!-- RIGHT: tabbed reports (resizable) -->
-  <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:400px">
+  <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:420px">
     <div class="tabs">
       <button class="tab active" data-tab="path" data-group="live" title="即時分析:反映圖上標記的故障狀態">路徑</button>
       <button class="tab" data-tab="matrix" data-group="live" title="即時分析:反映圖上標記的故障狀態">矩陣</button>
@@ -391,8 +399,7 @@
       <h2 class="section-h !border-0 !mt-0">鏈路成本編輯</h2>
       <div class="hint"><div class="mb-1.5"><b>三種設定成本的方式</b>:① 表格直接輸入 · ② 點「參考」帶入<b>延遲</b>建議值 · ③ 下方「壅塞最佳化」依<b>流量</b>自動搜尋一組。①② 照<b>延遲</b>、③ 照<b>壅塞</b>,目標不同 → 建議值可能不一樣(正常)。</div>「成本」是 OSPF 用來挑路徑的權重 — 數字越小,這條鏈路越容易被選為主要路徑。改了成本,圖上標籤會即時更新、路徑自動重算。
         <div class="mt-1.5">兩台路由器直連的鏈路(點對點),可分開設定<b>去程</b>(A→B)和<b>回程</b>(B→A)的成本,兩個方向不一定要一樣。</div>
-        <div class="mt-1.5">「參考」欄會依實際<b>來回延遲(RTT)</b>換算出一個建議成本,點一下就能帶入去/回程欄位。若目前成本和建議值差距 &gt; 1,會標上
-          <span class="ref-flag">⚠ 可能人工調校</span>,表示這條鏈路的成本可能是人為刻意設定的(例如兩個方向故意設不同值)。</div>
+        <div class="mt-1.5">「參考」欄會依實際<b>來回延遲(RTT)</b>換算出一個建議成本,點一下就能帶入去/回程欄位。若目前成本和建議值差距 &gt; 1,該列<b>參考欄左緣會標上<span style="color:#d97706">琥珀色條</span></b>(建議成本數字也轉琥珀),表示這條鏈路的成本可能是人為刻意設定的(例如兩個方向故意設不同值)。</div>
         <div class="mt-1.5">換算公式:<code class="bg-gray-100 px-1 rounded font-mono text-[11px]">建議成本 = round( RTT ÷ (每公里來回延遲 × 90) )</code>,再夾在 <b>5–250</b> 之間(太短不低於 5、太長不超過 250)。目前每公里來回延遲 <span id="rtt-fiber-const" class="font-mono">—</span>,換算後約每 <span id="rtt-cost-step" class="font-mono">—</span> ms 延遲對應 1 級成本。</div>
         <div class="legend mt-1.5">建議成本背後的延遲資料有三種來源,可信度由高到低:
           <span class="legend-item">🟢 直測 — 直接量到的實際延遲(最準)</span>
@@ -407,7 +414,7 @@
 
       <div class="mt-3 border-t border-gray-200 pt-2">
         <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
-        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,250]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄的 <span class="ref-flag">⚠</span> 常會亮,屬正常。</div></div>
+        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,250]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div></div>
         <div class="grid grid-cols-[1fr_auto] gap-2 mt-2 items-end">
           <div><label class="label-sm">目標利用率上限 (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)" /></div>
           <button class="btn-primary !w-auto px-3" id="runOptimize" data-action="runOptimize">最佳化</button>
@@ -2101,7 +2108,10 @@ const C10_Edges = (() => {
       const revInput = e.type === 'p2p'
         ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" title="回程 ${e.target}→${e.source}" />`
         : '<span class="ref-none">—</span>';
-      const costCell = `${fwdInput} <span style="color:#cbd5e1">/</span> ${revInput}`;
+      // 去≠回(非對稱 p2p)→ 成本格左緣紫條(.cost-asym)+ 分隔符灰 `/` 轉紫 `⇄`,整格訊號、不占欄寬;對稱維持灰 `/`。
+      const isAsym = e.type === 'p2p' && e.costRev != null && e.costRev !== e.cost;
+      const sep = `<span class="cost-sep${isAsym ? ' asym' : ''}" data-sep="${e.id}">${isAsym ? '⇄' : '/'}</span>`;
+      const costCell = `${fwdInput} ${sep} ${revInput}`;
       let refCell = '';
       if (RTT_OK) {
         const ref = edgeRef(e);
@@ -2109,17 +2119,17 @@ const C10_Edges = (() => {
           // 任一方向成本與最佳參考差距 > 1 → 旗標「可能人工調校」
           const diverge = Math.abs(e.cost - ref.cost) > 1 ||
             (e.type === 'p2p' && Math.abs((e.costRev ?? e.cost) - ref.cost) > 1);
-          const flag = diverge ? '<span class="ref-flag" title="目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過">⚠</span>' : '';
           const costCls = diverge ? 'ref-cost diverged' : 'ref-cost';
           const chip = `<span class="ref-chip" data-ref-edge="${e.id}" data-ref-cost="${ref.cost}"`
             + ` title="${ref.label}:來回延遲 ${ref.rtt} ms → 建議成本 ${ref.cost}(點一下帶入去/回程)">`
-            + `${ref.icon} ${ref.rtt}ms → <span class="${costCls}">${ref.cost}</span></span>`;
-          refCell = `<td>${chip}${flag}</td>`;
+            + `${ref.icon} <span class="${costCls}">${ref.cost}</span></span>`;
+          // 偏離 RTT 建議(diverge)→ 參考格左緣琥珀條(.ref-diverged)+ 建議成本數字轉琥珀;⚠ 文字標移除,改整格訊號。
+          refCell = `<td data-reftd="${e.id}"${diverge ? ' class="ref-diverged" title="目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過"' : ''}>${chip}</td>`;
         } else {
           refCell = '<td><span class="ref-none">—</span></td>';
         }
       }
-      html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td>${costCell}</td>${refCell}</tr>`;
+      html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td data-costtd="${e.id}"${isAsym ? ' class="cost-asym"' : ''}>${costCell}</td>${refCell}</tr>`;
     }
     html += '</table>';
     div.innerHTML = html;
@@ -2154,6 +2164,7 @@ const C10_Edges = (() => {
           el.classList.toggle('modified', modified);
         });
         refreshFlag(eid);
+        refreshAsym(eid);
         applyEdgeChange(eid);
       });
     });
@@ -2165,24 +2176,25 @@ const C10_Edges = (() => {
       const edge = edgeById.get(eid);
       const ref = edgeRef(edge);
       if (!ref) return;
-      const tr = document.querySelector(`tr[data-edge-row="${eid}"]`);
-      if (!tr) return;
-      const cell = tr.querySelector('td:last-child');
+      const cell = div.querySelector(`[data-reftd="${eid}"]`);
       if (!cell || !cell.querySelector('.ref-chip')) return;
       const diverge = Math.abs(edge.cost - ref.cost) > 1 ||
         (edge.type === 'p2p' && Math.abs((edge.costRev ?? edge.cost) - ref.cost) > 1);
-      // 建議成本數字的琥珀染色(.diverged)與旗標同步,讓晶片本身即帶訊號
+      // 建議成本數字的琥珀染色(.diverged)= 格內細訊號;參考格左緣琥珀條(.ref-diverged)= 整格訊號,兩者同步。
       cell.querySelector('.ref-cost')?.classList.toggle('diverged', diverge);
-      let flag = cell.querySelector('.ref-flag');
-      if (diverge && !flag) {
-        flag = document.createElement('span');
-        flag.className = 'ref-flag';
-        flag.title = '目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過';
-        flag.textContent = '⚠';
-        cell.appendChild(flag);
-      } else if (!diverge && flag) {
-        flag.remove();
-      }
+      cell.classList.toggle('ref-diverged', diverge);
+      if (diverge) cell.title = '目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過';
+      else cell.removeAttribute('title');
+    }
+
+    // 就地更新「⇄ 非對稱」標示(分隔符 + 紫標),與 refreshFlag 同理不全表重繪、避免輸入失焦。
+    function refreshAsym(eid) {
+      const e = edgeById.get(eid);
+      const isAsym = e.type === 'p2p' && e.costRev != null && e.costRev !== e.cost;
+      const sep = div.querySelector(`[data-sep="${eid}"]`);
+      if (sep) { sep.textContent = isAsym ? '⇄' : '/'; sep.classList.toggle('asym', isAsym); }
+      const td = div.querySelector(`[data-costtd="${eid}"]`);
+      if (td) td.classList.toggle('cost-asym', isAsym);
     }
   }
 
@@ -2552,7 +2564,7 @@ cy.on('tap', 'edge', (evt) => {
     const startX = e.clientX;
     const startW = panel.offsetWidth;
     const onMove = (ev) => {
-      const w = Math.min(700, Math.max(400, startW - (ev.clientX - startX)));
+      const w = Math.min(700, Math.max(420, startW - (ev.clientX - startX)));
       panel.style.width = w + 'px';
     };
     const onUp = () => {

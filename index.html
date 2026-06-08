@@ -208,6 +208,10 @@
      故 @layer base 的 table 規則不覆蓋,留在此 unlayered 區一次定義。 */
   .matrix-cell { text-align:center; font-weight:600; cursor:pointer; }
 
+  /* C2 非對稱格:紫色內框。用 box-shadow inset 而非 border —— 不進 box model、
+     不影響 border-collapse 合併邊框、不造成密排矩陣位移。選取態的 outline 走不同屬性,兩者可共存。 */
+  .matrix-asym { box-shadow: inset 0 0 0 2px #a855f7; }
+
   /* C2 矩陣 11 欄密排:字級沿用 base table 的 text-xs(12px,貼齊其他表格),
      僅壓縮 cell 左右 padding(base px-2=8px → 4px)抵銷變寬。角落格 inline padding:0 不受影響。 */
   .matrix-table th, .matrix-table td { padding-left:4px; padding-right:4px; }
@@ -350,8 +354,8 @@
           <span><b>&gt;100</b> — 多段跨洋</span>
           <span class="text-center font-bold text-blue-800">²</span>
           <span>= 等成本路徑數(ECMP)</span>
-          <span class="text-center font-bold text-purple-500">*</span>
-          <span>= 來回路徑非對稱</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-sm" style="box-shadow:inset 0 0 0 2px #a855f7"></span>
+          <span>= 來回路徑非對稱(紫框)</span>
         </div>
       </div>
       <button class="btn-primary mt-2" id="runMatrix" data-action="runMatrix">重新計算</button>
@@ -381,7 +385,7 @@
 
     <div class="tab-content" id="tab-edges">
       <h2 class="section-h !border-0 !mt-0">鏈路成本編輯</h2>
-      <div class="hint">「成本」是 OSPF 用來挑路徑的權重 — 數字越小,這條鏈路越容易被選為主要路徑。改了成本,圖上標籤會即時更新、路徑自動重算。
+      <div class="hint"><div class="mb-1.5"><b>三種設定成本的方式</b>:① 表格直接輸入 · ② 點「參考」帶入<b>延遲</b>建議值 · ③ 下方「壅塞最佳化」依<b>流量</b>自動搜尋一組。①② 照<b>延遲</b>、③ 照<b>壅塞</b>,目標不同 → 建議值可能不一樣(正常)。</div>「成本」是 OSPF 用來挑路徑的權重 — 數字越小,這條鏈路越容易被選為主要路徑。改了成本,圖上標籤會即時更新、路徑自動重算。
         <div class="mt-1.5">兩台路由器直連的鏈路(點對點),可分開設定<b>去程</b>(A→B)和<b>回程</b>(B→A)的成本,兩個方向不一定要一樣。</div>
         <div class="mt-1.5">「參考」欄會依實際<b>來回延遲(RTT)</b>換算出一個建議成本,點一下就能帶入去/回程欄位。若目前成本和建議值差距 &gt; 1,會標上
           <span class="ref-flag">⚠ 可能人工調校</span>,表示這條鏈路的成本可能是人為刻意設定的(例如兩個方向故意設不同值)。</div>
@@ -399,9 +403,9 @@
 
       <div class="mt-3 border-t border-gray-200 pt-2">
         <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
-        <div class="hint">自動搜尋 OSPF 權重壓低<b>最大鏈路利用率 (MLU)</b>,口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,250]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。</div>
+        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,250]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄的 <span class="ref-flag">⚠</span> 常會亮,屬正常。</div></div>
         <div class="grid grid-cols-[1fr_auto] gap-2 mt-2 items-end">
-          <div><label class="label-sm">目標 MLU (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="目標最大利用率(%)" /></div>
+          <div><label class="label-sm">目標利用率上限 (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)" /></div>
           <button class="btn-primary !w-auto px-3" id="runOptimize" data-action="runOptimize">最佳化</button>
         </div>
         <div class="mt-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">進階選項<span class="font-normal normal-case tracking-normal text-gray-400"> — 勾選會額外搜尋,只保留更好的結果</span></div>
@@ -1118,11 +1122,11 @@ const C2_Matrix = (() => {
         const t = tierFor(cell.cost);
         const ecmp = cell.edgePaths.length;   // 平行等價鏈路也計入 ECMP 多重度
         const ecmpSup = ecmp >= 2 ? `<sup style="color:#1e40af">${ecmp >= 10 ? ecmp : ['','','²','³','⁴','⁵','⁶','⁷','⁸','⁹'][ecmp]}</sup>` : '';
-        // 非對稱標記:跟鏡像格 cost 不同
+        // 非對稱:跟鏡像格 cost 不同 → 整格紫色內框(class matrix-asym,box-shadow inset,不佔 box 不位移)
         const mirror = matrix[b] && matrix[b][a];
-        const asym = mirror && mirror.cost !== Infinity && mirror.cost !== cell.cost
-          ? '<sub style="color:#a855f7;font-weight:700">*</sub>' : '';
-        html += `<td class="clickable cost-t${t} matrix-cell" data-src="${a}" data-dst="${b}">${cell.cost}${ecmpSup}${asym}</td>`;
+        const asymCls = mirror && mirror.cost !== Infinity && mirror.cost !== cell.cost
+          ? ' matrix-asym' : '';
+        html += `<td class="clickable cost-t${t} matrix-cell${asymCls}" data-src="${a}" data-dst="${b}">${cell.cost}${ecmpSup}</td>`;
       }
       html += '</tr>';
     }
@@ -2124,7 +2128,8 @@ const C10_Edges = (() => {
         if (isNaN(v)) return;
         const edge = edgeById.get(eid);
         edge.cost = v;
-        if (edge.type === 'p2p') edge.costRev = v;
+        // 建議值是單一(對稱)→ 去/回都用 v;刪 costRev 保持對稱結構乾淨(去/回輸入仍都顯示 v)
+        if (edge.type === 'p2p') delete edge.costRev;
         applyEdgeChange(eid);
         render();
       });

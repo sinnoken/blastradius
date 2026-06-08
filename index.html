@@ -373,7 +373,7 @@
     <div class="tab-content" id="tab-traffic">
       <h2 class="section-h !border-0 !mt-0">邊流量視圖</h2>
       <div class="hint">
-        根據流量需求矩陣,計算每條鏈路承載的 <b>Gbps</b>(等成本路徑平均分攤),對照鏈路容量算出<b>利用率</b>。電路為全雙工、<b>容量單向計</b>,故 Gbps 與利用率取<b>較忙方向</b>(去 / 回擇大)。分 4 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · &lt;50% 低負載。
+        根據流量需求矩陣,計算每條鏈路承載的 <b>Gbps</b>(等成本路徑平均分攤),對照鏈路容量算出<b>利用率</b>。電路為全雙工、<b>容量單向計</b>,故 Gbps 與利用率取<b>較忙方向</b>(去 / 回擇大)。分 5 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · 0–50% 低負載 · <b>0% 閒置</b>(無流量,圖上淡灰虛線)。
       </div>
       <button class="btn-primary mt-2" id="runTraffic" data-action="runTraffic">重新計算</button>
       <div id="traffic-result" class="mt-2.5"></div>
@@ -544,6 +544,7 @@ const EDGE_ROLE_STYLES = {
   'traffic-high':     { 'line-color':'#dc2626','width':8,'z-index':5 },
   'traffic-mid':      { 'line-color':'#f59e0b','width':5,'z-index':4 },
   'traffic-low':      { 'line-color':'#94a3b8','width':2,'z-index':2 },
+  'traffic-idle':     { 'line-color':'#cbd5e1','line-style':'dashed','width':2,'z-index':1 },
 };
 const NODE_ROLE_STYLES = {
   'endpoint':    { 'background-color':'#2563eb','border-color':'#1e3a8a','color':'#fff','border-width':4 },
@@ -1397,12 +1398,14 @@ const C4_Traffic = (() => {
     high:     { label: '高負載' },
     mid:      { label: '中負載' },
     low:      { label: '低負載' },
+    idle:     { label: '閒置' },
   };
   function classify(util) {
     if (util > THRESHOLDS.trafficOverflow) return 'overflow';
     if (util > THRESHOLDS.trafficHigh)     return 'high';
     if (util > THRESHOLDS.trafficMid)      return 'mid';
-    return 'low';
+    if (util > 0)                          return 'low';
+    return 'idle';   // util == 0:完全沒流量(純備援 / 無 demand 經過)
   }
 
   function render() {
@@ -1417,7 +1420,7 @@ const C4_Traffic = (() => {
     const rankedEdges = topology.edges.filter(e => !failedEdges.has(e.id));
 
     const edgeRoles = new Map();
-    const tierCounts = { overflow: 0, high: 0, mid: 0, low: 0 };
+    const tierCounts = { overflow: 0, high: 0, mid: 0, low: 0, idle: 0 };
     const rows = [];
     let maxUtil = 0;
     for (const e of rankedEdges) {
@@ -1451,7 +1454,7 @@ const C4_Traffic = (() => {
         note: `以下流量排行僅基於剩餘可達 demand。現實裡這 ${lostGbps.toFixed(0)} Gbps 不會憑空消失,代表「客戶斷線」或「BGP 倒換出域」。` });
     }
 
-    html += tierCardGrid(['overflow', 'high', 'mid', 'low'], TIERS, tierCounts, '條');
+    html += tierCardGrid(['overflow', 'high', 'mid', 'low', 'idle'], TIERS, tierCounts, '條');
     html += `<div class="info-card"><div class="label">最大利用率 / 來源</div>
       <div class="value">${(maxUtil * 100).toFixed(1)}%
       <span class="banner-sub">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;

@@ -226,6 +226,15 @@
      與旁邊的 ⚠ 圖示一起把「可能人工調校」訊號收進晶片本身。unlayered 規則,
      specificity (0,2,0) 勝過 @layer components 的 .ref-cost,免 !important 即可覆蓋藍色。 */
   .ref-cost.diverged { color:#b45309; }
+
+  /* C3 節點排行的「過路數 ⇄ 流量加權」切換鈕 — 緊鄰小型分段控制,放 section-h 標題右側。
+     unlayered:innerHTML 動態注入,避開 @apply on dynamic 的間歇失效。 */
+  .np-mode { font-size:11px; padding:2px 8px; border:1px solid #cbd5e1; background:#fff;
+    cursor:pointer; color:#475569; }
+  .np-mode:first-of-type { border-radius:4px 0 0 4px; }
+  .np-mode:last-of-type  { border-radius:0 4px 4px 0; border-left:none; }
+  .np-mode.active { background:#1e40af; border-color:#1e40af; color:#fff; }
+  .np-mode:disabled { opacity:.4; cursor:not-allowed; }
 </style>
 </head>
 
@@ -387,6 +396,17 @@
         <button class="btn-secondary" id="resetEdges" data-action="resetEdges">還原原始值</button>
         <button class="btn-primary" id="exportTopo" data-action="exportTopo">輸出 topology.js</button>
       </div>
+
+      <div class="mt-3 border-t border-gray-200 pt-2">
+        <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
+        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率 (MLU)</b>。約束:RTT 下限 + 整數 [5,250](VIP / 保護紅線之後加)。需 demand.js + 鏈路 capacity。算完先預覽,確認再套用。</div>
+        <div class="grid grid-cols-[1fr_auto] gap-2 mt-2 items-end">
+          <div><label class="label-sm">目標 MLU (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="目標最大利用率(%)" /></div>
+          <button class="btn-primary !w-auto px-3" id="runOptimize" data-action="runOptimize">最佳化</button>
+        </div>
+        <div id="optimize-result" class="mt-2"></div>
+      </div>
+
       <div id="edges-result" class="mt-2.5"></div>
     </div>
 
@@ -494,9 +514,10 @@
 import {
   buildAdjacency, buildPrefixIndex, dijkstraDist, dijkstraECMP, stripPseudo,
   unbackupSegmentScan,
-  connectedComponents, allPairsLoad, allPairsTraffic, computeNodeBC,
+  connectedComponents, allPairsLoad, allPairsTraffic, computeNodeBC, computeNodeTraffic,
   ecmpBackupScanAll,
   detectAsymmetric, computeHeatmap, computeN1WorstCase,
+  evalCongestion, buildWeightBounds, optimizeWeights,
 } from './engine.js';
 
 // ============================================================================
@@ -1172,6 +1193,8 @@ const C2_Matrix = (() => {
 // → 依相對 maxBC 分 4 階,對應採購決策:擴容雙保 / 維持 / 降頻寬 / 砍掉。
 // 用 SPEC §11 狀態機:setEdgeRole(eid, 'bc-' + tier) — 切 Tab 自動清除。
 const C3_AllPairs = (() => {
+  // 節點排行的權重模式:'unit' = 過路 SPT 數(§6.3)· 'demand' = 流量加權(§6.3b)。
+  let nodeWeightMode = 'unit';
   // 配色已移至 .tier-{key} CSS class — 此處只保留文案 (label/action)。
   const TIERS = {
     hub:    { label: '樞紐',   action: '擴容雙保' },
@@ -1219,7 +1242,12 @@ const C3_AllPairs = (() => {
     ranking.sort((x, y) => y.bc - x.bc);
 
     // ---- Node 樞紐度計算 + 分階 + 著色 + 排行 ----
-    const nodeBCResult = computeNodeBC(topology, failedEdges, failedNodes);
+    // 'demand' 模式吃重力模型 demand 矩陣(§6.3b);缺 demand.js 時自動退回 'unit'。
+    const demandAvail = typeof demand !== 'undefined' && !!demand?.matrix;
+    const useDemand = nodeWeightMode === 'demand' && demandAvail;
+    const nodeBCResult = useDemand
+      ? computeNodeTraffic(topology, demand, failedEdges, failedNodes)
+      : computeNodeBC(topology, failedEdges, failedNodes);
     const nodeBC = nodeBCResult.load;
     const rankedNodes = topology.nodes
       .filter(n => n.type === 'router' && !failedNodes.has(n.id));
@@ -1299,12 +1327,24 @@ const C3_AllPairs = (() => {
     }
     html += '</table>';
 
-    // 節點樞紐度排行
-    html += '<h2 class="section-h mt-3">節點樞紐度排行</h2>';
+    // 節點樞紐度排行 — 過路數(§6.3 Freeman BC)⇄ 流量加權(§6.3b,吃重力模型 demand)切換
+    const unitLabel = useDemand ? 'Gbps' : 'BC';
+    html += `<h2 class="section-h mt-3">節點樞紐度排行
+      <span style="float:right;font-weight:400;text-transform:none;letter-spacing:0">
+        <button class="np-mode${!useDemand ? ' active' : ''}" data-np-mode="unit" title="每對 pair 權重=1:純拓樸過路 SPT 數">過路數</button><button class="np-mode${useDemand ? ' active' : ''}" data-np-mode="demand"${demandAvail ? ' title="每對 pair 權重=demand[a][b]:實際轉送 Gbps"' : ' disabled title="未載入 demand.js"'}>流量加權</button>
+      </span></h2>`;
+    // demand 模式:附 Gbps 可達性帳目 — 失去路徑的 demand 不計入下方節點熱度分母
+    if (useDemand && nodeBCResult.lostDemand > 0) {
+      const tot = nodeBCResult.totalDemand, lost = nodeBCResult.lostDemand;
+      html += reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 demand 失去路徑',
+        value: `${nodeBCResult.servedDemand.toFixed(0)} / ${tot.toFixed(0)} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${lost.toFixed(0)} Gbps · ${(lost / tot * 100).toFixed(1)}%)</span>`,
+        sample: sampleList(nodeBCResult.lostDemandPairs, 5, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
+        note: '以下節點熱度僅統計可達 demand。' });
+    }
     html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], NODE_TIERS, nodeTierCounts, '台');
-    html += `<div class="info-card"><div class="label">最大 Node BC</div>
+    html += `<div class="info-card"><div class="label">最大 Node ${unitLabel}</div>
       <div class="value">${maxNodeBC.toFixed(1)}</div></div>`;
-    html += '<table><tr><th>Node</th><th>BC</th><th>分類</th><th>建議</th></tr>';
+    html += `<table><tr><th>Node</th><th>${unitLabel}</th><th>分類</th><th>建議</th></tr>`;
     for (const r of nodeRanking) {
       const t = NODE_TIERS[r.tier];
       const subLabel = r.node.label && r.node.label.replace(/\n/g, ' ') !== r.nid
@@ -1330,6 +1370,15 @@ const C3_AllPairs = (() => {
     html += '</table>';
 
     div.innerHTML = html;
+
+    // 節點權重模式切換(過路數 ⇄ 流量加權)→ 重算整個 C3(節點排行隨之改源)
+    div.querySelectorAll('.np-mode').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        nodeWeightMode = btn.dataset.npMode;
+        render();
+      });
+    });
   }
 
   return { activate: render, render };
@@ -2103,12 +2152,14 @@ const C10_Edges = (() => {
       if (!cell || !cell.querySelector('.ref-chip')) return;
       const diverge = Math.abs(edge.cost - ref.cost) > 1 ||
         (edge.type === 'p2p' && Math.abs((edge.costRev ?? edge.cost) - ref.cost) > 1);
+      // 建議成本數字的琥珀染色(.diverged)與旗標同步,讓晶片本身即帶訊號
+      cell.querySelector('.ref-cost')?.classList.toggle('diverged', diverge);
       let flag = cell.querySelector('.ref-flag');
       if (diverge && !flag) {
         flag = document.createElement('span');
         flag.className = 'ref-flag';
         flag.title = '目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過';
-        flag.textContent = '⚠ 可能人工調校';
+        flag.textContent = '⚠';
         cell.appendChild(flag);
       } else if (!diverge && flag) {
         flag.remove();
@@ -2181,7 +2232,111 @@ ${posStr}
     rerenderIfPathActive();
   }
 
-  return { activate: render, exportTopo, resetEdges };
+  // ── §15 壅塞最佳化(Fortz-Thorup 目標 + Tabu)──────────────────────────
+  // 預覽用,不直接寫回;使用者按「套用」才落地(走 applyOptimize)。
+  let lastOpt = null;
+  const edgeName = (id) => { const e = edgeById.get(id); return e ? `${e.source}↔${e.target}` : id; };
+
+  function runOptimize() {
+    const div = dom('optimize-result');
+    if (typeof demand === 'undefined' || !demand?.matrix) {
+      div.innerHTML = '<div class="hint val-danger">未載入 demand.js,無法最佳化。</div>';
+      return;
+    }
+    const hasCap = topology.edges.some(e =>
+      e.type === 'p2p' && isFinite(e.capacity ?? Infinity) && (e.capacity ?? 0) > 0);
+    if (!hasCap) {
+      div.innerHTML = '<div class="hint val-danger">p2p 邊缺 capacity,無利用率可優化。</div>';
+      return;
+    }
+    const pct = parseInt(dom('optTarget')?.value, 10);
+    const target = (isFinite(pct) ? Math.min(100, Math.max(10, pct)) : 75) / 100;
+
+    // 搜尋是同步的、無 Web Worker → 會短暫凍結。先畫「計算中」再 yield 一個 macrotask,
+    // 讓 spinner 真的 paint 出來,使用者才不會以為當掉。
+    div.innerHTML = '<div class="hint">計算中…(Tabu 搜尋,視規模約數秒)</div>';
+    setTimeout(() => runOptimizeCore(target), 30);
+  }
+
+  function runOptimizeCore(target) {
+    const div = dom('optimize-result');
+    // RTT 下限:每條 p2p 邊以其最佳 RTT 推算成本當 lo(複用 edgeRef → impliedCost)
+    const rttFloor = new Map();
+    if (RTT_OK) for (const e of topology.edges) {
+      if (e.type !== 'p2p') continue;
+      const ref = edgeRef(e);
+      if (ref) rttFloor.set(e.id, ref.cost);
+    }
+    // vip / protectedSet 保留(空集)→ 實際約束 = RTT 下限 + [5,250]
+    const bounds = buildWeightBounds(topology, { rttFloor });
+    const before = evalCongestion(topology, demand);
+    const r = optimizeWeights(topology, demand, bounds, { init: 'warm', target, seed: 1 });
+    lastOpt = r;
+
+    const changed = [...r.weights].filter(([id]) => {
+      const e = edgeById.get(id);
+      return e && e.cost !== r.weights.get(id);
+    });
+
+    const profLabel = demand.profiles?.[demand.active]?.label ?? demand.active;
+    let html = `<div class="mini-stat">
+      <div class="info-card"><div class="label">MLU 前</div><div class="value">${(before.mlu * 100).toFixed(1)}%</div></div>
+      <div class="info-card stat-card ${r.feasible ? 'stat-pass' : 'stat-fail'}">
+        <div class="label">MLU 後</div><div class="value">${(r.mlu * 100).toFixed(1)}%</div></div>
+    </div>
+    <div class="info-card"><div class="label">profile · 迭代 · 改動 · 耗時</div>
+      <div class="value">${profLabel} · ${r.iterations} 輪 · ${changed.length} 條 · ${r.elapsedMs}ms</div></div>`;
+
+    if (!r.feasible) {
+      const note = r.binding.length
+        ? '建議鬆綁:' + r.binding.map(b =>
+            `${edgeName(b.edgeId)}→${b.relaxTo}(MLU↓${((r.mlu - b.mluAfter) * 100).toFixed(1)}pt)`).join(' · ')
+        : '紅線內已最佳,瓶頸為實體容量不足。';
+      html += reachabilityBanner({ tone: 'lost', mt: true, label: '⚠ 約束內無解(MLU ≥ 100%)',
+        value: `瓶頸:${r.bottleneck.map(edgeName).join(', ')}`, note });
+    } else if (!r.targetMet) {
+      html += `<div class="info-card" style="background:#fef9c3;border-color:#a16207;margin-top:6px">
+        <div class="label" style="color:#854d0e">可行但未達標</div>
+        <div class="value" style="color:#854d0e">最佳可得 ${(r.mlu * 100).toFixed(1)}% &gt; 目標 ${(target * 100).toFixed(0)}%</div></div>`;
+    }
+
+    if (changed.length === 0) {
+      html += '<div class="hint mt-2">現網權重已是約束內最佳,無需調整。</div>';
+    } else {
+      html += '<table class="mt-2"><tr><th>連接</th><th>舊→新</th><th>util 前→後</th></tr>';
+      changed.sort((a, b) => (r.util[b[0]] || 0) - (r.util[a[0]] || 0));
+      for (const [id, w] of changed) {
+        const e = edgeById.get(id);
+        const ub = before.util[id], ua = r.util[id];
+        const ubS = ub != null ? (ub * 100).toFixed(0) + '%' : '—';
+        const uaS = ua != null ? (ua * 100).toFixed(0) + '%' : '—';
+        html += `<tr><td title="${id}">${e.source} ↔ ${e.target}</td>
+          <td class="num-em">${e.cost} → ${w}</td>
+          <td>${ubS} → ${uaS}</td></tr>`;
+      }
+      html += '</table>';
+      html += '<button class="btn-primary mt-2" data-action="applyOptimize">套用這組權重</button>';
+    }
+    div.innerHTML = html;
+  }
+
+  function applyOptimize() {
+    if (!lastOpt) return;
+    for (const [id, w] of lastOpt.weights) {
+      const e = edgeById.get(id);
+      if (!e || e.type !== 'p2p') continue;
+      e.cost = w;
+      e.costRev = w;
+      paintEdgeLabels(id, e);
+    }
+    render();                 // 重繪編輯表(成本欄 / modified / RTT 旗標)
+    rerenderIfPathActive();
+    lastOpt = null;
+    dom('optimize-result').innerHTML =
+      '<div class="hint">已套用最佳化權重。可用「輸出 topology.js」帶走,或切到「邊流量 / 失效模擬」複驗。</div>';
+  }
+
+  return { activate: render, exportTopo, resetEdges, runOptimize, applyOptimize };
 })();
 
 // ============================================================================
@@ -2223,8 +2378,10 @@ const ACTIONS = {
   clearHeatmap: () => C8_Heatmap.clear(),
   runN1Scan:    () => C9_N1.render(),
   // Edges 編輯器
-  exportTopo:   () => C10_Edges.exportTopo(),
-  resetEdges:   () => C10_Edges.resetEdges(),
+  exportTopo:    () => C10_Edges.exportTopo(),
+  resetEdges:    () => C10_Edges.resetEdges(),
+  runOptimize:   () => C10_Edges.runOptimize(),
+  applyOptimize: () => C10_Edges.applyOptimize(),
   // 全域控制
   togglePseudo: (el) => {
     pseudoVisible = !pseudoVisible;

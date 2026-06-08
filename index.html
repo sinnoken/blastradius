@@ -2294,9 +2294,13 @@ ${posStr}
     }
     lastOpt = r;
 
-    const changed = [...r.weights].filter(([id]) => {
-      const e = edgeById.get(id);
-      return e && e.cost !== r.weights.get(id);
+    // 權重變數鍵:`eid` = 去程/對稱;`eid|rev` = 回程(不對稱邊)。比對各自的現值。
+    const varEid = (key) => key.endsWith('|rev') ? key.slice(0, -4) : key;
+    const changed = [...r.weights].filter(([key]) => {
+      const e = edgeById.get(varEid(key));
+      if (!e) return false;
+      const cur = key.endsWith('|rev') ? (e.costRev ?? e.cost) : e.cost;
+      return cur !== r.weights.get(key);
     });
 
     const profLabel = demand.profiles?.[demand.active]?.label ?? demand.active;
@@ -2335,14 +2339,20 @@ ${posStr}
       html += '<div class="hint mt-2">現網權重已是約束內最佳,無需調整。</div>';
     } else {
       html += '<table class="mt-2"><tr><th>連接</th><th>舊→新</th><th>util 前→後</th></tr>';
-      changed.sort((a, b) => (r.util[b[0]] || 0) - (r.util[a[0]] || 0));
-      for (const [id, w] of changed) {
-        const e = edgeById.get(id);
-        const ub = before.util[id], ua = r.util[id];
+      // util 以實體邊為單位(峰值),故用 varEid 解析;不對稱邊標去/回
+      changed.sort((a, b) => (r.util[varEid(b[0])] || 0) - (r.util[varEid(a[0])] || 0));
+      for (const [key, w] of changed) {
+        const isRev = key.endsWith('|rev');
+        const eid = varEid(key);
+        const e = edgeById.get(eid);
+        const oldVal = isRev ? (e.costRev ?? e.cost) : e.cost;
+        const dir = isRev ? ' <span class="cell-sub">(回)</span>'
+          : (e.costRev != null ? ' <span class="cell-sub">(去)</span>' : '');
+        const ub = before.util[eid], ua = r.util[eid];
         const ubS = ub != null ? (ub * 100).toFixed(0) + '%' : '—';
         const uaS = ua != null ? (ua * 100).toFixed(0) + '%' : '—';
-        html += `<tr><td title="${id}">${e.source} ↔ ${e.target}</td>
-          <td class="num-em">${e.cost} → ${w}</td>
+        html += `<tr><td title="${eid}">${e.source} ↔ ${e.target}${dir}</td>
+          <td class="num-em">${oldVal} → ${w}</td>
           <td>${ubS} → ${uaS}</td></tr>`;
       }
       html += '</table>';
@@ -2353,13 +2363,21 @@ ${posStr}
 
   function applyOptimize() {
     if (!lastOpt) return;
-    for (const [id, w] of lastOpt.weights) {
-      const e = edgeById.get(id);
+    for (const [key, w] of lastOpt.weights) {
+      if (key.endsWith('|rev')) {                        // 回程變數 → 只寫 costRev
+        const e = edgeById.get(key.slice(0, -4));
+        if (e && e.type === 'p2p') { e.costRev = w; paintEdgeLabels(e.id, e); }
+        continue;
+      }
+      const e = edgeById.get(key);
       if (!e) continue;
-      if (e.type === 'p2p') { e.cost = w; e.costRev = w; }
-      else if (e.type === 'transit') { e.cost = w; }   // 只動 ingress;egress 由路由層固定 0
-      else continue;
-      paintEdgeLabels(id, e);
+      if (e.type === 'p2p') {
+        e.cost = w;
+        if (!lastOpt.weights.has(key + '|rev')) e.costRev = w;   // 對稱邊:回程跟去程一致
+      } else if (e.type === 'transit') {
+        e.cost = w;                                      // 只動 ingress;egress 由路由層固定 0
+      } else continue;
+      paintEdgeLabels(key, e);
     }
     render();                 // 重繪編輯表(成本欄 / modified / RTT 旗標)
     rerenderIfPathActive();

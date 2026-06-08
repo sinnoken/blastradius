@@ -78,26 +78,8 @@ export function dijkstraDist(adj, src) {
   return dist;
 }
 
-// BFS 拓樸序 — 從 root 開始,按跳數展開,穿越 pseudo-node 但只收錄 router
-export function bfsOrder(adj, root) {
-  const visited = new Set([root]);
-  const queue = [root];
-  const order = [];
-  while (queue.length) {
-    const u = queue.shift();
-    if (!u.startsWith('PN')) order.push(u);
-    for (const [v] of (adj[u] || [])) {
-      if (!visited.has(v)) {
-        visited.add(v);
-        queue.push(v);
-      }
-    }
-  }
-  return order;
-}
-
 // ============================================================================
-// C1 — SPT (Dijkstra + ECMP, §4)
+// §4 — SPT (Dijkstra + ECMP)
 // ============================================================================
 
 // 回傳 { cost, paths, edgePaths }:
@@ -178,7 +160,7 @@ export function pathToEdgeIds(path, edges) {
 }
 
 // ============================================================================
-// C2 — BACKUP PATH (§5)
+// §5 — BACKUP PATH
 // ============================================================================
 
 export function backupPath(topo, src, dst, removedEdges) {
@@ -204,7 +186,7 @@ export function unbackupSegmentScan(topo, src, dst) {
 }
 
 // ============================================================================
-// C3 — FAILURE SIMULATION (§6)
+// §6 — FAILURE SIMULATION
 // ============================================================================
 
 // BFS over routers only — 忽略 pseudo-node
@@ -349,46 +331,66 @@ export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new S
   return { load, totalPairs, reachablePairs: totalPairs - lostPairs.length, lostPairs };
 }
 
-export function simulateNodeFailure(topo, failedNodeId) {
-  const before = allPairsLoad(topo).load;
-  const after  = allPairsLoad(topo, new Set(), new Set([failedNodeId])).load;
-  const routers = topo.nodes
-    .filter(n => n.type === 'router' && n.id !== failedNodeId)
-    .map(n => n.id);
-  const adjAfter = buildAdjacency(topo.edges, new Set(), new Set([failedNodeId]));
-  const comps = connectedComponents(adjAfter, routers);
-
-  const allEids = new Set([...Object.keys(before), ...Object.keys(after)]);
-  const delta = {};
-  for (const eid of allEids) {
-    const b = before[eid] || 0;
-    const a = after[eid]  || 0;
-    delta[eid] = {
-      before: b, after: a,
-      changePct: b > 0 ? ((a - b) / b * 100) : (a > 0 ? Infinity : 0),
-      direction: a > b ? 'inc' : (a < b ? 'dec' : 'none'),
-    };
+// §6.3b 流量加權節點介數 (Demand-weighted Node Betweenness)
+// 與 §6.3 computeNodeBC 同一套「strip pseudo + 排除 endpoints」累加,但每對 (a,b)
+// 的權重從「1」改為 demand[a][b](吃重力模型產出的流量矩陣)。
+// 語意:每台中繼 router 平均轉送多少 Gbps 過路流量 — 採購視角的「節點熱度」。
+// 與 §6.2b allPairsTraffic 對齊:iterate 全部 router(不排除失效節點),demand 到 /
+// 出失效節點計入 lostDemand;回傳附 Gbps 帳目供可達性 banner 重用。
+// 注意:ECMP 等分用 r.paths.length(節點路徑數,與 §6.3 一致),非 edgePaths.length —
+// 節點層級看 router 序列,平行等價鏈路不另計。
+export function computeNodeTraffic(topo, demand, failedEdges = new Set(), failedNodes = new Set()) {
+  const empty = {
+    load: {}, totalPairs: 0, reachablePairs: 0, lostPairs: [],
+    totalDemand: 0, servedDemand: 0, lostDemand: 0, lostDemandPairs: [],
+  };
+  if (!demand || !demand.matrix) return empty;
+  const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
+  const allRouters = topo.nodes.filter(n => n.type === 'router').map(n => n.id);
+  const dflt = demand.default ?? 0;
+  const load = {};
+  for (const r of allRouters) if (!failedNodes.has(r)) load[r] = 0;
+  const lostDemandPairs = [];
+  let totalPairs = 0, reachablePairs = 0, totalDemand = 0, servedDemand = 0;
+  for (const a of allRouters) {
+    for (const b of allRouters) {
+      if (a === b) continue;
+      totalPairs++;
+      const gbps = demand.matrix[a]?.[b] ?? dflt;
+      totalDemand += gbps;
+      if (failedNodes.has(a) || failedNodes.has(b)) {
+        if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'endpoint-down' });
+        continue;
+      }
+      const r = dijkstraECMP(adj, a, b);
+      if (r.cost === Infinity || r.paths.length === 0) {
+        if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'no-path' });
+        continue;
+      }
+      reachablePairs++;
+      servedDemand += gbps;
+      const w = gbps / r.paths.length;
+      for (const p of r.paths) {
+        const stripped = stripPseudo(p);
+        // 排除頭尾(endpoints 不算過路)
+        for (let i = 1; i < stripped.length - 1; i++) {
+          load[stripped[i]] = (load[stripped[i]] || 0) + w;
+        }
+      }
+    }
   }
+  lostDemandPairs.sort((x, y) => y.gbps - x.gbps);
   return {
-    isConnected: comps.length === 1,
-    components: comps,
-    delta,
+    load, totalPairs, reachablePairs,
+    lostPairs: lostDemandPairs.map(({ a, b }) => ({ a, b })),
+    totalDemand, servedDemand, lostDemand: totalDemand - servedDemand,
+    lostDemandPairs,
   };
 }
 
 // ============================================================================
-// C4 — ECMP BACKUP CHECK (§7)
+// §7 — ECMP BACKUP CHECK
 // ============================================================================
-
-// 注意:node 層級的 find() 無法分辨平行鏈路。ecmpBackupCheck 已改用
-// edgePaths[i][0](每條最短路徑的第一條實體邊)取出 first-hop,保留此函式
-// 僅為相容外部 import,不再供 ECMP 檢查使用。
-export function firstHopEdge(src, nextHop, edges) {
-  return edges.find(e =>
-    (e.source === src && e.target === nextHop) ||
-    (e.target === src && e.source === nextHop)
-  );
-}
 
 export function ecmpBackupCheck(topo, src, dst) {
   const adj = buildAdjacency(topo.edges);
@@ -432,7 +434,7 @@ export function ecmpBackupScanAll(topo) {
 }
 
 // ============================================================================
-// C5 — ASYMMETRIC PATH DETECTION (§8)
+// §8 — ASYMMETRIC PATH DETECTION
 // ============================================================================
 
 export function detectAsymmetric(topo) {
@@ -463,7 +465,7 @@ export function detectAsymmetric(topo) {
 }
 
 // ============================================================================
-// C6 — PREFIX REDUNDANCY HEATMAP (§9)
+// §9 — PREFIX REDUNDANCY HEATMAP
 // ============================================================================
 
 export function computeHeatmap(topo, prefixIndex) {
@@ -485,7 +487,7 @@ export function computeHeatmap(topo, prefixIndex) {
 }
 
 // ============================================================================
-// C8 — N-1 WORST-CASE RANKING (§10)
+// §10 — N-1 WORST-CASE RANKING
 // ============================================================================
 
 export function computeN1WorstCase(topo) {
@@ -586,4 +588,243 @@ export function computeN1WorstCase(topo) {
     });
 
   return { pairRows, failureRows, baseCost };
+}
+
+// ============================================================================
+// §15 — OSPF WEIGHT OPTIMIZATION (Fortz-Thorup objective + Tabu Search)
+// ============================================================================
+// 單目標壓壅塞:字典序 (MLU, S);S 在可行區(MLU<1)用 Σu²(均衡),超載區用 Σcap·ψ(最不爛)。
+// 硬約束以每條 p2p 邊的整數界 [lo,hi] 剪枝(RTT 下限 / VIP 不能升 / protected 不能降 / [5,250])。
+// 只優化 p2p 邊的「對稱」權重(cost=costRev);transit(LSA2)cost 不動。
+// 純函式,不碰 DOM / Cytoscape;評估壅塞重用 §6.2b allPairsTraffic(ECMP 等分,與本檔一致)。
+
+// §15.1 Fortz-Thorup 分段凸懲罰 ψ(連續分段線性),回傳 cap·ψ(load/cap)。
+// 斜率 1→3→10→70→500→5000,膝點 1/3·2/3·9/10·1·11/10;cap 加權讓大管的超載權重更高。
+export function ftLinkPenalty(load, cap) {
+  if (!(cap > 0) || !isFinite(cap)) return 0;
+  const u = load / cap;
+  const bp = [1 / 3, 2 / 3, 0.9, 1, 1.1];
+  const sl = [1, 3, 10, 70, 500, 5000];
+  let prev = 0, acc = 0;
+  for (let i = 0; i < bp.length; i++) {
+    if (u <= bp[i]) return cap * (acc + sl[i] * (u - prev));
+    acc += sl[i] * (bp[i] - prev);
+    prev = bp[i];
+  }
+  return cap * (acc + sl[5] * (u - prev));
+}
+
+// §15.2 給「已套權重的 topo」評估壅塞。MLU / 懲罰僅計 p2p 邊(可控變數),transit 不列入目標。
+// 回 { mlu, sumU2, sumPhi, util(每邊利用率), lostDemand }。
+export function evalCongestion(topoW, demand, failedEdges = new Set(), failedNodes = new Set()) {
+  const res = allPairsTraffic(topoW, demand, failedEdges, failedNodes);
+  const traffic = res.traffic;
+  const util = {};
+  let mlu = 0, sumU2 = 0, sumPhi = 0;
+  for (const e of topoW.edges) {
+    if (e.type !== 'p2p') continue;
+    const cap = e.capacity ?? Infinity;
+    if (!(cap > 0) || !isFinite(cap)) continue;
+    const load = traffic[e.id] || 0;
+    const u = load / cap;
+    util[e.id] = u;
+    if (u > mlu) mlu = u;
+    sumU2 += u * u;
+    sumPhi += ftLinkPenalty(load, cap);
+  }
+  return { mlu, sumU2, sumPhi, util, lostDemand: res.lostDemand };
+}
+
+// §15.3 套上對稱權重(p2p:cost=costRev=w),回 topo 淺拷貝,不 mutate 原 topo。
+// weights = Map<edgeId, w>;未列入的邊保留原值。
+export function applyWeights(topo, weights) {
+  const edges = topo.edges.map(e => {
+    if (e.type === 'p2p' && weights.has(e.id)) {
+      const w = weights.get(e.id);
+      return { ...e, cost: w, costRev: w };
+    }
+    return e;
+  });
+  return { ...topo, edges };
+}
+
+// §15.4 由紅線生成每條 p2p 邊的整數權重界 [lo,hi]。
+//   rttFloor     : Map<edgeId, number>  RTT 推算的成本下限(caller 用其公式算好傳入,engine 不綁光纖常數)
+//   vip          : Set<edgeId>           不能升 → hi=current
+//   protectedSet : Set<edgeId>           不能降 → lo=current
+//   clamp        : [min,max]             全域 [5,250]
+// conflict = lo>hi(紅線矛盾,夾在 current);frozen = lo>=hi(不進鄰域)。
+export function buildWeightBounds(topo, {
+  rttFloor = new Map(), vip = new Set(), protectedSet = new Set(), clamp = [5, 250],
+} = {}) {
+  const [cmin, cmax] = clamp;
+  const bounds = new Map();
+  for (const e of topo.edges) {
+    if (e.type !== 'p2p') continue;
+    const cur = e.cost;
+    let lo = Math.max(cmin, Math.ceil(rttFloor.get(e.id) ?? cmin),
+                      protectedSet.has(e.id) ? cur : cmin);
+    let hi = Math.min(cmax, vip.has(e.id) ? cur : cmax);
+    const conflict = lo > hi;
+    if (conflict) { lo = hi = cur; }
+    const frozen = lo >= hi;
+    bounds.set(e.id, { lo, hi, frozen, conflict, current: cur });
+  }
+  return bounds;
+}
+
+// 確定性 PRNG(mulberry32)— seed 固定 → 同輸入同輸出 → export 穩定。
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// §15.5 Tabu Search 驅動。回 { weights, mlu, sumU2, sumPhi, util, feasible, targetMet,
+//   target, bottleneck, binding, frozen, history, iterations }。
+export function optimizeWeights(topo, demand, bounds, opts = {}) {
+  const {
+    init = 'warm', target = 0.75, tieBreak = 'auto',
+    steps = [1, 2, 4], tabuTenure = 0, stallK = 8, diversifyM = 0,
+    maxIters = 300, seed = 1, failedEdges = new Set(), failedNodes = new Set(),
+    // 封住最壞情況(尤其無解時不空轉到底),避免單執行緒整片凍結。詳見 SPEC §15.6 / §13。
+    //   maxEvals    主限制器,計「鄰域評估次數」— 確定性(同 seed/同圖 → 同結果),runtime 隨機器變但有界
+    //   timeBudgetMs 僅作脫韁保險,設大(正常 POC 規模不會觸發,故不破壞確定性);大圖請改用 Web Worker
+    //   stopAfter   全域最佳長期停滯即收手
+    maxEvals = 1800, timeBudgetMs = 15000, stopAfter = 0,
+  } = opts;
+  const rng = mulberry32(seed);
+  const EPS = 1e-9;
+  const t0 = Date.now();
+
+  const p2p = topo.edges.filter(e => e.type === 'p2p' && bounds.has(e.id));
+  const movable = p2p.filter(e => !bounds.get(e.id).frozen).map(e => e.id);
+  const clampTo = (id, w) => {
+    const b = bounds.get(id);
+    return Math.max(b.lo, Math.min(b.hi, w));
+  };
+  const tenure = tabuTenure || Math.max(5, Math.round(Math.sqrt(movable.length || 1)));
+  const divM = diversifyM || Math.max(1, Math.round(movable.length * 0.2));
+  const maxCap = Math.max(1, ...p2p.map(x => (x.capacity ?? 1)));
+
+  // 初始權重:warm = 現網 cost 投影進界;invcap = round(maxCap/cap) 投影進界
+  const W = new Map();
+  for (const e of p2p) {
+    const b = bounds.get(e.id);
+    if (b.frozen) { W.set(e.id, b.lo); continue; }
+    const cap = e.capacity ?? 1;
+    const raw = init === 'invcap' ? Math.round(maxCap / (cap > 0 ? cap : 1)) : e.cost;
+    W.set(e.id, clampTo(e.id, raw));
+  }
+
+  // 目標:字典序 (MLU, S);S 由 tieBreak 決定(auto = 可行區 u² / 超載區 phi)
+  const Sof = (ev) => tieBreak === 'u2' ? ev.sumU2
+    : tieBreak === 'phi' ? ev.sumPhi
+    : (ev.mlu < 1 ? ev.sumU2 : ev.sumPhi);
+  const better = (a, b) => {
+    if (a.mlu < b.mlu - EPS) return true;
+    if (b.mlu < a.mlu - EPS) return false;
+    return Sof(a) < Sof(b) - EPS;
+  };
+  const evalW = (w) => evalCongestion(applyWeights(topo, w), demand, failedEdges, failedNodes);
+
+  const candWeights = (id) => {
+    const b = bounds.get(id), cur = W.get(id), set = new Set();
+    for (const s of steps) { set.add(clampTo(id, cur - s)); set.add(clampTo(id, cur + s)); }
+    set.add(b.lo); set.add(b.hi);
+    set.delete(cur);
+    return [...set];
+  };
+
+  let curEval = evalW(W);
+  let best = new Map(W), bestEval = curEval;
+  const tabu = new Map();    // key `edge:weight` → 到期 iter(禁止短期回頭到該值)
+  const history = [{ iter: 0, mlu: curEval.mlu, s: Sof(curEval) }];
+  let stall = 0, iterations = 0, noImprove = 0, evals = 0;
+  const stopStall = stopAfter || Math.max(15, stallK + 12);   // 全域最佳長期停滯 → 收手
+
+  for (let iter = 1; iter <= maxIters; iter++) {
+    iterations = iter;
+    if (bestEval.mlu <= target + EPS) break;            // 達標
+    if (evals >= maxEvals) break;                       // 評估預算用盡(確定性主限制器)
+    if (noImprove >= stopStall) break;                  // 平台停損(無解時尤其關鍵)
+    if (Date.now() - t0 > timeBudgetMs) break;          // 脫韁保險(正常規模不觸發)
+
+    let pE = null, pW = null, pEv = null;        // 最佳非 tabu
+    let aE = null, aW = null, aEv = null;        // aspiration(破全域最佳,即使 tabu)
+    for (const id of movable) {
+      const old = W.get(id);
+      for (const w of candWeights(id)) {
+        W.set(id, w);
+        const ev = evalW(W);
+        evals++;
+        W.set(id, old);
+        const isTabu = (tabu.get(id + ':' + w) ?? 0) > iter;
+        if (!isTabu && (pEv === null || better(ev, pEv))) { pE = id; pW = w; pEv = ev; }
+        if (better(ev, bestEval) && (aEv === null || better(ev, aEv))) { aE = id; aW = w; aEv = ev; }
+      }
+    }
+
+    let chE, chW, chEv;
+    if (aEv && (pEv === null || better(aEv, pEv))) { chE = aE; chW = aW; chEv = aEv; }
+    else if (pEv) { chE = pE; chW = pW; chEv = pEv; }
+    else break;     // 無可動鄰居
+
+    const oldW = W.get(chE);
+    W.set(chE, chW);
+    curEval = chEv;
+    tabu.set(chE + ':' + oldW, iter + tenure);
+
+    if (better(curEval, bestEval)) { best = new Map(W); bestEval = curEval; stall = 0; noImprove = 0; }
+    else { stall++; noImprove++; }
+
+    if (stall >= stallK) {     // 多樣化:隨機重設 divM 條(seeded)
+      for (let k = 0; k < divM; k++) {
+        const id = movable[Math.floor(rng() * movable.length)];
+        const b = bounds.get(id);
+        W.set(id, b.lo + Math.floor(rng() * (b.hi - b.lo + 1)));
+      }
+      curEval = evalW(W);
+      stall = 0;
+    }
+    history.push({ iter, mlu: curEval.mlu, s: Sof(curEval) });
+  }
+
+  const feasible = bestEval.mlu < 1 - EPS;
+  const targetMet = bestEval.mlu <= target + EPS;
+  const bottleneck = Object.entries(bestEval.util)
+    .filter(([, u]) => Math.abs(u - bestEval.mlu) < 1e-6)
+    .map(([id]) => id);
+
+  // 無解(MLU≥1)時:逐條 p2p 邊試把界外放鬆一步,排「鬆哪條紅線 MLU 降最多」
+  let binding = [];
+  if (!feasible) {
+    for (const e of p2p) {
+      const b = bounds.get(e.id), w0 = best.get(e.id), trials = [];
+      for (const w of [w0 - 1, w0 + 1]) {
+        if (w < 5 || w > 250) continue;
+        if (w >= b.lo && w <= b.hi) continue;    // 仍在界內 → 不算放鬆紅線
+        const tw = new Map(best); tw.set(e.id, w);
+        trials.push({ w, mlu: evalW(tw).mlu });
+      }
+      if (trials.length) {
+        const bt = trials.reduce((m, t) => (t.mlu < m.mlu ? t : m));
+        const gain = bestEval.mlu - bt.mlu;
+        if (gain > 1e-6) binding.push({ edgeId: e.id, relaxTo: bt.w, mluAfter: bt.mlu, gain });
+      }
+    }
+    binding.sort((a, b) => b.gain - a.gain);
+    binding = binding.slice(0, 5);
+  }
+
+  const frozen = p2p.filter(e => bounds.get(e.id).frozen).map(e => e.id);
+  return {
+    weights: best, mlu: bestEval.mlu, sumU2: bestEval.sumU2, sumPhi: bestEval.sumPhi,
+    util: bestEval.util, feasible, targetMet, target,
+    bottleneck, binding, frozen, history, iterations, elapsedMs: Date.now() - t0,
+  };
 }

@@ -316,7 +316,7 @@
   <div id="panel-resize" class="w-1 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors"></div>
 
   <!-- RIGHT: tabbed reports (resizable) -->
-  <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:420px">
+  <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:430px">
     <div class="tabs">
       <button class="tab active" data-tab="path" data-group="live" title="即時分析:反映圖上標記的故障狀態">路徑</button>
       <button class="tab" data-tab="matrix" data-group="live" title="即時分析:反映圖上標記的故障狀態">矩陣</button>
@@ -2559,12 +2559,14 @@ cy.on('tap', 'edge', (evt) => {
 {
   const handle = dom('panel-resize');
   const panel  = dom('right-panel');
+  // 單一來源:拖曳下限 = 面板初始寬(讀 HTML inline style 的起始值)。改寬度只需改那個 width 一處。
+  const MIN_W = panel.offsetWidth;
   handle.addEventListener('mousedown', (e) => {
     e.preventDefault();
     const startX = e.clientX;
     const startW = panel.offsetWidth;
     const onMove = (ev) => {
-      const w = Math.min(700, Math.max(420, startW - (ev.clientX - startX)));
+      const w = Math.min(700, Math.max(MIN_W, startW - (ev.clientX - startX)));
       panel.style.width = w + 'px';
     };
     const onUp = () => {

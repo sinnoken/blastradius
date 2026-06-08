@@ -2346,8 +2346,9 @@ ${posStr}
         const eid = varEid(key);
         const e = edgeById.get(eid);
         const oldVal = isRev ? (e.costRev ?? e.cost) : e.cost;
+        // 只在這條邊真的有回程變數時才標「(去)」;退化的 costRev==cost 不算不對稱
         const dir = isRev ? ' <span class="cell-sub">(回)</span>'
-          : (e.costRev != null ? ' <span class="cell-sub">(去)</span>' : '');
+          : (r.weights.has(eid + '|rev') ? ' <span class="cell-sub">(去)</span>' : '');
         const ub = before.util[eid], ua = r.util[eid];
         const ubS = ub != null ? (ub * 100).toFixed(0) + '%' : '—';
         const uaS = ua != null ? (ua * 100).toFixed(0) + '%' : '—';

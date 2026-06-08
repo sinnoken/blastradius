@@ -308,7 +308,11 @@ export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNod
   if (!demand || !demand.matrix) return empty;
   const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
   const allRouters = topo.nodes.filter(n => n.type === 'router').map(n => n.id);
+  const edgeById = new Map(topo.edges.map(e => [e.id, e]));
   const dflt = demand.default ?? 0;
+  // 全雙工:容量是「單向」的,故分去(fwd)/回(rev)累計,traffic[edge] 取較忙方向的峰值。
+  // 「去」= 流量實際走向與 e.source→e.target 同向。transit 同理:fwd=ingress(router→PN)、rev=egress(→0 向)。
+  const fwd = {}, rev = {};
   const traffic = {};
   const lostDemandPairs = [];
   let totalPairs = 0, reachablePairs = 0;
@@ -332,18 +336,26 @@ export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNod
       }
       reachablePairs++;
       servedDemand += gbps;
-      // demand 平分到每條 edge-distinct 路徑 — 平行等價鏈路各分到 gbps / N
+      // demand 平分到每條 edge-distinct 路徑 — 平行等價鏈路各分到 gbps / N。
+      // 用節點序列(paths)判走向:ep[i] 連接 np[i]↔np[i+1],np[i]===e.source 即「去」。
       const w = gbps / r.edgePaths.length;
-      for (const ep of r.edgePaths) {
-        for (const eid of ep) {
-          traffic[eid] = (traffic[eid] || 0) + w;
+      for (let k = 0; k < r.edgePaths.length; k++) {
+        const ep = r.edgePaths[k], np = r.paths[k];
+        for (let i = 0; i < ep.length; i++) {
+          const e = edgeById.get(ep[i]);
+          if (e && np[i] === e.source) fwd[ep[i]] = (fwd[ep[i]] || 0) + w;
+          else                          rev[ep[i]] = (rev[ep[i]] || 0) + w;
         }
       }
     }
   }
+  // 單向容量 → 利用率看較忙方向:traffic[edge] = max(去, 回)
+  for (const id of new Set([...Object.keys(fwd), ...Object.keys(rev)])) {
+    traffic[id] = Math.max(fwd[id] || 0, rev[id] || 0);
+  }
   lostDemandPairs.sort((x, y) => y.gbps - x.gbps);
   return {
-    traffic, totalPairs, reachablePairs,
+    traffic, trafficFwd: fwd, trafficRev: rev, totalPairs, reachablePairs,
     lostPairs: lostDemandPairs.map(({ a, b }) => ({ a, b })),
     totalDemand, servedDemand, lostDemand: totalDemand - servedDemand,
     lostDemandPairs,
@@ -653,9 +665,10 @@ export function computeN1WorstCase(topo) {
 // §15 — OSPF WEIGHT OPTIMIZATION (Fortz-Thorup objective + Tabu Search)
 // ============================================================================
 // 單目標壓壅塞:字典序 (MLU, S);S 在可行區(MLU<1)用 Σu²(均衡),超載區用 Σcap·ψ(最不爛)。
-// 硬約束以每條 p2p 邊的整數界 [lo,hi] 剪枝(RTT 下限 / VIP 不能升 / protected 不能降 / [5,250])。
-// 只優化 p2p 邊的「對稱」權重(cost=costRev);transit(LSA2)cost 不動。
-// 純函式,不碰 DOM / Cytoscape;評估壅塞重用 §6.2b allPairsTraffic(ECMP 等分,與本檔一致)。
+// 硬約束以每條可動邊的整數界 [lo,hi] 剪枝(RTT 下限 / VIP 不能升 / protected 不能降 / [5,250])。
+// 預設只調 p2p 的「對稱」權重(cost=costRev);transit ingress cost 亦可選調(選項 B,includeTransit,
+// 只動 router→PN 的 e.cost,egress 由 buildAdjacency 固定 0)。
+// 純函式,不碰 DOM / Cytoscape;評估壅塞重用 §6.2b allPairsTraffic(ECMP 等分、單向峰值,與本檔一致)。
 
 // §15.1 Fortz-Thorup 分段凸懲罰 ψ(連續分段線性),回傳 cap·ψ(load/cap)。
 // 斜率 1→3→10→70→500→5000,膝點 1/3·2/3·9/10·1·11/10;cap 加權讓大管的超載權重更高。
@@ -673,17 +686,19 @@ export function ftLinkPenalty(load, cap) {
   return cap * (acc + sl[5] * (u - prev));
 }
 
-// §15.2 給「已套權重的 topo」評估壅塞。MLU / 懲罰僅計 p2p 邊(可控變數),transit 不列入目標。
-// 回 { mlu, sumU2, sumPhi, util(每邊利用率), lostDemand }。
+// §15.2 給「已套權重的 topo」評估壅塞。MLU / 懲罰計入「所有有容量的邊」(p2p + transit)。
+// 與 C4 邊流量視圖同一組邊 → 兩者定義一致。transit 段(Router→Pseudo)的壅塞是真實的,必須讓
+// 優化器看見(否則會壓低 p2p 卻盲於更糟的 LAN 段、過度宣稱成績)。預設只調 p2p 權重時,靠 p2p
+// 重繞把 LAN ingress 在掛載的多台 router 間重新分配;選項 B(includeTransit)則可直接調其介面成本。
+// util 取單向峰值(§6.2b max(去,回)/cap)。回 { mlu, sumU2, sumPhi, util(每邊利用率), lostDemand }。
 export function evalCongestion(topoW, demand, failedEdges = new Set(), failedNodes = new Set()) {
   const res = allPairsTraffic(topoW, demand, failedEdges, failedNodes);
   const traffic = res.traffic;
   const util = {};
   let mlu = 0, sumU2 = 0, sumPhi = 0;
   for (const e of topoW.edges) {
-    if (e.type !== 'p2p') continue;
     const cap = e.capacity ?? Infinity;
-    if (!(cap > 0) || !isFinite(cap)) continue;
+    if (!(cap > 0) || !isFinite(cap)) continue;   // 有實體容量的邊才入目標(p2p + transit)
     const load = traffic[e.id] || 0;
     const u = load / cap;
     util[e.id] = u;
@@ -694,40 +709,64 @@ export function evalCongestion(topoW, demand, failedEdges = new Set(), failedNod
   return { mlu, sumU2, sumPhi, util, lostDemand: res.lostDemand };
 }
 
-// §15.3 套上對稱權重(p2p:cost=costRev=w),回 topo 淺拷貝,不 mutate 原 topo。
-// weights = Map<edgeId, w>;未列入的邊保留原值。
+// §15.3 套上權重,回 topo 淺拷貝,不 mutate 原 topo。
+// weights 的 key 是「權重變數」:`eid` = 去程 / 對稱;`eid|rev` = 回程(僅不對稱邊才有)。
+//   p2p 對稱(只有 eid 變數)        → cost = costRev = w(維持對稱)
+//   p2p 不對稱(eid + eid|rev 變數)  → cost = 去程變數,costRev = 回程變數(各自獨立)
+//   transit                          → 只動 ingress 的 e.cost(egress 由 buildAdjacency 固定 0)
 export function applyWeights(topo, weights) {
   const edges = topo.edges.map(e => {
-    if (e.type === 'p2p' && weights.has(e.id)) {
-      const w = weights.get(e.id);
-      return { ...e, cost: w, costRev: w };
+    if (e.type === 'transit') {
+      return weights.has(e.id) ? { ...e, cost: weights.get(e.id) } : e;
+    }
+    if (e.type === 'p2p') {
+      const revKey = e.id + '|rev';
+      const hasF = weights.has(e.id), hasR = weights.has(revKey);
+      if (!hasF && !hasR) return e;
+      const cost = hasF ? weights.get(e.id) : e.cost;
+      const costRev = hasR ? weights.get(revKey) : cost;   // 無回程變數 → 對稱(回程跟去程)
+      return { ...e, cost, costRev };
     }
     return e;
   });
   return { ...topo, edges };
 }
 
-// §15.4 由紅線生成每條 p2p 邊的整數權重界 [lo,hi]。
-//   rttFloor     : Map<edgeId, number>  RTT 推算的成本下限(caller 用其公式算好傳入,engine 不綁光纖常數)
-//   vip          : Set<edgeId>           不能升 → hi=current
-//   protectedSet : Set<edgeId>           不能降 → lo=current
-//   clamp        : [min,max]             全域 [5,250]
-// conflict = lo>hi(紅線矛盾,夾在 current);frozen = lo>=hi(不進鄰域)。
+// §15.4 由紅線生成每條可動邊的整數權重界 [lo,hi]。
+//   rttFloor       : Map<edgeId, number>  RTT 推算的成本下限(caller 用其公式算好傳入,engine 不綁光纖常數)
+//   vip            : Set<edgeId>           不能升 → hi=current
+//   protectedSet   : Set<edgeId>           不能降 → lo=current
+//   clamp          : [min,max]             全域 [5,250]
+//   includeTransit : 是否把 transit ingress cost 也納入可動(選項 B)。transit 無 RTT 下限,
+//                    只夾 clamp;只動 e.cost(ingress),egress 由 buildAdjacency 固定 0(Type-2 語意)。
+// 不對稱補償:p2p 邊若有 costRev(!=null,依資料慣例即不對稱)→ 額外開「回程變數」key=`eid|rev`,
+//   讓去/回各自獨立調;對稱邊只有去程變數 `eid`(行為與舊版完全相同)。
+// 紅線(rttFloor/vip/protected)以 edge 為單位,去回兩方向共用同一組界。
+// conflict = lo>hi(紅線矛盾,夾在 current);frozen = lo>=hi(不進鄰域)。key 為權重變數鍵。
 export function buildWeightBounds(topo, {
   rttFloor = new Map(), vip = new Set(), protectedSet = new Set(), clamp = [5, 250],
+  includeTransit = false,
 } = {}) {
   const [cmin, cmax] = clamp;
   const bounds = new Map();
-  for (const e of topo.edges) {
-    if (e.type !== 'p2p') continue;
-    const cur = e.cost;
-    let lo = Math.max(cmin, Math.ceil(rttFloor.get(e.id) ?? cmin),
-                      protectedSet.has(e.id) ? cur : cmin);
-    let hi = Math.min(cmax, vip.has(e.id) ? cur : cmax);
+  const setBound = (key, edgeId, cur) => {
+    let lo = Math.max(cmin, Math.ceil(rttFloor.get(edgeId) ?? cmin),
+                      protectedSet.has(edgeId) ? cur : cmin);
+    let hi = Math.min(cmax, vip.has(edgeId) ? cur : cmax);
     const conflict = lo > hi;
     if (conflict) { lo = hi = cur; }
     const frozen = lo >= hi;
-    bounds.set(e.id, { lo, hi, frozen, conflict, current: cur });
+    bounds.set(key, { lo, hi, frozen, conflict, current: cur });
+  };
+  for (const e of topo.edges) {
+    const tunable = e.type === 'p2p' || (e.type === 'transit' && includeTransit);
+    if (!tunable) continue;
+    setBound(e.id, e.id, e.cost);                       // 去程 / 對稱
+    // 僅「真正不對稱」(costRev 存在且 != cost)才開回程變數。注意:套用後對稱邊會被寫
+    // costRev=cost,用 !=cost 過濾可避免那種退化值污染成假的不對稱邊。
+    if (e.type === 'p2p' && e.costRev != null && e.costRev !== e.cost) {
+      setBound(e.id + '|rev', e.id, e.costRev);
+    }
   }
   return bounds;
 }
@@ -751,33 +790,40 @@ export function optimizeWeights(topo, demand, bounds, opts = {}) {
     steps = [1, 2, 4], tabuTenure = 0, stallK = 8, diversifyM = 0,
     maxIters = 300, seed = 1, failedEdges = new Set(), failedNodes = new Set(),
     // 封住最壞情況(尤其無解時不空轉到底),避免單執行緒整片凍結。詳見 SPEC §15.6 / §13。
-    //   maxEvals    主限制器,計「鄰域評估次數」— 確定性(同 seed/同圖 → 同結果),runtime 隨機器變但有界
+    //   maxEvals    主限制器,計「鄰域評估次數」— 確定性(同 seed/同圖 → 同結果),runtime 隨機器變但有界。
+    //               #1/#2 + 有向修正後單次評估 ~0.7ms(舊 ~2.5ms),預算由 1800 提至 6000:小圖因「達標即停」
+    //               多半用不到,純為較大圖留收斂空間;6000×0.7ms ≈ 4s 上限,仍受 timeBudgetMs 兜底。
     //   timeBudgetMs 僅作脫韁保險,設大(正常 POC 規模不會觸發,故不破壞確定性);大圖請改用 Web Worker
     //   stopAfter   全域最佳長期停滯即收手
-    maxEvals = 1800, timeBudgetMs = 15000, stopAfter = 0,
+    maxEvals = 6000, timeBudgetMs = 15000, stopAfter = 0,
   } = opts;
   const rng = mulberry32(seed);
   const EPS = 1e-9;
   const t0 = Date.now();
 
-  const p2p = topo.edges.filter(e => e.type === 'p2p' && bounds.has(e.id));
-  const movable = p2p.filter(e => !bounds.get(e.id).frozen).map(e => e.id);
+  // 可動「權重變數」= bounds 的所有 key(p2p 去程 `eid`、不對稱邊回程 `eid|rev`、transit ingress)
+  const edgeById = new Map(topo.edges.map(e => [e.id, e]));
+  const varEdgeId = (key) => key.endsWith('|rev') ? key.slice(0, -4) : key;
+  const varCap = (key) => edgeById.get(varEdgeId(key))?.capacity ?? 1;
+  const vars = [...bounds.keys()];
+  const movable = vars.filter(k => !bounds.get(k).frozen);
   const clampTo = (id, w) => {
     const b = bounds.get(id);
     return Math.max(b.lo, Math.min(b.hi, w));
   };
   const tenure = tabuTenure || Math.max(5, Math.round(Math.sqrt(movable.length || 1)));
   const divM = diversifyM || Math.max(1, Math.round(movable.length * 0.2));
-  const maxCap = Math.max(1, ...p2p.map(x => (x.capacity ?? 1)));
+  const maxCap = Math.max(1, ...vars.map(varCap));
 
-  // 初始權重:warm = 現網 cost 投影進界;invcap = round(maxCap/cap) 投影進界
+  // 初始權重:warm = 該變數現值(去程=cost、回程=costRev,buildWeightBounds 已存於 b.current);
+  //          invcap = round(maxCap/cap) 投影進界
   const W = new Map();
-  for (const e of p2p) {
-    const b = bounds.get(e.id);
-    if (b.frozen) { W.set(e.id, b.lo); continue; }
-    const cap = e.capacity ?? 1;
-    const raw = init === 'invcap' ? Math.round(maxCap / (cap > 0 ? cap : 1)) : e.cost;
-    W.set(e.id, clampTo(e.id, raw));
+  for (const key of vars) {
+    const b = bounds.get(key);
+    if (b.frozen) { W.set(key, b.lo); continue; }
+    const cap = varCap(key);
+    const raw = init === 'invcap' ? Math.round(maxCap / (cap > 0 ? cap : 1)) : b.current;
+    W.set(key, clampTo(key, raw));
   }
 
   // 目標:字典序 (MLU, S);S 由 tieBreak 決定(auto = 可行區 u² / 超載區 phi)
@@ -848,6 +894,8 @@ export function optimizeWeights(topo, demand, bounds, opts = {}) {
         W.set(id, b.lo + Math.floor(rng() * (b.hi - b.lo + 1)));
       }
       curEval = evalW(W);
+      // 多樣化點本身可能就比 best 好(且自身為局部極小、鄰居更差)→ 直接比一次,避免漏記
+      if (better(curEval, bestEval)) { best = new Map(W); bestEval = curEval; noImprove = 0; }
       stall = 0;
     }
     history.push({ iter, mlu: curEval.mlu, s: Sof(curEval) });
@@ -859,28 +907,29 @@ export function optimizeWeights(topo, demand, bounds, opts = {}) {
     .filter(([, u]) => Math.abs(u - bestEval.mlu) < 1e-6)
     .map(([id]) => id);
 
-  // 無解(MLU≥1)時:逐條 p2p 邊試把界外放鬆一步,排「鬆哪條紅線 MLU 降最多」
+  // 無解(MLU≥1)時:逐個權重變數試把界外放鬆一步,排「鬆哪條紅線 MLU 降最多」
   let binding = [];
   if (!feasible) {
-    for (const e of p2p) {
-      const b = bounds.get(e.id), w0 = best.get(e.id), trials = [];
+    for (const key of vars) {
+      const b = bounds.get(key), w0 = best.get(key), trials = [];
       for (const w of [w0 - 1, w0 + 1]) {
         if (w < 5 || w > 250) continue;
         if (w >= b.lo && w <= b.hi) continue;    // 仍在界內 → 不算放鬆紅線
-        const tw = new Map(best); tw.set(e.id, w);
+        const tw = new Map(best); tw.set(key, w);
         trials.push({ w, mlu: evalW(tw).mlu });
       }
       if (trials.length) {
         const bt = trials.reduce((m, t) => (t.mlu < m.mlu ? t : m));
         const gain = bestEval.mlu - bt.mlu;
-        if (gain > 1e-6) binding.push({ edgeId: e.id, relaxTo: bt.w, mluAfter: bt.mlu, gain });
+        // edgeId 回報實體邊(去掉 |rev),dir 標方向,供 UI 顯示
+        if (gain > 1e-6) binding.push({ edgeId: varEdgeId(key), dir: key.endsWith('|rev') ? 'rev' : 'fwd', relaxTo: bt.w, mluAfter: bt.mlu, gain });
       }
     }
     binding.sort((a, b) => b.gain - a.gain);
     binding = binding.slice(0, 5);
   }
 
-  const frozen = p2p.filter(e => bounds.get(e.id).frozen).map(e => e.id);
+  const frozen = vars.filter(k => bounds.get(k).frozen);
   return {
     weights: best, mlu: bestEval.mlu, sumU2: bestEval.sumU2, sumPhi: bestEval.sumPhi,
     util: bestEval.util, feasible, targetMet, target,

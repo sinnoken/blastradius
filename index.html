@@ -399,14 +399,17 @@
 
       <div class="mt-3 border-t border-gray-200 pt-2">
         <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
-        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率 (MLU)</b>。MLU 計入<b>所有有容量的邊(含 transit/LAN 段)</b>,口徑與「邊流量」視圖一致(較忙方向)。約束:RTT 下限 + 整數 [5,250](VIP / 保護紅線之後加)。預設只調 p2p 權重;勾選下方可一併調 transit 介面成本(否則 transit 段靠重繞間接分流)。需 demand.js + 鏈路 capacity。算完先預覽,確認再套用。</div>
+        <div class="hint">自動搜尋 OSPF 權重壓低<b>最大鏈路利用率 (MLU)</b>,口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,250]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。</div>
         <div class="grid grid-cols-[1fr_auto] gap-2 mt-2 items-end">
           <div><label class="label-sm">目標 MLU (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="目標最大利用率(%)" /></div>
           <button class="btn-primary !w-auto px-3" id="runOptimize" data-action="runOptimize">最佳化</button>
         </div>
-        <label class="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-600 cursor-pointer">
-          <input type="checkbox" id="optTransit" />
-          也調 transit 介面成本(B)<span class="text-gray-400">— 額外搜尋,只保留更好的結果</span>
+        <div class="mt-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">進階選項<span class="font-normal normal-case tracking-normal text-gray-400"> — 勾選會額外搜尋,只保留更好的結果</span></div>
+        <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
+          <input type="checkbox" id="optAsym" /> 允許不對稱權重(去/回獨立)
+        </label>
+        <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
+          <input type="checkbox" id="optTransit" /> 也調 transit 介面成本
         </label>
         <div id="optimize-result" class="mt-2"></div>
       </div>
@@ -2182,7 +2185,9 @@ const C10_Edges = (() => {
 
     const cleanEdges = topo.edges.map(e => {
       const out = { ...e };
-      if (out.costRev != null && out.costRev === out.cost) delete out.costRev;
+      // 對稱即不寫 costRev:null/undefined(reset 殘留)或 == cost(apply 殘留)都刪,
+      // 只保留「真正不對稱」的 costRev,避免匯出 `costRev: undefined` 或多餘的退化值。
+      if (out.costRev == null || out.costRev === out.cost) delete out.costRev;
       return out;
     });
 
@@ -2232,7 +2237,9 @@ ${posStr}
     for (const orig of originalEdges) {
       const e = edgeById.get(orig.id);
       e.cost = orig.cost;
-      e.costRev = orig.costRev;
+      // 原本無 costRev(對稱)→ 刪鍵還原結構,別寫成 costRev:undefined
+      if (orig.costRev == null) delete e.costRev;
+      else e.costRev = orig.costRev;
       paintEdgeLabels(orig.id, e);
     }
     render();
@@ -2276,20 +2283,22 @@ ${posStr}
     }
     // vip / protectedSet 保留(空集)→ 實際約束 = RTT 下限 + [5,250]
     const before = evalCongestion(topology, demand);
-    // 一律先跑 p2p-only(A);若勾選也跑含 transit(B),保留較好者 —— 永不更差保證
-    // (B 在固定評估預算下變數變多、搜得更淺,可能落在更差局部最優,故以 A 兜底)
-    const rA = optimizeWeights(topology, demand,
-      buildWeightBounds(topology, { rttFloor }), { init: 'warm', target, seed: 1 });
+    // 永不更差保證:一律先跑「基準」(現況預設);若有勾任何進階選項,額外跑「選用設定」,取較好者。
+    // (進階選項放大搜尋空間,在固定預算下變數變多可能搜得更淺、落在更差局部最優,故以基準兜底)
+    const opt = { init: 'warm', target, seed: 1 };
+    const rBase = optimizeWeights(topology, demand, buildWeightBounds(topology, { rttFloor }), opt);
+    const wantAsym = !!dom('optAsym')?.checked;
     const wantTransit = !!dom('optTransit')?.checked;
-    let r = rA, transitNote = '';
-    if (wantTransit) {
-      const rB = optimizeWeights(topology, demand,
-        buildWeightBounds(topology, { rttFloor, includeTransit: true }), { init: 'warm', target, seed: 1 });
-      if (rB.mlu < rA.mlu - 1e-9) {
-        r = rB;
-        transitNote = `<div class="hint mt-1" style="color:#166534">含 transit 調整有助益:MLU ${(rA.mlu * 100).toFixed(1)}% → ${(rB.mlu * 100).toFixed(1)}%(已採用含 transit 結果)。</div>`;
+    let r = rBase, transitNote = '';
+    if (wantAsym || wantTransit) {
+      const rSel = optimizeWeights(topology, demand,
+        buildWeightBounds(topology, { rttFloor, asymmetric: wantAsym, includeTransit: wantTransit }), opt);
+      const optNames = [wantAsym && '不對稱', wantTransit && 'transit'].filter(Boolean).join(' + ');
+      if (rSel.mlu < rBase.mlu - 1e-9) {
+        r = rSel;
+        transitNote = `<div class="hint mt-1" style="color:#166534">進階選項(${optNames})有助益:MLU ${(rBase.mlu * 100).toFixed(1)}% → ${(rSel.mlu * 100).toFixed(1)}%(已採用)。</div>`;
       } else {
-        transitNote = `<div class="hint mt-1" style="color:#854d0e">含 transit 無增益(p2p 已達 ${(rA.mlu * 100).toFixed(1)}%),採 p2p-only 結果。</div>`;
+        transitNote = `<div class="hint mt-1" style="color:#854d0e">進階選項(${optNames})無增益(基準已達 ${(rBase.mlu * 100).toFixed(1)}%),採基準結果。</div>`;
       }
     }
     lastOpt = r;
@@ -2339,21 +2348,32 @@ ${posStr}
       html += '<div class="hint mt-2">現網權重已是約束內最佳,無需調整。</div>';
     } else {
       html += '<table class="mt-2"><tr><th>連接</th><th>舊→新</th><th>util 前→後</th></tr>';
-      // util 以實體邊為單位(峰值),故用 varEid 解析;不對稱邊標去/回
-      changed.sort((a, b) => (r.util[varEid(b[0])] || 0) - (r.util[varEid(a[0])] || 0));
+      // 依實體邊聚合:不對稱邊的去(eid)/回(eid|rev)合併成「一條邊一列」,不再同邊兩列
+      const byEdge = new Map();
       for (const [key, w] of changed) {
-        const isRev = key.endsWith('|rev');
-        const eid = varEid(key);
-        const e = edgeById.get(eid);
+        const isRev = key.endsWith('|rev'), eid = varEid(key), e = edgeById.get(eid);
         const oldVal = isRev ? (e.costRev ?? e.cost) : e.cost;
-        // 只在這條邊真的有回程變數時才標「(去)」;退化的 costRev==cost 不算不對稱
-        const dir = isRev ? ' <span class="cell-sub">(回)</span>'
-          : (r.weights.has(eid + '|rev') ? ' <span class="cell-sub">(去)</span>' : '');
+        const slot = byEdge.get(eid) || {};
+        slot[isRev ? 'rev' : 'fwd'] = [oldVal, w];
+        byEdge.set(eid, slot);
+      }
+      const rows = [...byEdge.entries()].sort((a, b) => (r.util[b[0]] || 0) - (r.util[a[0]] || 0));
+      for (const [eid, slot] of rows) {
+        const e = edgeById.get(eid);
+        const fmt = ([o, n]) => `${o} → ${n}`;
+        let costCell;
+        if (r.weights.has(eid + '|rev')) {   // 此邊不對稱處理 → 顯示去/回(未改的那向標「不變」)
+          const fwd = slot.fwd ? fmt(slot.fwd) : `${e.cost}<span class="cell-sub">(不變)</span>`;
+          const rev = slot.rev ? fmt(slot.rev) : `${e.costRev ?? e.cost}<span class="cell-sub">(不變)</span>`;
+          costCell = `<span class="cell-sub">去</span> ${fwd} <span class="cell-sub">· 回</span> ${rev}`;
+        } else {
+          costCell = fmt(slot.fwd);          // 對稱:單值
+        }
         const ub = before.util[eid], ua = r.util[eid];
         const ubS = ub != null ? (ub * 100).toFixed(0) + '%' : '—';
         const uaS = ua != null ? (ua * 100).toFixed(0) + '%' : '—';
-        html += `<tr><td title="${eid}">${e.source} ↔ ${e.target}${dir}</td>
-          <td class="num-em">${oldVal} → ${w}</td>
+        html += `<tr><td title="${eid}">${e.source} ↔ ${e.target}</td>
+          <td class="num-em">${costCell}</td>
           <td>${ubS} → ${uaS}</td></tr>`;
       }
       html += '</table>';
@@ -2374,7 +2394,8 @@ ${posStr}
       if (!e) continue;
       if (e.type === 'p2p') {
         e.cost = w;
-        if (!lastOpt.weights.has(key + '|rev')) e.costRev = w;   // 對稱邊:回程跟去程一致
+        // 對稱邊(無回程變數):刪 costRev 保持對稱結構乾淨,不要寫 costRev=cost 製造退化值
+        if (!lastOpt.weights.has(key + '|rev')) delete e.costRev;
       } else if (e.type === 'transit') {
         e.cost = w;                                      // 只動 ingress;egress 由路由層固定 0
       } else continue;

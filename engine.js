@@ -739,13 +739,13 @@ export function applyWeights(topo, weights) {
 //   clamp          : [min,max]             全域 [5,250]
 //   includeTransit : 是否把 transit ingress cost 也納入可動(選項 B)。transit 無 RTT 下限,
 //                    只夾 clamp;只動 e.cost(ingress),egress 由 buildAdjacency 固定 0(Type-2 語意)。
-// 不對稱補償:p2p 邊若有 costRev(!=null,依資料慣例即不對稱)→ 額外開「回程變數」key=`eid|rev`,
-//   讓去/回各自獨立調;對稱邊只有去程變數 `eid`(行為與舊版完全相同)。
-// 紅線(rttFloor/vip/protected)以 edge 為單位,去回兩方向共用同一組界。
+//   asymmetric     : 不對稱 opt-in。關(預設)→ 僅「資料本來就不對稱」(costRev!=null && !=cost)的 p2p
+//                    邊開回程變數(= 現況)。開 → 全部 p2p 邊都開回程變數(去/回獨立,現值 costRev??cost)。
+// 回程變數 key=`eid|rev`;對稱邊只有去程變數 `eid`。紅線(rttFloor/vip/protected)以 edge 為單位,去回共用。
 // conflict = lo>hi(紅線矛盾,夾在 current);frozen = lo>=hi(不進鄰域)。key 為權重變數鍵。
 export function buildWeightBounds(topo, {
   rttFloor = new Map(), vip = new Set(), protectedSet = new Set(), clamp = [5, 250],
-  includeTransit = false,
+  includeTransit = false, asymmetric = false,
 } = {}) {
   const [cmin, cmax] = clamp;
   const bounds = new Map();
@@ -762,11 +762,10 @@ export function buildWeightBounds(topo, {
     const tunable = e.type === 'p2p' || (e.type === 'transit' && includeTransit);
     if (!tunable) continue;
     setBound(e.id, e.id, e.cost);                       // 去程 / 對稱
-    // 僅「真正不對稱」(costRev 存在且 != cost)才開回程變數。注意:套用後對稱邊會被寫
-    // costRev=cost,用 !=cost 過濾可避免那種退化值污染成假的不對稱邊。
-    if (e.type === 'p2p' && e.costRev != null && e.costRev !== e.cost) {
-      setBound(e.id + '|rev', e.id, e.costRev);
-    }
+    // 開回程變數:opt-in 全開,或「資料本來就不對稱」(costRev 存在且 != cost)。後者用 !=cost
+    // 過濾可避免套用後對稱邊被寫 costRev=cost 的退化值污染成假不對稱。
+    const wantRev = e.type === 'p2p' && (asymmetric || (e.costRev != null && e.costRev !== e.cost));
+    if (wantRev) setBound(e.id + '|rev', e.id, e.costRev ?? e.cost);
   }
   return bounds;
 }

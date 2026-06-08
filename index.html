@@ -208,9 +208,13 @@
      故 @layer base 的 table 規則不覆蓋,留在此 unlayered 區一次定義。 */
   .matrix-cell { text-align:center; font-weight:600; cursor:pointer; }
 
-  /* C2 非對稱格:紫色內框。用 box-shadow inset 而非 border —— 不進 box model、
-     不影響 border-collapse 合併邊框、不造成密排矩陣位移。選取態的 outline 走不同屬性,兩者可共存。 */
-  .matrix-asym { box-shadow: inset 0 0 0 2px #a855f7; }
+  /* C2 非對稱格:紫色斜紋疊在 cost 階底色上。用 background-image 疊加(半透明),
+     不蓋掉 .cost-t{n} 的底色(底色仍編碼成本)、不進 box model、不影響 border-collapse、密排不位移。
+     本規則須排在 .cost-t{n} 之後,其斜紋才能蓋過 shorthand `background` 隱含的 image:none。 */
+  .matrix-asym {
+    background-image: repeating-linear-gradient(45deg,
+      transparent 0 5px, rgba(124,58,237,.28) 5px 7px);
+  }
 
   /* C2 矩陣 11 欄密排:字級沿用 base table 的 text-xs(12px,貼齊其他表格),
      僅壓縮 cell 左右 padding(base px-2=8px → 4px)抵銷變寬。角落格 inline padding:0 不受影響。 */
@@ -354,8 +358,8 @@
           <span><b>&gt;100</b> — 多段跨洋</span>
           <span class="text-center font-bold text-blue-800">²</span>
           <span>= 等成本路徑數(ECMP)</span>
-          <span class="inline-block w-3.5 h-3.5 rounded-sm" style="box-shadow:inset 0 0 0 2px #a855f7"></span>
-          <span>= 來回路徑非對稱(紫框)</span>
+          <span class="inline-block w-3.5 h-3.5 rounded-sm" style="background-image:repeating-linear-gradient(45deg,transparent 0 3px,rgba(124,58,237,.5) 3px 5px);border:1px solid #e5e7eb"></span>
+          <span>= 來回路徑非對稱(斜紋)</span>
         </div>
       </div>
       <button class="btn-primary mt-2" id="runMatrix" data-action="runMatrix">重新計算</button>
@@ -1122,7 +1126,7 @@ const C2_Matrix = (() => {
         const t = tierFor(cell.cost);
         const ecmp = cell.edgePaths.length;   // 平行等價鏈路也計入 ECMP 多重度
         const ecmpSup = ecmp >= 2 ? `<sup style="color:#1e40af">${ecmp >= 10 ? ecmp : ['','','²','³','⁴','⁵','⁶','⁷','⁸','⁹'][ecmp]}</sup>` : '';
-        // 非對稱:跟鏡像格 cost 不同 → 整格紫色內框(class matrix-asym,box-shadow inset,不佔 box 不位移)
+        // 非對稱:跟鏡像格 cost 不同 → 整格疊紫色斜紋(class matrix-asym,background-image 半透明,不蓋 cost 底色、不位移)
         const mirror = matrix[b] && matrix[b][a];
         const asymCls = mirror && mirror.cost !== Infinity && mirror.cost !== cell.cost
           ? ' matrix-asym' : '';

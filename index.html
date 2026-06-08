@@ -404,6 +404,10 @@
           <div><label class="label-sm">目標 MLU (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="目標最大利用率(%)" /></div>
           <button class="btn-primary !w-auto px-3" id="runOptimize" data-action="runOptimize">最佳化</button>
         </div>
+        <label class="flex items-center gap-1.5 mt-1.5 text-[11px] text-gray-600 cursor-pointer">
+          <input type="checkbox" id="optTransit" />
+          也調 transit 介面成本(B)<span class="text-gray-400">— 額外搜尋,只保留更好的結果</span>
+        </label>
         <div id="optimize-result" class="mt-2"></div>
       </div>
 
@@ -2268,9 +2272,23 @@ ${posStr}
       if (ref) rttFloor.set(e.id, ref.cost);
     }
     // vip / protectedSet 保留(空集)→ 實際約束 = RTT 下限 + [5,250]
-    const bounds = buildWeightBounds(topology, { rttFloor });
     const before = evalCongestion(topology, demand);
-    const r = optimizeWeights(topology, demand, bounds, { init: 'warm', target, seed: 1 });
+    // 一律先跑 p2p-only(A);若勾選也跑含 transit(B),保留較好者 —— 永不更差保證
+    // (B 在固定評估預算下變數變多、搜得更淺,可能落在更差局部最優,故以 A 兜底)
+    const rA = optimizeWeights(topology, demand,
+      buildWeightBounds(topology, { rttFloor }), { init: 'warm', target, seed: 1 });
+    const wantTransit = !!dom('optTransit')?.checked;
+    let r = rA, transitNote = '';
+    if (wantTransit) {
+      const rB = optimizeWeights(topology, demand,
+        buildWeightBounds(topology, { rttFloor, includeTransit: true }), { init: 'warm', target, seed: 1 });
+      if (rB.mlu < rA.mlu - 1e-9) {
+        r = rB;
+        transitNote = `<div class="hint mt-1" style="color:#166534">含 transit 調整有助益:MLU ${(rA.mlu * 100).toFixed(1)}% → ${(rB.mlu * 100).toFixed(1)}%(已採用含 transit 結果)。</div>`;
+      } else {
+        transitNote = `<div class="hint mt-1" style="color:#854d0e">含 transit 無增益(p2p 已達 ${(rA.mlu * 100).toFixed(1)}%),採 p2p-only 結果。</div>`;
+      }
+    }
     lastOpt = r;
 
     const changed = [...r.weights].filter(([id]) => {
@@ -2286,6 +2304,7 @@ ${posStr}
     </div>
     <div class="info-card"><div class="label">profile · 迭代 · 改動 · 耗時</div>
       <div class="value">${profLabel} · ${r.iterations} 輪 · ${changed.length} 條 · ${r.elapsedMs}ms</div></div>`;
+    html += transitNote;
 
     // 瓶頸若落在 transit/LAN 段:優化器只能靠 p2p 重繞間接分流,無法直接調其 cost(出向 Type-2 固定 0)
     const transitBn = r.bottleneck.filter(id => edgeById.get(id)?.type === 'transit');
@@ -2330,9 +2349,10 @@ ${posStr}
     if (!lastOpt) return;
     for (const [id, w] of lastOpt.weights) {
       const e = edgeById.get(id);
-      if (!e || e.type !== 'p2p') continue;
-      e.cost = w;
-      e.costRev = w;
+      if (!e) continue;
+      if (e.type === 'p2p') { e.cost = w; e.costRev = w; }
+      else if (e.type === 'transit') { e.cost = w; }   // 只動 ingress;egress 由路由層固定 0
+      else continue;
       paintEdgeLabels(id, e);
     }
     render();                 // 重繪編輯表(成本欄 / modified / RTT 旗標)

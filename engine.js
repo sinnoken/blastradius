@@ -56,14 +56,49 @@ export function buildPrefixIndex(topo) {
   return idx;
 }
 
+// ── 二元最小堆(#2)──────────────────────────────────────────────────────
+// 取代舊版「每次 pop 都 pq.sort() + O(n) shift()」的劣化 PQ。
+// 元素 = [dist, seq, node]:先比 dist,平手比 seq(插入序)。seq 這個 tiebreak 讓
+// 等距節點的彈出順序 = 舊版「stable sort + shift front」(= 插入序 FIFO)完全一致,
+// 因此 preds 累積順序、進而所有路徑陣列的順序都與舊版 byte-identical。
+function heapPush(h, item) {
+  h.push(item);
+  let i = h.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (h[p][0] < h[i][0] || (h[p][0] === h[i][0] && h[p][1] <= h[i][1])) break;
+    const t = h[p]; h[p] = h[i]; h[i] = t;
+    i = p;
+  }
+}
+function heapPop(h) {
+  const top = h[0];
+  const last = h.pop();
+  if (h.length) {
+    h[0] = last;
+    let i = 0;
+    const n = h.length;
+    for (;;) {
+      const l = 2 * i + 1, r = 2 * i + 2;
+      let s = i;
+      if (l < n && (h[l][0] < h[s][0] || (h[l][0] === h[s][0] && h[l][1] < h[s][1]))) s = l;
+      if (r < n && (h[r][0] < h[s][0] || (h[r][0] === h[s][0] && h[r][1] < h[s][1]))) s = r;
+      if (s === i) break;
+      const t = h[s]; h[s] = h[i]; h[i] = t;
+      i = s;
+    }
+  }
+  return top;
+}
+
 // Dijkstra 距離表 — 從 src 出發,回傳 { nodeId: cost } 到所有可達節點
 export function dijkstraDist(adj, src) {
   const dist = { [src]: 0 };
   const visited = new Set();
-  const pq = [[0, src]];
-  while (pq.length) {
-    pq.sort((a, b) => a[0] - b[0]);
-    const [d, u] = pq.shift();
+  const h = []; let seq = 0;
+  heapPush(h, [0, seq++, src]);
+  while (h.length) {
+    const [d, , u] = heapPop(h);
     if (visited.has(u)) continue;
     visited.add(u);
     if (!adj[u]) continue;
@@ -71,7 +106,7 @@ export function dijkstraDist(adj, src) {
       const nd = d + c;
       if (dist[v] === undefined || nd < dist[v]) {
         dist[v] = nd;
-        pq.push([nd, v]);
+        heapPush(h, [nd, seq++, v]);
       }
     }
   }
@@ -88,15 +123,19 @@ export function dijkstraDist(adj, src) {
 // 關鍵:preds 改記 (前驅節點, edgeId) tuple 而非單純節點。兩條平行等價鏈路
 // e1/e2 會各自成為一筆 pred,enumerate 因此展開成兩條 edge-distinct 路徑 —
 // ECMP 多重度、邊高亮、負載平分才會把平行鏈路算成兩條,而不是塌成一條。
-export function dijkstraECMP(adj, src, dst) {
+// §4.1 單源 ECMP 一次掃(#1)— 從 src 出發,一次算出到「所有」節點的 dist + preds。
+// 全對計算(matrix / load / traffic / nodeBC / N-1 / asym)原本對每個 (a,b) 各跑一次
+// Dijkstra,等於把同一個來源 a 重跑 V−1 次。改成每個來源只跑一次、再對各目的地展開,
+// Dijkstra 呼叫數從 V·(V−1) 降到 V。preds 累積邏輯與舊版逐字相同(等距 append、平行鏈路不去重)。
+export function dijkstraSource(adj, src) {
   const dist  = { [src]: 0 };
   const preds = {};               // preds[v] = [{ u, id }, ...]
   const visited = new Set();
-  const pq = [[0, src]];
+  const h = []; let seq = 0;
+  heapPush(h, [0, seq++, src]);
 
-  while (pq.length) {
-    pq.sort((a,b) => a[0] - b[0]);
-    const [d, u] = pq.shift();
+  while (h.length) {
+    const [d, , u] = heapPop(h);
     if (visited.has(u)) continue;
     visited.add(u);
     if (!adj[u]) continue;
@@ -105,15 +144,20 @@ export function dijkstraECMP(adj, src, dst) {
       if (dist[v] === undefined || nd < dist[v]) {
         dist[v] = nd;
         preds[v] = [{ u, id }];
-        pq.push([nd, v]);
+        heapPush(h, [nd, seq++, v]);
       } else if (nd === dist[v]) {
         // 不去重:同一個 u 但不同 edgeId(平行鏈路)必須各記一筆
         preds[v].push({ u, id });
       }
     }
   }
-  if (dist[dst] === undefined) return { cost: Infinity, paths: [], edgePaths: [] };
+  return { dist, preds };
+}
 
+// §4.2 從共用的 { dist, preds } 還原 src→dst 的所有等價路徑。
+// 與舊版 enumerate 遞迴邏輯逐字相同,只是 preds 改由 dijkstraSource 一次算好共用。
+export function enumeratePaths(dist, preds, src, dst) {
+  if (dist[dst] === undefined) return { cost: Infinity, paths: [], edgePaths: [] };
   const enumerate = (node) => {
     if (node === src) return [{ nodes: [src], edges: [] }];
     if (!preds[node]) return [];
@@ -131,6 +175,13 @@ export function dijkstraECMP(adj, src, dst) {
     paths: full.map(f => f.nodes),
     edgePaths: full.map(f => f.edges),
   };
+}
+
+// 單對 ECMP — 維持原 API(單次呼叫,行為與結果不變);內部 = 單源一次 + 對 dst 展開。
+// 全對熱路徑請直接用 dijkstraSource + enumeratePaths,避免每個目的地重跑單源。
+export function dijkstraECMP(adj, src, dst) {
+  const { dist, preds } = dijkstraSource(adj, src);
+  return enumeratePaths(dist, preds, src, dst);
 }
 
 // §4.3 移除 pseudo-node 後處理
@@ -222,10 +273,11 @@ export function allPairsLoad(topo, failedEdges = new Set(), failedNodes = new Se
   const lostPairs = [];
   let totalPairs = 0;
   for (const a of routers) {
+    const { dist, preds } = dijkstraSource(adj, a);   // 每個來源只算一次(#1)
     for (const b of routers) {
       if (a === b) continue;
       totalPairs++;
-      const r = dijkstraECMP(adj, a, b);
+      const r = enumeratePaths(dist, preds, a, b);
       if (r.cost === Infinity || r.edgePaths.length === 0) {
         lostPairs.push({ a, b });
         continue;
@@ -262,6 +314,7 @@ export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNod
   let totalPairs = 0, reachablePairs = 0;
   let totalDemand = 0, servedDemand = 0;
   for (const a of allRouters) {
+    let srcData = null;   // lazy:第一個非失效目的地才算單源(失效來源完全跳過)
     for (const b of allRouters) {
       if (a === b) continue;
       totalPairs++;
@@ -271,7 +324,8 @@ export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNod
         if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'endpoint-down' });
         continue;
       }
-      const r = dijkstraECMP(adj, a, b);
+      if (!srcData) srcData = dijkstraSource(adj, a);   // 每個來源只算一次(#1)
+      const r = enumeratePaths(srcData.dist, srcData.preds, a, b);
       if (r.cost === Infinity || r.edgePaths.length === 0) {
         if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'no-path' });
         continue;
@@ -310,10 +364,11 @@ export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new S
   const lostPairs = [];
   let totalPairs = 0;
   for (const a of routers) {
+    const { dist, preds } = dijkstraSource(adj, a);   // 每個來源只算一次(#1)
     for (const b of routers) {
       if (a === b) continue;
       totalPairs++;
-      const r = dijkstraECMP(adj, a, b);
+      const r = enumeratePaths(dist, preds, a, b);
       if (r.cost === Infinity || r.paths.length === 0) {
         lostPairs.push({ a, b });
         continue;
@@ -440,12 +495,15 @@ export function ecmpBackupScanAll(topo) {
 export function detectAsymmetric(topo) {
   const adj = buildAdjacency(topo.edges);
   const routers = topo.nodes.filter(n => n.type === 'router').map(n => n.id);
+  // 每個 router 當來源只算一次單源(#1),雙向比對直接從共用 preds 展開
+  const srcData = {};
+  for (const r of routers) srcData[r] = dijkstraSource(adj, r);
   const asym = [];
   for (let i = 0; i < routers.length; i++) {
     for (let j = i+1; j < routers.length; j++) {
       const a = routers[i], b = routers[j];
-      const fwd = dijkstraECMP(adj, a, b);
-      const rev = dijkstraECMP(adj, b, a);
+      const fwd = enumeratePaths(srcData[a].dist, srcData[a].preds, a, b);
+      const rev = enumeratePaths(srcData[b].dist, srcData[b].preds, b, a);
       if (fwd.cost === Infinity || rev.cost === Infinity) continue;
       const fwdSet = new Set(fwd.paths.map(p => stripPseudo(p).join('>')));
       const revSet = new Set(rev.paths.map(p => stripPseudo(p).slice().reverse().join('>')));
@@ -498,9 +556,10 @@ export function computeN1WorstCase(topo) {
   const baseCost = {};
   for (const a of routers) {
     baseCost[a] = {};
+    const { dist } = dijkstraSource(baseAdj, a);   // 只需 cost → 單源 dist 直接取,免展開路徑(#1)
     for (const b of routers) {
       if (a === b) continue;
-      baseCost[a][b] = dijkstraECMP(baseAdj, a, b).cost;
+      baseCost[a][b] = dist[b] ?? Infinity;
     }
   }
 
@@ -533,12 +592,12 @@ export function computeN1WorstCase(topo) {
 
     for (const a of routers) {
       if (fN.has(a)) continue;
+      const { dist } = dijkstraSource(adj, a);   // 只需 cost → 單源 dist 直接取(#1)
       for (const b of routers) {
         if (a === b || fN.has(b)) continue;
         const base = baseCost[a][b];
         if (base === Infinity) continue;
-        const r = dijkstraECMP(adj, a, b);
-        const cost = r.cost;
+        const cost = dist[b] ?? Infinity;
         const key = a + '>' + b;
         if (!pairWorst[key]) {
           pairWorst[key] = { a, b, base, worstCost: base, culprits: [] };

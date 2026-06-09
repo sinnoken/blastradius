@@ -421,6 +421,9 @@
         </div>
         <div class="mt-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">進階選項<span class="font-normal normal-case tracking-normal text-gray-400"> — 勾選會額外搜尋,只保留更好的結果</span></div>
         <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
+          <input type="checkbox" id="optInvcap" /> 起點改用 InvCap(不勾為現網 warm)
+        </label>
+        <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
           <input type="checkbox" id="optAsym" /> 允許不對稱權重(去/回獨立)
         </label>
         <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
@@ -2306,15 +2309,19 @@ ${posStr}
     const before = evalCongestion(topology, demand);
     // 永不更差保證:一律先跑「基準」(現況預設);若有勾任何進階選項,額外跑「選用設定」,取較好者。
     // (進階選項放大搜尋空間,在固定預算下變數變多可能搜得更淺、落在更差局部最優,故以基準兜底)
+    // 基準一律 warm 起點(現網投影,最小擾動)→ 當「永不更差」地板。
     const opt = { init: 'warm', target, seed: 1 };
     const rBase = optimizeWeights(topology, demand, buildWeightBounds(topology, { rttFloor }), opt);
+    const wantInvcap = !!dom('optInvcap')?.checked;
     const wantAsym = !!dom('optAsym')?.checked;
     const wantTransit = !!dom('optTransit')?.checked;
     let r = rBase, transitNote = '';
-    if (wantAsym || wantTransit) {
+    if (wantInvcap || wantAsym || wantTransit) {
+      // 選用設定:勾 InvCap → 起點換 invcap(否則仍 warm);界依不對稱 / transit 放大。與基準取較好者。
       const rSel = optimizeWeights(topology, demand,
-        buildWeightBounds(topology, { rttFloor, asymmetric: wantAsym, includeTransit: wantTransit }), opt);
-      const optNames = [wantAsym && '不對稱', wantTransit && 'transit'].filter(Boolean).join(' + ');
+        buildWeightBounds(topology, { rttFloor, asymmetric: wantAsym, includeTransit: wantTransit }),
+        { ...opt, init: wantInvcap ? 'invcap' : 'warm' });
+      const optNames = [wantInvcap && 'InvCap 起點', wantAsym && '不對稱', wantTransit && 'transit'].filter(Boolean).join(' + ');
       if (rSel.mlu < rBase.mlu - 1e-9) {
         r = rSel;
         transitNote = `<div class="hint mt-1" style="color:#166534">進階選項(${optNames})有助益:MLU ${(rBase.mlu * 100).toFixed(1)}% → ${(rSel.mlu * 100).toFixed(1)}%(已採用)。</div>`;

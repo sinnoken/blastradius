@@ -414,7 +414,7 @@
 
       <div class="mt-3 border-t border-gray-200 pt-2">
         <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
-        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,250]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div></div>
+        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div></div>
         <div class="grid grid-cols-2 gap-2 mt-2 items-end">
           <div><label class="label-sm">目標利用率上限 (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)" /></div>
           <button class="btn-primary" id="runOptimize" data-action="runOptimize">最佳化</button>
@@ -2302,7 +2302,7 @@ ${posStr}
       const ref = edgeRef(e);
       if (ref) rttFloor.set(e.id, ref.cost);
     }
-    // vip / protectedSet 保留(空集)→ 實際約束 = RTT 下限 + [5,250]
+    // vip / protectedSet 保留(空集)→ 實際約束 = RTT 下限 + COST_CLAMP([5,500])
     const before = evalCongestion(topology, demand);
     // 永不更差保證:一律先跑「基準」(現況預設);若有勾任何進階選項,額外跑「選用設定」,取較好者。
     // (進階選項放大搜尋空間,在固定預算下變數變多可能搜得更淺、落在更差局部最優,故以基準兜底)

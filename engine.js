@@ -1,5 +1,5 @@
 // ============================================================================
-// BlastRadius Engine — Pure OSPF / SPT algorithms (§3–§10)
+// BlastRadius Engine — Pure OSPF / SPT algorithms (§3–§15,含 §6.2b/§6.3b 子節)
 // ============================================================================
 // 純函式層,不依賴 DOM / Cytoscape / 全域變數。所有狀態透過參數傳入。
 // 對應 SPEC.md §2 模組分層中的 Module B + Module C。
@@ -117,16 +117,11 @@ export function dijkstraDist(adj, src) {
 // §4 — SPT (Dijkstra + ECMP)
 // ============================================================================
 
-// 回傳 { cost, paths, edgePaths }:
-//   paths     — node 序列陣列(顯示 / BC / 對稱比對用)
-//   edgePaths — 與 paths 索引對齊的 edgeId 序列陣列(高亮 / 負載 / ECMP 計數用)
-// 關鍵:preds 改記 (前驅節點, edgeId) tuple 而非單純節點。兩條平行等價鏈路
-// e1/e2 會各自成為一筆 pred,enumerate 因此展開成兩條 edge-distinct 路徑 —
-// ECMP 多重度、邊高亮、負載平分才會把平行鏈路算成兩條,而不是塌成一條。
 // §4.1 單源 ECMP 一次掃(#1)— 從 src 出發,一次算出到「所有」節點的 dist + preds。
-// 全對計算(matrix / load / traffic / nodeBC / N-1 / asym)原本對每個 (a,b) 各跑一次
-// Dijkstra,等於把同一個來源 a 重跑 V−1 次。改成每個來源只跑一次、再對各目的地展開,
-// Dijkstra 呼叫數從 V·(V−1) 降到 V。preds 累積邏輯與舊版逐字相同(等距 append、平行鏈路不去重)。
+// 全對計算(matrix / load / traffic / nodeBC / N-1 / asym)原本對每個 (a,b) 各跑一次 Dijkstra,
+// 等於把同一個來源 a 重跑 V−1 次。改成每個來源只跑一次、再對各目的地展開,呼叫數從 V·(V−1) 降到 V。
+// 關鍵:preds 記 (前驅節點, edgeId) tuple 而非單純節點 — 兩條平行等價鏈路 e1/e2 各成一筆 pred,
+// 展開時才會算成兩條 edge-distinct 路徑(ECMP 多重度 / 邊高亮 / 負載平分不塌成一條)。等距 append、不去重。
 export function dijkstraSource(adj, src) {
   const dist  = { [src]: 0 };
   const preds = {};               // preds[v] = [{ u, id }, ...]
@@ -736,15 +731,20 @@ export function applyWeights(topo, weights) {
 //   rttFloor       : Map<edgeId, number>  RTT 推算的成本下限(caller 用其公式算好傳入,engine 不綁光纖常數)
 //   vip            : Set<edgeId>           不能升 → hi=current
 //   protectedSet   : Set<edgeId>           不能降 → lo=current
-//   clamp          : [min,max]             全域 [5,250]
+//   clamp          : [min,max]             全域 COST_CLAMP(預設 [5,500])
 //   includeTransit : 是否把 transit ingress cost 也納入可動(選項 B)。transit 無 RTT 下限,
 //                    只夾 clamp;只動 e.cost(ingress),egress 由 buildAdjacency 固定 0(Type-2 語意)。
 //   asymmetric     : 不對稱 opt-in。關(預設)→ 僅「資料本來就不對稱」(costRev!=null && !=cost)的 p2p
 //                    邊開回程變數(= 現況)。開 → 全部 p2p 邊都開回程變數(去/回獨立,現值 costRev??cost)。
 // 回程變數 key=`eid|rev`;對稱邊只有去程變數 `eid`。紅線(rttFloor/vip/protected)以 edge 為單位,去回共用。
 // conflict = lo>hi(紅線矛盾,夾在 current);frozen = lo>=hi(不進鄰域)。key 為權重變數鍵。
+// OSPF cost 夾值範圍(單一事實)— 優化器界與 binding 放鬆共用。上限 500(≈456ms / 45,000km),
+// 足以涵蓋任何單條跨洋電路,避免長鏈路 RTT 下限頂到天花板被 frozen(lo>hi),給優化器繞路調整空間;
+// 仍遠低於 OSPF 16-bit 上限(65535)。下限 5。註:此為「優化器可調範圍」,與 impliedCost 的 RTT 建議夾值無關。
+export const COST_CLAMP = [5, 500];
+
 export function buildWeightBounds(topo, {
-  rttFloor = new Map(), vip = new Set(), protectedSet = new Set(), clamp = [5, 250],
+  rttFloor = new Map(), vip = new Set(), protectedSet = new Set(), clamp = COST_CLAMP,
   includeTransit = false, asymmetric = false,
 } = {}) {
   const [cmin, cmax] = clamp;
@@ -912,7 +912,7 @@ export function optimizeWeights(topo, demand, bounds, opts = {}) {
     for (const key of vars) {
       const b = bounds.get(key), w0 = best.get(key), trials = [];
       for (const w of [w0 - 1, w0 + 1]) {
-        if (w < 5 || w > 250) continue;
+        if (w < COST_CLAMP[0] || w > COST_CLAMP[1]) continue;
         if (w >= b.lo && w <= b.hi) continue;    // 仍在界內 → 不算放鬆紅線
         const tw = new Map(best); tw.set(key, w);
         trials.push({ w, mlu: evalW(tw).mlu });

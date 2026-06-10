@@ -300,7 +300,7 @@
 
 <header class="bg-blue-900 text-white px-5 py-2 shadow-sm flex items-baseline gap-3 flex-wrap">
   <h1 class="text-sm font-semibold tracking-wide shrink-0">BlastRadius POC</h1>
-  <span class="text-xs text-blue-200">國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出</span>
+  <span class="text-xs text-blue-200" data-i18n="ui.subtitle">國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出</span>
 </header>
 
 <main class="flex-1 flex min-h-0">
@@ -308,44 +308,45 @@
   <!-- LEFT panel: controls (top) + reserved space (middle) + legend (bottom) -->
   <aside class="w-[200px] shrink-0 bg-white border-r border-gray-200 p-3.5 flex flex-col min-h-0">
     <div class="space-y-1.5">
-      <h2 class="section-h !mt-0">控制</h2>
-      <button class="btn-secondary" id="togglePseudo" data-action="togglePseudo"
-        title="Pseudo-node 是交換式網段的虛擬節點,用來表示多台 Router 共用同一個 LAN。隱藏後只顯示實體 Router。">隱藏 Pseudo-node</button>
-      <button class="btn-danger mt-1" id="clearFailed" data-action="clearFailed"
-        title="清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。">清除所有故障</button>
+      <h2 class="section-h !mt-0" data-i18n="ui.controls">控制</h2>
+      <button class="btn-secondary" id="togglePseudo" data-action="togglePseudo" data-i18n="ui.hidePseudo"
+        data-i18n-title="ui.togglePseudoTitle" title="Pseudo-node 是交換式網段的虛擬節點,用來表示多台 Router 共用同一個 LAN。隱藏後只顯示實體 Router。">隱藏 Pseudo-node</button>
+      <button class="btn-danger mt-1" id="clearFailed" data-action="clearFailed" data-i18n="ui.clearFailed"
+        data-i18n-title="ui.clearFailedTitle" title="清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。">清除所有故障</button>
       <div class="mt-2">
-        <label class="label-sm">流量情境</label>
+        <label class="label-sm" data-i18n="ui.demandProfile">流量情境</label>
         <select id="demandProfile" data-action="demandProfile" class="select-input"></select>
       </div>
-      <div class="text-[10px] text-gray-400 mt-1">右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版</div>
+      <div class="text-[10px] text-gray-400 mt-1" data-i18n="ui.interactionHint">右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版</div>
+      <button class="btn-secondary mt-1" id="langToggle" data-action="toggleLang" title="切換語言 / Switch language">中文</button>
     </div>
 
     <div class="flex-1"></div>
 
     <div>
-      <h2 class="section-h">圖例</h2>
+      <h2 class="section-h" data-i18n="ui.legend">圖例</h2>
       <div class="legend">
         <div class="legend-item"><span class="legend-dot"></span><span>Router</span></div>
         <div class="legend-item"><span class="legend-dot pseudo"></span><span>Pseudo-node</span></div>
-        <div class="legend-item"><span class="legend-line normal"></span><span>一般鏈路</span></div>
-        <div class="legend-item"><span class="legend-line spt"></span><span>SPT 主路徑</span></div>
-        <div class="legend-item"><span class="legend-line backup"></span><span>備援路徑</span></div>
-        <div class="legend-item"><span class="legend-line failed"></span><span>故障鏈路</span></div>
+        <div class="legend-item"><span class="legend-line normal"></span><span data-i18n="ui.legend.normal">一般鏈路</span></div>
+        <div class="legend-item"><span class="legend-line spt"></span><span data-i18n="ui.legend.spt">SPT 主路徑</span></div>
+        <div class="legend-item"><span class="legend-line backup"></span><span data-i18n="ui.legend.backup">備援路徑</span></div>
+        <div class="legend-item"><span class="legend-line failed"></span><span data-i18n="ui.legend.failed">故障鏈路</span></div>
       </div>
       <details class="mt-1">
-        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">流量 / 失效圖例 ▸</summary>
+        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600" data-i18n="ui.legend.flowFailure">流量 / 失效圖例 ▸</summary>
         <div class="legend mt-1">
-          <div class="legend-item"><span class="legend-line overflow"></span><span>過載 (&gt;100%)</span></div>
-          <div class="legend-item"><span class="legend-line load-inc"></span><span>流量增 (失效後)</span></div>
-          <div class="legend-item"><span class="legend-line load-dec"></span><span>受影響減少 (失效後)</span></div>
+          <div class="legend-item"><span class="legend-line overflow"></span><span data-i18n="ui.legend.overflow">過載 (&gt;100%)</span></div>
+          <div class="legend-item"><span class="legend-line load-inc"></span><span data-i18n="ui.legend.loadInc">流量增 (失效後)</span></div>
+          <div class="legend-item"><span class="legend-line load-dec"></span><span data-i18n="ui.legend.loadDec">受影響減少 (失效後)</span></div>
         </div>
       </details>
       <details class="mt-2">
-        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600">已知限制 ▸</summary>
+        <summary class="text-[10px] text-gray-400 cursor-pointer hover:text-gray-600" data-i18n="ui.knownLimits">已知限制 ▸</summary>
         <ol class="mt-1 text-[10px] text-gray-500 leading-relaxed list-decimal list-inside space-y-1">
-          <li>僅支援<b>單一路由區域</b>(Area 0),不處理跨區域的路由摘要</li>
-          <li>外部路由查詢只做精確比對與預設路由,未實作完整的最長前綴匹配</li>
-          <li>路徑成本為靜態設定,尚未對接即時延遲量測資料</li>
+          <li data-i18n-html="ui.limit.1">僅支援<b>單一路由區域</b>(Area 0),不處理跨區域的路由摘要</li>
+          <li data-i18n="ui.limit.2">外部路由查詢只做精確比對與預設路由,未實作完整的最長前綴匹配</li>
+          <li data-i18n="ui.limit.3">路徑成本為靜態設定,尚未對接即時延遲量測資料</li>
         </ol>
       </details>
     </div>
@@ -360,86 +361,86 @@
   <!-- RIGHT: tabbed reports (resizable) -->
   <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:440px">
     <div class="tabs">
-      <button class="tab active" data-tab="path" data-group="live" title="即時分析:反映圖上標記的故障狀態">路徑</button>
-      <button class="tab" data-tab="matrix" data-group="live" title="即時分析:反映圖上標記的故障狀態">矩陣</button>
-      <button class="tab" data-tab="allpairs" data-group="live" title="即時分析:反映圖上標記的故障狀態">樞紐度</button>
-      <button class="tab" data-tab="traffic" data-group="live" title="即時分析:依據流量矩陣計算實際負載">邊流量</button>
-      <div class="w-px bg-gray-300 my-1.5" title="分隔"></div>
-      <button class="tab" data-tab="failure" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">失效模擬</button>
-      <button class="tab" data-tab="n1" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">N-1</button>
-      <button class="tab" data-tab="ecmp" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">ECMP</button>
-      <button class="tab" data-tab="asym" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">非對稱</button>
-      <button class="tab" data-tab="heatmap" data-group="audit" title="設計審計:基於完整拓樸,忽略手動故障標記">Prefix</button>
+      <button class="tab active" data-tab="path" data-group="live" data-i18n="ui.tab.path" data-i18n-title="ui.tabTitle.live" title="即時分析:反映圖上標記的故障狀態">路徑</button>
+      <button class="tab" data-tab="matrix" data-group="live" data-i18n="ui.tab.matrix" data-i18n-title="ui.tabTitle.live" title="即時分析:反映圖上標記的故障狀態">矩陣</button>
+      <button class="tab" data-tab="allpairs" data-group="live" data-i18n="ui.tab.allpairs" data-i18n-title="ui.tabTitle.live" title="即時分析:反映圖上標記的故障狀態">樞紐度</button>
+      <button class="tab" data-tab="traffic" data-group="live" data-i18n="ui.tab.traffic" data-i18n-title="ui.tabTitle.traffic" title="即時分析:依據流量矩陣計算實際負載">邊流量</button>
+      <div class="w-px bg-gray-300 my-1.5" data-i18n-title="ui.tabSep" title="分隔"></div>
+      <button class="tab" data-tab="failure" data-group="audit" data-i18n="ui.tab.failure" data-i18n-title="ui.tabTitle.audit" title="設計審計:基於完整拓樸,忽略手動故障標記">失效模擬</button>
+      <button class="tab" data-tab="n1" data-group="audit" data-i18n-title="ui.tabTitle.audit" title="設計審計:基於完整拓樸,忽略手動故障標記">N-1</button>
+      <button class="tab" data-tab="ecmp" data-group="audit" data-i18n-title="ui.tabTitle.audit" title="設計審計:基於完整拓樸,忽略手動故障標記">ECMP</button>
+      <button class="tab" data-tab="asym" data-group="audit" data-i18n="ui.tab.asym" data-i18n-title="ui.tabTitle.audit" title="設計審計:基於完整拓樸,忽略手動故障標記">非對稱</button>
+      <button class="tab" data-tab="heatmap" data-group="audit" data-i18n-title="ui.tabTitle.audit" title="設計審計:基於完整拓樸,忽略手動故障標記">Prefix</button>
       <div class="w-px bg-gray-300 my-1.5"></div>
-      <button class="tab" data-tab="edges" data-group="edit" title="修改鏈路成本,即時重算路徑">鏈路</button>
+      <button class="tab" data-tab="edges" data-group="edit" data-i18n="ui.tab.edges" data-i18n-title="ui.tabTitle.edit" title="修改鏈路成本,即時重算路徑">鏈路</button>
     </div>
 
     <div class="tab-content active" id="tab-path">
-      <h2 class="section-h !border-0 !mt-0">路徑分析</h2>
-      <div class="hint">計算兩點之間的最短路徑。結果分兩欄:「狀態」標示正常或繞道(故障重路由),「路徑」標示單一或 ECMP 多路徑分流。</div>
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c1.title">路徑分析</h2>
+      <div class="hint" data-i18n="c1.hint">計算兩點之間的最短路徑。結果分兩欄:「狀態」標示正常或繞道(故障重路由),「路徑」標示單一或 ECMP 多路徑分流。</div>
       <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2 items-end">
-        <div><label class="label-sm">起點</label><select id="src" class="select-input"></select></div>
-        <button id="swapSrcDst" data-action="swapSrcDst" class="px-1.5 py-1.5 text-gray-400 hover:text-blue-600 cursor-pointer transition-colors" title="交換起點與終點">⇄</button>
-        <div><label class="label-sm">終點</label><select id="dst" class="select-input"></select></div>
+        <div><label class="label-sm" data-i18n="c1.srcLabel">起點</label><select id="src" class="select-input"></select></div>
+        <button id="swapSrcDst" data-action="swapSrcDst" class="px-1.5 py-1.5 text-gray-400 hover:text-blue-600 cursor-pointer transition-colors" data-i18n-title="c1.swapTitle" title="交換起點與終點">⇄</button>
+        <div><label class="label-sm" data-i18n="c1.dstLabel">終點</label><select id="dst" class="select-input"></select></div>
       </div>
       <div class="grid grid-cols-[1fr_auto_1fr] gap-1.5 mt-2">
-        <button class="btn-primary" id="runSpt" data-action="runSpt">計算最短路徑</button>
+        <button class="btn-primary" id="runSpt" data-action="runSpt" data-i18n="c1.runBtn">計算最短路徑</button>
         <div class="px-1.5"></div>
-        <button class="btn-secondary" id="resetView" data-action="resetView">重置畫面</button>
+        <button class="btn-secondary" id="resetView" data-action="resetView" data-i18n="c1.resetBtn">重置畫面</button>
       </div>
       <div id="path-result" class="mt-3">
-        <div class="hint">選擇起點和終點後,點擊「計算最短路徑」。</div>
+        <div class="hint" data-i18n="c1.placeholder">選擇起點和終點後,點擊「計算最短路徑」。</div>
       </div>
       <div id="unbackup-result"></div>
     </div>
 
     <div class="tab-content" id="tab-matrix">
-      <h2 class="section-h !border-0 !mt-0">最短路徑矩陣</h2>
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c2.title">最短路徑矩陣</h2>
       <div class="hint">
-        所有 Router 之間的最短路徑成本一覽表,底色依成本分 4 階。點任一格查看路徑詳情並在圖上高亮。
+        <span data-i18n="c2.hint">所有 Router 之間的最短路徑成本一覽表,底色依成本分 4 階。點任一格查看路徑詳情並在圖上高亮。</span>
         <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
           <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t1"></span>
-          <span><b>≤30</b> — 區域內</span>
+          <span data-i18n-html="c2.legend.t1"><b>≤30</b> — 區域內</span>
           <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t2"></span>
-          <span><b>31–60</b> — 跨區域</span>
+          <span data-i18n-html="c2.legend.t2"><b>31–60</b> — 跨區域</span>
           <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t3"></span>
-          <span><b>61–100</b> — 跨洋</span>
+          <span data-i18n-html="c2.legend.t3"><b>61–100</b> — 跨洋</span>
           <span class="inline-block w-3.5 h-3.5 rounded-sm border border-gray-300 cost-t4"></span>
-          <span><b>&gt;100</b> — 多段跨洋</span>
+          <span data-i18n-html="c2.legend.t4"><b>&gt;100</b> — 多段跨洋</span>
           <span class="text-center font-bold text-blue-800">²</span>
-          <span>= 等成本路徑數(ECMP)</span>
+          <span data-i18n="c2.legend.ecmp">= 等成本路徑數(ECMP)</span>
           <span class="inline-block w-3.5 h-3.5 rounded-sm" style="background-image:repeating-linear-gradient(45deg,transparent 0 3px,rgba(124,58,237,.5) 3px 5px);border:1px solid #e5e7eb"></span>
-          <span>= 來回路徑非對稱(斜紋)</span>
+          <span data-i18n="c2.legend.asym">= 來回路徑非對稱(斜紋)</span>
         </div>
       </div>
-      <button class="btn-primary mt-2" id="runMatrix" data-action="runMatrix">重新計算</button>
+      <button class="btn-primary mt-2" id="runMatrix" data-action="runMatrix" data-i18n="common.recalc">重新計算</button>
       <div id="matrix-fail-info" class="text-xs text-gray-500 mt-1"></div>
       <div id="matrix-result" class="mt-2.5"></div>
       <div id="matrix-detail" class="mt-3"></div>
     </div>
 
     <div class="tab-content" id="tab-allpairs">
-      <h2 class="section-h !border-0 !mt-0">樞紐度盤點</h2>
-      <div class="hint">
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c3.title">樞紐度盤點</h2>
+      <div class="hint" data-i18n-html="c3.hint">
         衡量每條鏈路和每台節點「有多少路徑經過」— 數值越高,越多流量依賴它,故障影響越大。
         <div class="mt-1">分 4 級:<b>樞紐</b>(需擴容) / <b>正常</b>(維持) / <b>偶爾</b>(可降規) / <b>純備援(鏈路)·末端(節點)</b>(零過路流量)。</div>
       </div>
-      <button class="btn-primary mt-2" id="listAllPairs" data-action="listAllPairs">重新計算</button>
+      <button class="btn-primary mt-2" id="listAllPairs" data-action="listAllPairs" data-i18n="common.recalc">重新計算</button>
       <div id="all-pairs-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-traffic">
-      <h2 class="section-h !border-0 !mt-0">邊流量視圖</h2>
-      <div class="hint">
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c4.title">邊流量視圖</h2>
+      <div class="hint" data-i18n-html="c4.hint">
         根據流量需求矩陣,計算每條鏈路承載的 <b>Gbps</b>(等成本路徑平均分攤),對照鏈路容量算出<b>利用率</b>。電路為全雙工、<b>容量單向計</b>,故 Gbps 與利用率取<b>較忙方向</b>(去 / 回擇大)。分 5 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · 0–50% 低負載 · <b>0% 閒置</b>(無流量,圖上淡灰虛線)。
       </div>
-      <button class="btn-primary mt-2" id="runTraffic" data-action="runTraffic">重新計算</button>
+      <button class="btn-primary mt-2" id="runTraffic" data-action="runTraffic" data-i18n="common.recalc">重新計算</button>
       <div id="traffic-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-edges">
-      <h2 class="section-h !border-0 !mt-0">鏈路成本編輯</h2>
-      <div class="hint"><div class="mb-1.5"><b>三種設定成本的方式</b>:① 表格直接輸入 · ② 點「參考」帶入<b>延遲</b>建議值 · ③ 下方「壅塞最佳化」依<b>流量</b>自動搜尋一組。①② 照<b>延遲</b>、③ 照<b>壅塞</b>,目標不同 → 建議值可能不一樣(正常)。</div>「成本」是 OSPF 用來挑路徑的權重 — 數字越小,這條鏈路越容易被選為主要路徑。改了成本,圖上標籤會即時更新、路徑自動重算。
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c10.title">鏈路成本編輯</h2>
+      <div class="hint" data-i18n-html="c10.hint"><div class="mb-1.5"><b>三種設定成本的方式</b>:① 表格直接輸入 · ② 點「參考」帶入<b>延遲</b>建議值 · ③ 下方「壅塞最佳化」依<b>流量</b>自動搜尋一組。①② 照<b>延遲</b>、③ 照<b>壅塞</b>,目標不同 → 建議值可能不一樣(正常)。</div>「成本」是 OSPF 用來挑路徑的權重 — 數字越小,這條鏈路越容易被選為主要路徑。改了成本,圖上標籤會即時更新、路徑自動重算。
         <div class="mt-1.5">兩台路由器直連的鏈路(點對點),可分開設定<b>去程</b>(A→B)和<b>回程</b>(B→A)的成本,兩個方向不一定要一樣。</div>
         <div class="mt-1.5">「參考」欄會依實際<b>來回延遲(RTT)</b>換算出一個建議成本,點一下就能帶入去/回程欄位。若目前成本和建議值差距 &gt; 1,該列<b>參考欄左緣會標上<span style="color:#d97706">琥珀色條</span></b>(建議成本數字也轉琥珀),表示這條鏈路的成本可能是人為刻意設定的(例如兩個方向故意設不同值)。</div>
         <div class="mt-1.5">換算公式:<code class="bg-gray-100 px-1 rounded font-mono text-[11px]">建議成本 = round( RTT ÷ (每公里來回延遲 × 90) )</code>,再夾在 <b>5–250</b> 之間(太短不低於 5、太長不超過 250)。目前每公里來回延遲 <span id="rtt-fiber-const" class="font-mono">—</span>,換算後約每 <span id="rtt-cost-step" class="font-mono">—</span> ms 延遲對應 1 級成本。</div>
@@ -450,26 +451,26 @@
         </div>
       </div>
       <div class="grid grid-cols-2 gap-2 mt-2">
-        <button class="btn-secondary" id="resetEdges" data-action="resetEdges">還原原始值</button>
-        <button class="btn-primary" id="exportTopo" data-action="exportTopo">輸出 topology.js</button>
+        <button class="btn-secondary" id="resetEdges" data-action="resetEdges" data-i18n="c10.resetBtn">還原原始值</button>
+        <button class="btn-primary" id="exportTopo" data-action="exportTopo" data-i18n="c10.exportBtn">輸出 topology.js</button>
       </div>
 
       <div class="mt-3 border-t border-gray-200 pt-2">
-        <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
-        <div class="hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div></div>
+        <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1" data-i18n="c10.opt.hdr">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
+        <div class="hint" data-i18n-html="c10.opt.hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div></div>
         <div class="grid grid-cols-2 gap-2 mt-2 items-end">
-          <div><label class="label-sm">目標利用率上限 (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" title="把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)" /></div>
-          <button class="btn-primary" id="runOptimize" data-action="runOptimize">最佳化</button>
+          <div><label class="label-sm" data-i18n="c10.opt.targetLabel">目標利用率上限 (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" data-i18n-title="c10.opt.targetTitle" title="把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)" /></div>
+          <button class="btn-primary" id="runOptimize" data-action="runOptimize" data-i18n="c10.opt.runBtn">最佳化</button>
         </div>
-        <div class="mt-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">進階選項<span class="font-normal normal-case tracking-normal text-gray-400"> — 勾選會額外搜尋,只保留更好的結果</span></div>
+        <div class="mt-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide" data-i18n-html="c10.opt.advanced">進階選項<span class="font-normal normal-case tracking-normal text-gray-400"> — 勾選會額外搜尋,只保留更好的結果</span></div>
         <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
-          <input type="checkbox" id="optInvcap" /> 起點改用 InvCap(不勾為現網 warm)
+          <input type="checkbox" id="optInvcap" /> <span data-i18n="c10.opt.cbInvcap">起點改用 InvCap(不勾為現網 warm)</span>
         </label>
         <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
-          <input type="checkbox" id="optAsym" /> 允許不對稱權重(去/回獨立)
+          <input type="checkbox" id="optAsym" /> <span data-i18n="c10.opt.cbAsym">允許不對稱權重(去/回獨立)</span>
         </label>
         <label class="flex items-center gap-1.5 mt-1 text-[11px] text-gray-600 cursor-pointer">
-          <input type="checkbox" id="optTransit" /> 也調 transit 介面成本
+          <input type="checkbox" id="optTransit" /> <span data-i18n="c10.opt.cbTransit">也調 transit 介面成本</span>
         </label>
         <div id="optimize-result" class="mt-2"></div>
       </div>
@@ -478,34 +479,34 @@
     </div>
 
     <div class="tab-content" id="tab-failure">
-      <h2 class="section-h !border-0 !mt-0">失效模擬</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
-      <div class="hint">模擬單一元件或整組共同風險群組 (SRLG) 同時失效,檢視網路連通性、流量重分配與容量溢出。SRLG 涵蓋海纜系統、共管線路、機房電力、上游 ISP 等共用風險。</div>
-      <div class="mt-2"><label class="label-sm">失效情境</label><select id="failTarget" class="select-input"></select></div>
-      <button class="btn-primary mt-1.5" id="runFailSim" data-action="runFailSim">執行失效模擬</button>
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c5.title">失效模擬</h2>
+      <div class="audit-banner" data-i18n="common.auditBanner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
+      <div class="hint" data-i18n="c5.hint">模擬單一元件或整組共同風險群組 (SRLG) 同時失效,檢視網路連通性、流量重分配與容量溢出。SRLG 涵蓋海纜系統、共管線路、機房電力、上游 ISP 等共用風險。</div>
+      <div class="mt-2"><label class="label-sm" data-i18n="c5.targetLabel">失效情境</label><select id="failTarget" class="select-input"></select></div>
+      <button class="btn-primary mt-1.5" id="runFailSim" data-action="runFailSim" data-i18n="c5.runBtn">執行失效模擬</button>
       <div id="failure-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-ecmp">
-      <h2 class="section-h !border-0 !mt-0">ECMP 備援檢查</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c6.title">ECMP 備援檢查</h2>
+      <div class="audit-banner" data-i18n="common.auditBanner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">
-        當兩點之間有<b>多條等成本路徑</b>(ECMP)時,斷掉其中一條,流量應由同群組的其他路徑接手。本檢查逐一模擬斷線,驗證備援是否留在群組內。
-        <div class="mt-1.5">
+        <span data-i18n-html="c6.hint">當兩點之間有<b>多條等成本路徑</b>(ECMP)時,斷掉其中一條,流量應由同群組的其他路徑接手。本檢查逐一模擬斷線,驗證備援是否留在群組內。</span>
+        <div class="mt-1.5" data-i18n-html="c6.legend">
           <span class="badge pass">通過</span>斷任一條,群組內接手
           <br><span class="badge fail">失敗</span>斷線後不可達或繞出群組
           <br><span class="badge na">不適用</span>只有一條路徑,不適用此檢查
         </div>
       </div>
-      <button class="btn-primary mt-2" id="runEcmpCheck" data-action="runEcmpCheck">掃描所有 Router pairs</button>
+      <button class="btn-primary mt-2" id="runEcmpCheck" data-action="runEcmpCheck" data-i18n="common.scanAllPairs">掃描所有 Router pairs</button>
       <div id="ecmp-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-asym">
-      <h2 class="section-h !border-0 !mt-0">非對稱路徑偵測</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
-      <div class="hint">檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。
-        <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-center">
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c7.title">非對稱路徑偵測</h2>
+      <div class="audit-banner" data-i18n="common.auditBanner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
+      <div class="hint"><span data-i18n="c7.hint">檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。</span>
+        <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-center" data-i18n-html="c7.legend">
           <span class="node-sw asym"></span>
           <span>圖上<b>紫框節點</b> — 非對稱 pair 的兩端</span>
           <span><span class="badge pass">對稱</span></span>
@@ -513,19 +514,19 @@
           <span><span class="badge fail">非對稱</span></span>
           <span>去回程成本不同,或路徑集合不同</span>
         </div>
-        <div class="mt-1">每組明細以藍色方向標題(<span class="dir-head">A → B</span>)分列兩方向的成本與路徑,並標注差異原因。</div>
+        <div class="mt-1" data-i18n-html="c7.detailNote">每組明細以藍色方向標題(<span class="dir-head">A → B</span>)分列兩方向的成本與路徑,並標注差異原因。</div>
       </div>
-      <button class="btn-primary mt-2" id="runAsymScan" data-action="runAsymScan">掃描所有 Router pairs</button>
+      <button class="btn-primary mt-2" id="runAsymScan" data-action="runAsymScan" data-i18n="common.scanAllPairs">掃描所有 Router pairs</button>
       <div id="asym-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-heatmap">
-      <h2 class="section-h !border-0 !mt-0">Prefix 宣告冗餘</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c8.title">Prefix 宣告冗餘</h2>
+      <div class="audit-banner" data-i18n="common.auditBanner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">
-        每個網段(Prefix)被幾台 Router 宣告?被 2 台以上宣告 = 有備援;只被 1 台宣告 = 該台故障後網段就斷了。
-        <div class="mt-1.5">節點顏色 = 該 Router 宣告的網段中「無備援」的比例:</div>
-        <div class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
+        <span data-i18n="c8.hint">每個網段(Prefix)被幾台 Router 宣告?被 2 台以上宣告 = 有備援;只被 1 台宣告 = 該台故障後網段就斷了。</span>
+        <div class="mt-1.5" data-i18n="c8.colorNote">節點顏色 = 該 Router 宣告的網段中「無備援」的比例:</div>
+        <div class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center" data-i18n-html="c8.legend">
           <span class="node-sw heat-green"></span>
           <span><b>= 0%</b> — 全 prefix 都有冗餘宣告(理想)</span>
           <span class="node-sw heat-yellow"></span>
@@ -536,21 +537,21 @@
           <span><b>&gt; 66%</b> — 多數 prefix 單一宣告(高風險)</span>
         </div>
       </div>
-      <button class="btn-primary mt-2" id="runHeatmap" data-action="runHeatmap">套用 Heatmap 著色</button>
-      <button class="btn-secondary mt-1.5" id="clearHeatmap" data-action="clearHeatmap">清除 Heatmap</button>
+      <button class="btn-primary mt-2" id="runHeatmap" data-action="runHeatmap" data-i18n="c8.applyBtn">套用 Heatmap 著色</button>
+      <button class="btn-secondary mt-1.5" id="clearHeatmap" data-action="clearHeatmap" data-i18n="c8.clearBtn">清除 Heatmap</button>
       <div id="heatmap-result" class="mt-2.5"></div>
     </div>
 
     <div class="tab-content" id="tab-n1">
-      <h2 class="section-h !border-0 !mt-0">N-1 單點故障排行</h2>
-      <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
-      <div class="hint">
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c9.title">N-1 單點故障排行</h2>
+      <div class="audit-banner" data-i18n="common.auditBanner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
+      <div class="hint" data-i18n-html="c9.hint">
         逐一模擬每個元件(每條鏈路、每台 Router)單獨故障,找出哪些連線受害最深、哪個元件故障殺傷力最大。
         <span class="badge fail">∞</span>= 故障後不可達。
         <span class="badge backup">×N</span>= 成本變 N 倍。
         點任一列在圖上查看影響範圍。
       </div>
-      <button class="btn-primary mt-2" id="runN1Scan" data-action="runN1Scan">執行 N-1 掃描</button>
+      <button class="btn-primary mt-2" id="runN1Scan" data-action="runN1Scan" data-i18n="c9.scanBtn">執行 N-1 掃描</button>
       <div id="n1-result" class="mt-2.5"></div>
     </div>
   </aside>
@@ -672,6 +673,602 @@ function edgeLabelFields(e) {
     ? { label: '', srcLabel: String(e.cost), dstLabel: String(e.costRev) }
     : { label: String(e.cost), srcLabel: '', dstLabel: '' };
 }
+
+// ============================================================================
+// §0.5 I18N — 共用字串字典 + t() + 靜態掃描(inline、零 build;之後可外移 lang/*.js)
+// ============================================================================
+// 首批只收「跨分頁重複」的 common.* key(見 i18n-extraction.md 去重表)。
+// engine 維持「只吐代碼、不吐白話」;顯示字串一律經 t() 查表。
+const I18N = {
+  zh: {
+    // --- common(跨分頁共用)---
+    'common.auditBanner':   '⚠ 設計審計:基於完整拓樸,不受手動故障標記影響',
+    'common.tier.hub':      '樞紐',
+    'common.tier.normal':   '正常',
+    'common.tier.rare':     '偶爾',
+    'common.status.passed': '通過',
+    'common.status.failed': '失敗',
+    'common.status.na':     '不適用',
+    'common.scanAllPairs':  '掃描所有 Router pairs',
+    'common.recalc':        '重新計算',
+    // --- C6 ECMP ---
+    'c6.title':         'ECMP 備援檢查',
+    'c6.hint':          '當兩點之間有<b>多條等成本路徑</b>(ECMP)時,斷掉其中一條,流量應由同群組的其他路徑接手。本檢查逐一模擬斷線,驗證備援是否留在群組內。',
+    'c6.legend':        '<span class="badge pass">通過</span>斷任一條,群組內接手<br><span class="badge fail">失敗</span>斷線後不可達或繞出群組<br><span class="badge na">不適用</span>只有一條路徑,不適用此檢查',
+    'c6.allPass':       '所有有 ECMP 的 pair 都通過備援檢查',
+    'c6.failDetailHdr': '失敗明細',
+    'c6.col.pair':      '連接',
+    'c6.col.reason':    '原因',
+    'c6.col.status':    '狀態',
+    'c6.col.note':      '備註',
+    'c6.stat.breakdown': (p) => `(無 ECMP ${p.noEcmp} · 單一出口 ${p.singleHop})`,
+    'c6.fullScan':       (p) => `全部 ${p.n} 對的掃描結果`,
+    'c6.reason.no-ecmp':            () => '無 ECMP(只有一條最短路)',
+    'c6.reason.single-first-hop':   () => '多條 path 共用同一出口邊',
+    'c6.reason.remove-unreachable': (r) => `砍掉 <b>${r.eid}</b> 後變不可達`,
+    'c6.reason.backup-non-ecmp':    (r) => `備援繞到群組外的 <b>${r.bid}</b>`,
+    // --- C7 Asymmetric ---
+    'c7.title':        '非對稱路徑偵測',
+    'c7.hint':         '檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。',
+    'c7.legend':       '<span class="node-sw asym"></span><span>圖上<b>紫框節點</b> — 非對稱 pair 的兩端</span><span><span class="badge pass">對稱</span></span><span>去回程路徑與成本完全相同</span><span><span class="badge fail">非對稱</span></span><span>去回程成本不同,或路徑集合不同</span>',
+    'c7.detailNote':   '每組明細以藍色方向標題(<span class="dir-head">A → B</span>)分列兩方向的成本與路徑,並標注差異原因。',
+    'c7.allSymmetric': '所有 pair 路徑對稱',
+    'c7.listNote':     '下列 Router pair 在兩個方向上路徑或成本不同,封包來回會走不同路徑。',
+    'c7.reason.path':  '路徑集合不同',
+    'c7.foundCount':   (p) => `發現 ${p.n} 組非對稱路徑`,
+    'c7.reason.cost':  (p) => `Cost 不同 (${p.fwd} vs ${p.rev})`,
+    // --- C8 Prefix Heatmap ---
+    'c8.title':     'Prefix 宣告冗餘',
+    'c8.hint':      '每個網段(Prefix)被幾台 Router 宣告?被 2 台以上宣告 = 有備援;只被 1 台宣告 = 該台故障後網段就斷了。',
+    'c8.colorNote': '節點顏色 = 該 Router 宣告的網段中「無備援」的比例:',
+    'c8.legend':    '<span class="node-sw heat-green"></span><span><b>= 0%</b> — 全 prefix 都有冗餘宣告(理想)</span><span class="node-sw heat-yellow"></span><span><b>0–33%</b> — 少數 prefix 單一宣告</span><span class="node-sw heat-orange"></span><span><b>33–66%</b> — 約一半 prefix 無冗餘</span><span class="node-sw heat-red"></span><span><b>&gt; 66%</b> — 多數 prefix 單一宣告(高風險)</span>',
+    'c8.applyBtn':  '套用 Heatmap 著色',
+    'c8.clearBtn':  '清除 Heatmap',
+    // --- C2 Matrix ---
+    'c2.title':         '最短路徑矩陣',
+    'c2.hint':          '所有 Router 之間的最短路徑成本一覽表,底色依成本分 4 階。點任一格查看路徑詳情並在圖上高亮。',
+    'c2.legend.t1':     '<b>≤30</b> — 區域內',
+    'c2.legend.t2':     '<b>31–60</b> — 跨區域',
+    'c2.legend.t3':     '<b>61–100</b> — 跨洋',
+    'c2.legend.t4':     '<b>&gt;100</b> — 多段跨洋',
+    'c2.legend.ecmp':   '= 等成本路徑數(ECMP)',
+    'c2.legend.asym':   '= 來回路徑非對稱(斜紋)',
+    'c2.noPath':        (p) => `${p.src} → ${p.dst} 沒有可用路徑。`,
+    'c2.failStatus':    (p) => `目前故障:${p.e} 邊 / ${p.n} 節點`,
+    'c2.maxCostNote':   (p) => `最大 cost = ${p.max}。色階門檻與符號說明見上方圖例。`,
+    'c2.reverseDir':    (p) => `反方向 ${p.dst} → ${p.src}`,
+    'c2.asymCostLabel': (p) => `cost ${p.cost} (非對稱)`,
+    // --- C1 Path ---
+    'c1.title':        '路徑分析',
+    'c1.hint':         '計算兩點之間的最短路徑。結果分兩欄:「狀態」標示正常或繞道(故障重路由),「路徑」標示單一或 ECMP 多路徑分流。',
+    'c1.srcLabel':     '起點',
+    'c1.dstLabel':     '終點',
+    'c1.swapTitle':    '交換起點與終點',
+    'c1.runBtn':       '計算最短路徑',
+    'c1.resetBtn':     '重置畫面',
+    'c1.placeholder':  '選擇起點和終點後,點擊「計算最短路徑」。',
+    'c1.unreach':      '不可達',
+    'c1.state.normal': '正常',
+    'c1.state.detour': '繞道',
+    'c1.path.single':  '單一路徑',
+    'c1.field.state':  '狀態',
+    'c1.field.path':   '路徑',
+    'c1.totalCost':    '總成本',
+    'c1.noPrimary':    '目前沒有可分析的主路徑。',
+    'c1.unbackTitle':  '主路徑逐段備援(單鏈路 N-1)',
+    'c1.allBackedUp':  '任一單鏈路斷,終點仍可達',
+    'c1.unbackNote':   '僅測單一鏈路失效,判斷「斷後是否仍可達」;繞道成本可能上升,不保證等成本備援。',
+    'c1.noPath':        (p) => `${p.src} → ${p.dst} 沒有可用路徑(可能因故障導致)。`,
+    'c1.path.ecmp':     (p) => `ECMP ×${p.n} 多路徑`,
+    'c1.parallelLinks': (p) => `⇉ 平行等價鏈路 ×${p.n}:${p.list}`,
+    'c1.unbackedCount': (p) => `${p.n} 段斷即不可達`,
+    // --- C4 Edge Traffic ---
+    'c4.title':          '邊流量視圖',
+    'c4.hint':           '根據流量需求矩陣,計算每條鏈路承載的 <b>Gbps</b>(等成本路徑平均分攤),對照鏈路容量算出<b>利用率</b>。電路為全雙工、<b>容量單向計</b>,故 Gbps 與利用率取<b>較忙方向</b>(去 / 回擇大)。分 5 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · 0–50% 低負載 · <b>0% 閒置</b>(無流量,圖上淡灰虛線)。',
+    'c4.tier.overflow':  '過載',
+    'c4.tier.high':      '高負載',
+    'c4.tier.mid':       '中負載',
+    'c4.tier.low':       '低負載',
+    'c4.tier.idle':      '閒置',
+    'c4.noDemand':       '未載入 demand.js,無法顯示流量視圖。',
+    'c4.reach.okLabel':  '可達性',
+    'c4.reach.lostLabel':'可達性會計 — ⚠ 部分 demand 失去路徑',
+    'c4.unitLinks':      '條',
+    'c4.maxUtilLabel':   '最大利用率 / 來源',
+    'c4.rankHdr':        '邊流量排行',
+    'c4.col.pair':       '連接',
+    'c4.col.tier':       '分類',
+    'c4.reach.okValue':  (p) => `${p.gbps} Gbps demand 全數有路可走`,
+    'c4.reach.lostValue':(p) => `${p.served} / ${p.total} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${p.lost} Gbps · ${p.pct}%)</span>`,
+    'c4.reach.lostNote': (p) => `以下流量排行僅基於剩餘可達 demand。現實裡這 ${p.lost} Gbps 不會憑空消失,代表「客戶斷線」或「BGP 倒換出域」。`,
+    // --- C9 N-1 ---
+    'c9.title':        'N-1 單點故障排行',
+    'c9.hint':         '逐一模擬每個元件(每條鏈路、每台 Router)單獨故障,找出哪些連線受害最深、哪個元件故障殺傷力最大。<span class="badge fail">∞</span>= 故障後不可達。<span class="badge backup">×N</span>= 成本變 N 倍。點任一列在圖上查看影響範圍。',
+    'c9.scanBtn':      '執行 N-1 掃描',
+    'c9.unreach':      '不可達',
+    'c9.stat.severe':  '嚴重劣化 (×≥2)',
+    'c9.stat.minor':   '輕微劣化',
+    'c9.stat.ok':      '不受影響',
+    'c9.deadliestHdr': '最致命失效 (Top 10)',
+    'c9.noFailures':   '無單點失效會造成任何 pair 劣化',
+    'c9.failHint':     '點任一列模擬該失效情境 — 失效元件標紅,所有受影響 pair 的重繞路徑以橘色高亮。',
+    'c9.col.failure':  '失效',
+    'c9.col.degraded': '劣化',
+    'c9.col.maxRatio': '最大 ×',
+    'c9.col.overflow': '溢出',
+    'c9.fragileHdr':   '最脆弱 Pair (Top 20)',
+    'c9.allSurvive':   '所有 pair 都能撐過任一單點失效',
+    'c9.pairHint':     '點任一列查看該 pair 在最糟失效下的重繞路徑。',
+    'c9.col.culprit':  '元凶',
+    'c9.culprit.edge': (p) => `<span class="txt-danger" title="${p.id}">L</span> ${p.src} ↔ ${p.dst} 斷`,
+    'c9.culprit.node': (p) => `<span class="txt-danger">R</span> ${p.id} 失效`,
+    // --- C3 Centrality ---
+    'c3.title':        '樞紐度盤點',
+    'c3.hint':         '衡量每條鏈路和每台節點「有多少路徑經過」— 數值越高,越多流量依賴它,故障影響越大。<div class="mt-1">分 4 級:<b>樞紐</b>(需擴容) / <b>正常</b>(維持) / <b>偶爾</b>(可降規) / <b>純備援(鏈路)·末端(節點)</b>(零過路流量)。</div>',
+    'c3.edge.idle':    '純備援',
+    'c3.node.idle':    '末端',
+    'c3.edge.act.hub':    '擴容雙保',
+    'c3.edge.act.normal': '維持',
+    'c3.edge.act.rare':   '降頻寬候選',
+    'c3.edge.act.idle':   '砍掉候選',
+    'c3.node.act.hub':    '雙機雙路',
+    'c3.node.act.normal': '維持',
+    'c3.node.act.rare':   '可降規',
+    'c3.node.act.idle':   '無轉送流量',
+    'c3.col.pair':     '連接',
+    'c3.col.tier':     '分類',
+    'c3.col.advice':   '建議',
+    'c3.col.path':     '路徑',
+    'c3.edgeRankHdr':  '鏈路樞紐度排行',
+    'c3.nodeRankHdr':  '節點樞紐度排行',
+    'c3.allPathsHdr':  '全 Pair 最短路徑',
+    'c3.unitLinks':    '條',
+    'c3.unitNodes':    '台',
+    'c3.toggle.transit':       '過路數',
+    'c3.toggle.weighted':      '流量加權',
+    'c3.toggle.transitTitle':  '每對 pair 權重=1:純拓樸過路 SPT 數',
+    'c3.toggle.weightedTitle': '每對 pair 權重=demand[a][b]:實際轉送 Gbps',
+    'c3.toggle.noDemandTitle': '未載入 demand.js',
+    'c3.reach.okLabel':         '可達性',
+    'c3.reach.lostLabel':       '可達性會計 — ⚠ 部分 pair 不可達',
+    'c3.reach.demandLostLabel': '可達性會計 — ⚠ 部分 demand 失去路徑',
+    'c3.reach.demandLostNote':  '以下節點熱度僅統計可達 demand。',
+    'c3.maxNodeLabel':          (p) => `最大 Node ${p.unit}`,
+    'c3.reach.okValue':         (p) => `${p.total} 對 pair 全數可達`,
+    'c3.reach.lostValue':       (p) => `${p.reachable} / ${p.total} 可達 &nbsp;<span class="banner-sub">(失去 ${p.lost} 對)</span>`,
+    'c3.reach.lostNote':        (p) => `以下 BC 排名僅統計 ${p.reachable} 對可達 pair。失效節點 / 鏈路若是 hub,真實衝擊比表面數字更大。`,
+    'c3.reach.demandLostValue': (p) => `${p.served} / ${p.total} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${p.lost} Gbps · ${p.pct}%)</span>`,
+    // --- C5 Failure Simulation ---
+    'c5.title':        '失效模擬',
+    'c5.hint':         '模擬單一元件或整組共同風險群組 (SRLG) 同時失效,檢視網路連通性、流量重分配與容量溢出。SRLG 涵蓋海纜系統、共管線路、機房電力、上游 ISP 等共用風險。',
+    'c5.targetLabel':  '失效情境',
+    'c5.runBtn':       '執行失效模擬',
+    'c5.optType.submarine': '海纜系統',
+    'c5.optType.conduit':   '共管線路',
+    'c5.optType.site':      '機房 / 電力',
+    'c5.optType.upstream':  '上游 ISP',
+    'c5.optSingleRouter':   '單一路由器',
+    'c5.srlgType.submarine':'海纜',
+    'c5.srlgType.conduit':  '共管線路',
+    'c5.srlgType.site':     '機房',
+    'c5.srlgType.upstream': '上游 ISP',
+    'c5.srlgNodes':    '節點: ',
+    'c5.srlgLinks':    '鏈路: ',
+    'c5.overflowLabel':'⚠ 過載',
+    'c5.lostLabel':    '⚠ 失去路徑的流量',
+    'c5.okLabel':      '流量可達性',
+    'c5.cell.down':    '斷線',
+    'c5.cell.up':      '負載增加',
+    'c5.cell.dec':     '負載減少',
+    'c5.overflowValue':(p) => `${p.n} 條鏈路超過容量`,
+    'c5.lostValue':    (p) => `${p.lost} / ${p.total} Gbps 無法送達 <span class="banner-sub">(${p.pct}%)</span>`,
+    'c5.okValue':      (p) => `${p.total} Gbps demand 全數有路可走`,
+    // --- C10 Edges Editor ---
+    'c10.title':       '鏈路成本編輯',
+    'c10.hint':        '<div class="mb-1.5"><b>三種設定成本的方式</b>:① 表格直接輸入 · ② 點「參考」帶入<b>延遲</b>建議值 · ③ 下方「壅塞最佳化」依<b>流量</b>自動搜尋一組。①② 照<b>延遲</b>、③ 照<b>壅塞</b>,目標不同 → 建議值可能不一樣(正常)。</div>「成本」是 OSPF 用來挑路徑的權重 — 數字越小,這條鏈路越容易被選為主要路徑。改了成本,圖上標籤會即時更新、路徑自動重算。<div class="mt-1.5">兩台路由器直連的鏈路(點對點),可分開設定<b>去程</b>(A→B)和<b>回程</b>(B→A)的成本,兩個方向不一定要一樣。</div><div class="mt-1.5">「參考」欄會依實際<b>來回延遲(RTT)</b>換算出一個建議成本,點一下就能帶入去/回程欄位。若目前成本和建議值差距 &gt; 1,該列<b>參考欄左緣會標上<span style="color:#d97706">琥珀色條</span></b>(建議成本數字也轉琥珀),表示這條鏈路的成本可能是人為刻意設定的(例如兩個方向故意設不同值)。</div><div class="mt-1.5">換算公式:<code class="bg-gray-100 px-1 rounded font-mono text-[11px]">建議成本 = round( RTT ÷ (每公里來回延遲 × 90) )</code>,再夾在 <b>5–250</b> 之間(太短不低於 5、太長不超過 250)。目前每公里來回延遲 <span id="rtt-fiber-const" class="font-mono">—</span>,換算後約每 <span id="rtt-cost-step" class="font-mono">—</span> ms 延遲對應 1 級成本。</div><div class="legend mt-1.5">建議成本背後的延遲資料有三種來源,可信度由高到低:<span class="legend-item">🟢 直測 — 直接量到的實際延遲(最準)</span><span class="legend-item">🔵 城市參考 — 查公開的「城市對城市」延遲資料庫</span><span class="legend-item">⚪ 模型估計 — 用兩地直線距離推算(最粗略)</span></div>',
+    'c10.resetBtn':    '還原原始值',
+    'c10.exportBtn':   '輸出 topology.js',
+    'c10.col.ref':     '參考',
+    'c10.col.pair':    '連接',
+    'c10.col.type':    '類型',
+    'c10.col.cost':    '成本 (去 / 回)',
+    'c10.divergeTitle':'目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過',
+    'c10.src.measured':'直測',
+    'c10.src.cityRef': '城市參考',
+    'c10.src.model':   '模型估計',
+    'c10.fwdTitle':    (p) => `去程 ${p.src}→${p.dst}`,
+    'c10.revTitle':    (p) => `回程 ${p.dst}→${p.src}`,
+    'c10.chipTitle':   (p) => `${p.label}:來回延遲 ${p.rtt} ms → 建議成本 ${p.cost}(點一下帶入去/回程)`,
+    'c10.opt.hdr':         '壅塞最佳化 (Fortz-Thorup / Tabu)',
+    'c10.opt.hint':        '自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div>',
+    'c10.opt.targetLabel': '目標利用率上限 (%)',
+    'c10.opt.targetTitle': '把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)',
+    'c10.opt.runBtn':      '最佳化',
+    'c10.opt.advanced':    '進階選項<span class="font-normal normal-case tracking-normal text-gray-400"> — 勾選會額外搜尋,只保留更好的結果</span>',
+    'c10.opt.cbInvcap':    '起點改用 InvCap(不勾為現網 warm)',
+    'c10.opt.cbAsym':      '允許不對稱權重(去/回獨立)',
+    'c10.opt.cbTransit':   '也調 transit 介面成本',
+    'c10.opt.noDemand':    '未載入 demand.js,無法最佳化。',
+    'c10.opt.noCap':       'p2p 邊缺 capacity,無利用率可優化。',
+    'c10.opt.computing':   '計算中…(Tabu 搜尋,視規模約數秒)',
+    'c10.opt.name.invcap': 'InvCap 起點',
+    'c10.opt.name.asym':   '不對稱',
+    'c10.opt.name.transit':'transit',
+    'c10.opt.mluBefore':   'MLU 前',
+    'c10.opt.mluAfter':    'MLU 後',
+    'c10.opt.statLabel':   'profile · 迭代 · 改動 · 耗時',
+    'c10.opt.tipIncluded': '已納入 transit 介面成本一併最佳化。',
+    'c10.opt.tipExcluded': '可勾選「也調 transit 介面成本(B)」直接調該段入向成本,否則只能靠 p2p 重繞分流入口。',
+    'c10.opt.noRelax':     '紅線內已最佳,瓶頸為實體容量不足。',
+    'c10.opt.relaxPrefix': '建議鬆綁:',
+    'c10.opt.infeasibleLabel':'⚠ 約束內無解(MLU ≥ 100%)',
+    'c10.opt.feasibleNotMet': '可行但未達標',
+    'c10.opt.noChange':    '現網權重已是約束內最佳,無需調整。',
+    'c10.opt.colOldNew':   '舊→新',
+    'c10.opt.colUtil':     'util 前→後',
+    'c10.opt.unchanged':   '(不變)',
+    'c10.opt.fwd':         '去',
+    'c10.opt.rev':         '回',
+    'c10.opt.applyBtn':    '套用這組權重',
+    'c10.opt.applied':     '已套用最佳化權重。可用「輸出 topology.js」帶走,或切到「邊流量 / 失效模擬」複驗。',
+    'c10.opt.statValue':   (p) => `${p.profile} · ${p.iter} 輪 · ${p.changed} 條 · ${p.ms}ms`,
+    'c10.opt.advHelpful':  (p) => `進階選項(${p.names})有助益:MLU ${p.before}% → ${p.after}%(已採用)。`,
+    'c10.opt.advNoGain':   (p) => `進階選項(${p.names})無增益(基準已達 ${p.base}%),採基準結果。`,
+    'c10.opt.bottleneckTransit': (p) => `瓶頸含 transit/LAN 段(${p.edges})——${p.tip}`,
+    'c10.opt.relaxItem':   (p) => `${p.edge}→${p.relaxTo}(MLU↓${p.drop}pt)`,
+    'c10.opt.bottleneckValue':     (p) => `瓶頸:${p.edges}`,
+    'c10.opt.feasibleNotMetValue': (p) => `最佳可得 ${p.mlu}% &gt; 目標 ${p.target}%`,
+    // --- UI chrome(頁首 / 左側面板 / 分頁鈕)---
+    'ui.subtitle':         '國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出',
+    'ui.controls':         '控制',
+    'ui.hidePseudo':       '隱藏 Pseudo-node',
+    'ui.showPseudo':       '顯示 Pseudo-node',
+    'ui.togglePseudoTitle':'Pseudo-node 是交換式網段的虛擬節點,用來表示多台 Router 共用同一個 LAN。隱藏後只顯示實體 Router。',
+    'ui.clearFailed':      '清除所有故障',
+    'ui.clearFailedTitle': '清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。',
+    'ui.demandProfile':    '流量情境',
+    'ui.interactionHint':  '右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版',
+    'ui.legend':           '圖例',
+    'ui.legend.normal':    '一般鏈路',
+    'ui.legend.spt':       'SPT 主路徑',
+    'ui.legend.backup':    '備援路徑',
+    'ui.legend.failed':    '故障鏈路',
+    'ui.legend.flowFailure':'流量 / 失效圖例 ▸',
+    'ui.legend.overflow':  '過載 (>100%)',
+    'ui.legend.loadInc':   '流量增 (失效後)',
+    'ui.legend.loadDec':   '受影響減少 (失效後)',
+    'ui.knownLimits':      '已知限制 ▸',
+    'ui.limit.1':          '僅支援<b>單一路由區域</b>(Area 0),不處理跨區域的路由摘要',
+    'ui.limit.2':          '外部路由查詢只做精確比對與預設路由,未實作完整的最長前綴匹配',
+    'ui.limit.3':          '路徑成本為靜態設定,尚未對接即時延遲量測資料',
+    'ui.tab.path':         '路徑',
+    'ui.tab.matrix':       '矩陣',
+    'ui.tab.allpairs':     '樞紐度',
+    'ui.tab.traffic':      '邊流量',
+    'ui.tab.failure':      '失效模擬',
+    'ui.tab.asym':         '非對稱',
+    'ui.tab.edges':        '鏈路',
+    'ui.tabTitle.live':    '即時分析:反映圖上標記的故障狀態',
+    'ui.tabTitle.traffic': '即時分析:依據流量矩陣計算實際負載',
+    'ui.tabTitle.audit':   '設計審計:基於完整拓樸,忽略手動故障標記',
+    'ui.tabTitle.edit':    '修改鏈路成本,即時重算路徑',
+    'ui.tabSep':           '分隔',
+  },
+  en: {
+    // --- common ---
+    'common.auditBanner':   '⚠ Design audit: based on the full topology; ignores manual failure marks',
+    'common.tier.hub':      'Hub',
+    'common.tier.normal':   'Normal',
+    'common.tier.rare':     'Rare',
+    'common.status.passed': 'Pass',
+    'common.status.failed': 'Fail',
+    'common.status.na':     'N/A',
+    'common.scanAllPairs':  'Scan all router pairs',
+    'common.recalc':        'Recompute',
+    // --- C6 ECMP ---
+    'c6.title':         'ECMP Backup Check',
+    'c6.hint':          'When two endpoints have <b>multiple equal-cost paths</b> (ECMP), cutting one means traffic should be taken over by the others in the same group. This check simulates cutting each link in turn and verifies the backup stays inside the group.',
+    'c6.legend':        '<span class="badge pass">Pass</span> any cut is absorbed within the group<br><span class="badge fail">Fail</span> unreachable after a cut, or escapes the group<br><span class="badge na">N/A</span> only one path — check not applicable',
+    'c6.allPass':       'All ECMP pairs pass the backup check',
+    'c6.failDetailHdr': 'Failure detail',
+    'c6.col.pair':      'Pair',
+    'c6.col.reason':    'Reason',
+    'c6.col.status':    'Status',
+    'c6.col.note':      'Note',
+    'c6.stat.breakdown': (p) => `(no ECMP ${p.noEcmp} · single-hop ${p.singleHop})`,
+    'c6.fullScan':       (p) => `All ${p.n} pairs scanned`,
+    'c6.reason.no-ecmp':            () => 'No ECMP (single shortest path)',
+    'c6.reason.single-first-hop':   () => 'Multiple paths share one egress edge',
+    'c6.reason.remove-unreachable': (r) => `Cutting <b>${r.eid}</b> makes it unreachable`,
+    'c6.reason.backup-non-ecmp':    (r) => `Backup escapes the group via <b>${r.bid}</b>`,
+    // --- C7 Asymmetric ---
+    'c7.title':        'Asymmetric Path Detection',
+    'c7.hint':         'Checks whether each router pair takes the same path and the same cost in both directions. When asymmetric, packets take different routes each way, which can cause inconsistent latency or harder troubleshooting.',
+    'c7.legend':       '<span class="node-sw asym"></span><span>Graph: <b>purple-boxed nodes</b> — the two ends of an asymmetric pair</span><span><span class="badge pass">Symmetric</span></span><span>Forward and reverse paths and costs are identical</span><span><span class="badge fail">Asymmetric</span></span><span>Forward/reverse costs differ, or the path sets differ</span>',
+    'c7.detailNote':   'Each entry lists both directions under a blue direction header (<span class="dir-head">A → B</span>), with per-direction cost and paths and the reason for the difference.',
+    'c7.allSymmetric': 'All pairs are symmetric',
+    'c7.listNote':     'The router pairs below differ in path or cost between directions; packets take different routes each way.',
+    'c7.reason.path':  'Path set differs',
+    'c7.foundCount':   (p) => `Found ${p.n} asymmetric ${p.n === 1 ? 'pair' : 'pairs'}`,
+    'c7.reason.cost':  (p) => `Cost differs (${p.fwd} vs ${p.rev})`,
+    // --- C8 Prefix Heatmap ---
+    'c8.title':     'Prefix advertisement redundancy',
+    'c8.hint':      'How many routers advertise each prefix? Advertised by 2+ = redundant; only 1 = the prefix is cut when that router fails.',
+    'c8.colorNote': 'Node color = share of prefixes advertised by this router that have no backup:',
+    'c8.legend':    '<span class="node-sw heat-green"></span><span><b>= 0%</b> — all prefixes redundantly advertised (ideal)</span><span class="node-sw heat-yellow"></span><span><b>0–33%</b> — a few prefixes singly advertised</span><span class="node-sw heat-orange"></span><span><b>33–66%</b> — about half have no backup</span><span class="node-sw heat-red"></span><span><b>&gt; 66%</b> — most prefixes singly advertised (high risk)</span>',
+    'c8.applyBtn':  'Apply heatmap coloring',
+    'c8.clearBtn':  'Clear heatmap',
+    // --- C2 Matrix ---
+    'c2.title':         'Shortest-path matrix',
+    'c2.hint':          'A table of shortest-path cost between all routers, shaded into 4 tiers by cost. Click any cell to see path details and highlight them on the graph.',
+    'c2.legend.t1':     '<b>≤30</b> — intra-region',
+    'c2.legend.t2':     '<b>31–60</b> — cross-region',
+    'c2.legend.t3':     '<b>61–100</b> — trans-ocean',
+    'c2.legend.t4':     '<b>&gt;100</b> — multi-hop trans-ocean',
+    'c2.legend.ecmp':   '= number of equal-cost paths (ECMP)',
+    'c2.legend.asym':   '= round-trip path asymmetric (hatched)',
+    'c2.noPath':        (p) => `No path available for ${p.src} → ${p.dst}.`,
+    'c2.failStatus':    (p) => `Current failures: ${p.e} edge(s) / ${p.n} node(s)`,
+    'c2.maxCostNote':   (p) => `Max cost = ${p.max}. See the legend above for tier thresholds and symbols.`,
+    'c2.reverseDir':    (p) => `Reverse ${p.dst} → ${p.src}`,
+    'c2.asymCostLabel': (p) => `cost ${p.cost} (asymmetric)`,
+    // --- C1 Path ---
+    'c1.title':        'Path analysis',
+    'c1.hint':         'Computes the shortest path between two points. Two columns: "Status" shows normal or detour (failure reroute); "Path" shows single or ECMP multipath.',
+    'c1.srcLabel':     'Source',
+    'c1.dstLabel':     'Destination',
+    'c1.swapTitle':    'Swap source and destination',
+    'c1.runBtn':       'Compute shortest path',
+    'c1.resetBtn':     'Reset view',
+    'c1.placeholder':  'Pick a source and destination, then click "Compute shortest path".',
+    'c1.unreach':      'Unreachable',
+    'c1.state.normal': 'Normal',
+    'c1.state.detour': 'Detour',
+    'c1.path.single':  'Single path',
+    'c1.field.state':  'Status',
+    'c1.field.path':   'Path',
+    'c1.totalCost':    'Total cost',
+    'c1.noPrimary':    'No primary path available to analyze.',
+    'c1.unbackTitle':  'Per-hop backup of the primary path (single-link N-1)',
+    'c1.allBackedUp':  'Any single link can fail and the destination stays reachable',
+    'c1.unbackNote':   'Tests single-link failures only, judging "still reachable after a cut"; detour cost may rise — equal-cost backup is not guaranteed.',
+    'c1.noPath':        (p) => `No path available for ${p.src} → ${p.dst} (possibly due to a failure).`,
+    'c1.path.ecmp':     (p) => `ECMP ×${p.n} multipath`,
+    'c1.parallelLinks': (p) => `⇉ Parallel equal-cost links ×${p.n}: ${p.list}`,
+    'c1.unbackedCount': (p) => `${p.n} segment(s) cut → unreachable`,
+    // --- C4 Edge Traffic ---
+    'c4.title':          'Edge traffic view',
+    'c4.hint':           'From the traffic demand matrix, computes the <b>Gbps</b> each link carries (split evenly across equal-cost paths), then <b>utilization</b> against link capacity. Circuits are full-duplex with <b>unidirectional capacity</b>, so Gbps and utilization take the <b>busier direction</b> (max of forward/reverse). 5 tiers: &gt;100% <b>overload</b> · 80–100% high · 50–80% mid · 0–50% low · <b>0% idle</b> (no traffic, faint dashed line).',
+    'c4.tier.overflow':  'Overload',
+    'c4.tier.high':      'High',
+    'c4.tier.mid':       'Mid',
+    'c4.tier.low':       'Low',
+    'c4.tier.idle':      'Idle',
+    'c4.noDemand':       'demand.js not loaded — cannot show the traffic view.',
+    'c4.reach.okLabel':  'Reachability',
+    'c4.reach.lostLabel':'Reachability accounting — ⚠ some demand lost its path',
+    'c4.unitLinks':      'links',
+    'c4.maxUtilLabel':   'Max utilization / source',
+    'c4.rankHdr':        'Edge traffic ranking',
+    'c4.col.pair':       'Link',
+    'c4.col.tier':       'Tier',
+    'c4.reach.okValue':  (p) => `${p.gbps} Gbps demand all routable`,
+    'c4.reach.lostValue':(p) => `${p.served} / ${p.total} Gbps reachable &nbsp;<span class="banner-sub">(lost ${p.lost} Gbps · ${p.pct}%)</span>`,
+    'c4.reach.lostNote': (p) => `The ranking below is based only on remaining reachable demand. In reality this ${p.lost} Gbps does not vanish — it means "customer down" or "BGP failover out of domain".`,
+    // --- C9 N-1 ---
+    'c9.title':        'N-1 single-point-of-failure ranking',
+    'c9.hint':         'Simulates each component (every link, every router) failing on its own, to find which connections suffer most and which component failure is most damaging. <span class="badge fail">∞</span>= unreachable after failure. <span class="badge backup">×N</span>= cost becomes N×. Click any row to see the impact on the graph.',
+    'c9.scanBtn':      'Run N-1 scan',
+    'c9.unreach':      'Unreachable',
+    'c9.stat.severe':  'Severe degradation (×≥2)',
+    'c9.stat.minor':   'Minor degradation',
+    'c9.stat.ok':      'Unaffected',
+    'c9.deadliestHdr': 'Deadliest failures (Top 10)',
+    'c9.noFailures':   'No single-point failure degrades any pair',
+    'c9.failHint':     'Click any row to simulate that failure — the failed component turns red and every affected pair\'s reroute is highlighted in orange.',
+    'c9.col.failure':  'Failure',
+    'c9.col.degraded': 'Degraded',
+    'c9.col.maxRatio': 'Max ×',
+    'c9.col.overflow': 'Overflow',
+    'c9.fragileHdr':   'Most fragile pairs (Top 20)',
+    'c9.allSurvive':   'All pairs survive any single-point failure',
+    'c9.pairHint':     'Click any row to see that pair\'s reroute under its worst failure.',
+    'c9.col.culprit':  'Culprit',
+    'c9.culprit.edge': (p) => `<span class="txt-danger" title="${p.id}">L</span> ${p.src} ↔ ${p.dst} down`,
+    'c9.culprit.node': (p) => `<span class="txt-danger">R</span> ${p.id} fails`,
+    // --- C3 Centrality ---
+    'c3.title':        'Centrality inventory',
+    'c3.hint':         'Measures how many paths traverse each link and node — the higher the value, the more traffic relies on it and the larger the impact when it fails.<div class="mt-1">4 tiers: <b>Hub</b> (needs expansion) / <b>Normal</b> (maintain) / <b>Rare</b> (can downsize) / <b>Pure-backup (links) · Edge node (nodes)</b> (zero transit traffic).</div>',
+    'c3.edge.idle':    'Pure backup',
+    'c3.node.idle':    'Edge node',
+    'c3.edge.act.hub':    'Expand & dual-home',
+    'c3.edge.act.normal': 'Maintain',
+    'c3.edge.act.rare':   'Bandwidth-downsize candidate',
+    'c3.edge.act.idle':   'Removal candidate',
+    'c3.node.act.hub':    'Dual-box dual-path',
+    'c3.node.act.normal': 'Maintain',
+    'c3.node.act.rare':   'Can downsize',
+    'c3.node.act.idle':   'No transit traffic',
+    'c3.col.pair':     'Link',
+    'c3.col.tier':     'Tier',
+    'c3.col.advice':   'Advice',
+    'c3.col.path':     'Paths',
+    'c3.edgeRankHdr':  'Link centrality ranking',
+    'c3.nodeRankHdr':  'Node centrality ranking',
+    'c3.allPathsHdr':  'All-pairs shortest paths',
+    'c3.unitLinks':    'links',
+    'c3.unitNodes':    'nodes',
+    'c3.toggle.transit':       'Transit count',
+    'c3.toggle.weighted':      'Traffic-weighted',
+    'c3.toggle.transitTitle':  'Per-pair weight=1: pure-topology transit SPT count',
+    'c3.toggle.weightedTitle': 'Per-pair weight=demand[a][b]: actual forwarded Gbps',
+    'c3.toggle.noDemandTitle': 'demand.js not loaded',
+    'c3.reach.okLabel':         'Reachability',
+    'c3.reach.lostLabel':       'Reachability accounting — ⚠ some pairs unreachable',
+    'c3.reach.demandLostLabel': 'Reachability accounting — ⚠ some demand lost its path',
+    'c3.reach.demandLostNote':  'Node heat below counts only reachable demand.',
+    'c3.maxNodeLabel':          (p) => `Max node ${p.unit}`,
+    'c3.reach.okValue':         (p) => `All ${p.total} pairs reachable`,
+    'c3.reach.lostValue':       (p) => `${p.reachable} / ${p.total} reachable &nbsp;<span class="banner-sub">(lost ${p.lost} pairs)</span>`,
+    'c3.reach.lostNote':        (p) => `The BC ranking below counts only the ${p.reachable} reachable pairs. If a failed node/link is a hub, the real impact is larger than the numbers suggest.`,
+    'c3.reach.demandLostValue': (p) => `${p.served} / ${p.total} Gbps reachable &nbsp;<span class="banner-sub">(lost ${p.lost} Gbps · ${p.pct}%)</span>`,
+    // --- C5 Failure Simulation ---
+    'c5.title':        'Failure simulation',
+    'c5.hint':         'Simulates a single component or a whole shared-risk group (SRLG) failing at once, examining connectivity, traffic redistribution, and capacity overflow. SRLGs cover submarine-cable systems, shared conduits, facility power, upstream ISPs, and other shared risks.',
+    'c5.targetLabel':  'Failure scenario',
+    'c5.runBtn':       'Run failure simulation',
+    'c5.optType.submarine': 'Submarine-cable system',
+    'c5.optType.conduit':   'Shared conduit',
+    'c5.optType.site':      'Facility / power',
+    'c5.optType.upstream':  'Upstream ISP',
+    'c5.optSingleRouter':   'Single router',
+    'c5.srlgType.submarine':'Submarine cable',
+    'c5.srlgType.conduit':  'Shared conduit',
+    'c5.srlgType.site':     'Facility',
+    'c5.srlgType.upstream': 'Upstream ISP',
+    'c5.srlgNodes':    'Nodes: ',
+    'c5.srlgLinks':    'Links: ',
+    'c5.overflowLabel':'⚠ Overload',
+    'c5.lostLabel':    '⚠ Traffic that lost its path',
+    'c5.okLabel':      'Traffic reachability',
+    'c5.cell.down':    'Down',
+    'c5.cell.up':      'Load increased',
+    'c5.cell.dec':     'Load decreased',
+    'c5.overflowValue':(p) => `${p.n} links exceed capacity`,
+    'c5.lostValue':    (p) => `${p.lost} / ${p.total} Gbps undeliverable <span class="banner-sub">(${p.pct}%)</span>`,
+    'c5.okValue':      (p) => `${p.total} Gbps demand all routable`,
+    // --- C10 Edges Editor ---
+    'c10.title':       'Edit link costs',
+    'c10.hint':        '<div class="mb-1.5"><b>Three ways to set cost</b>: ① type directly in the table · ② click "Reference" to apply the <b>latency</b>-based suggestion · ③ use "Congestion optimization" below to auto-search a set by <b>traffic</b>. ①② follow <b>latency</b>, ③ follows <b>congestion</b> — different goals → suggestions may differ (normal).</div>"Cost" is the OSPF weight used to pick paths — the smaller the number, the more likely this link is chosen as the primary path. Changing a cost updates the graph labels live and recomputes paths automatically.<div class="mt-1.5">For a directly-connected (point-to-point) link between two routers, you can set <b>forward</b> (A→B) and <b>reverse</b> (B→A) cost separately; the two directions need not match.</div><div class="mt-1.5">The "Reference" column derives a suggested cost from the actual <b>round-trip time (RTT)</b>; click it to fill the forward/reverse fields. If the current cost differs from the suggestion by &gt; 1, that row gets an <b>amber bar on the left edge of its reference cell</b> (the suggested number also turns amber), indicating the cost may have been set manually (e.g. the two directions intentionally differ).</div><div class="mt-1.5">Formula: <code class="bg-gray-100 px-1 rounded font-mono text-[11px]">suggested cost = round( RTT ÷ (round-trip latency per km × 90) )</code>, clamped to <b>5–250</b> (no lower than 5 if too short, no higher than 250 if too long). Current round-trip latency per km <span id="rtt-fiber-const" class="font-mono">—</span>; about every <span id="rtt-cost-step" class="font-mono">—</span> ms of latency maps to 1 cost level.</div><div class="legend mt-1.5">The latency behind a suggestion comes from three sources, most to least trustworthy:<span class="legend-item">🟢 Measured — actual measured latency (most accurate)</span><span class="legend-item">🔵 City reference — public city-to-city latency database</span><span class="legend-item">⚪ Model estimate — derived from straight-line distance (roughest)</span></div>',
+    'c10.resetBtn':    'Restore original values',
+    'c10.exportBtn':   'Export topology.js',
+    'c10.col.ref':     'Reference',
+    'c10.col.pair':    'Link',
+    'c10.col.type':    'Type',
+    'c10.col.cost':    'Cost (fwd / rev)',
+    'c10.divergeTitle':'Current cost differs from the (latency-derived) suggestion by more than 1 — possibly tuned manually',
+    'c10.src.measured':'Measured',
+    'c10.src.cityRef': 'City reference',
+    'c10.src.model':   'Model estimate',
+    'c10.fwdTitle':    (p) => `Forward ${p.src}→${p.dst}`,
+    'c10.revTitle':    (p) => `Reverse ${p.dst}→${p.src}`,
+    'c10.chipTitle':   (p) => `${p.label}: round-trip ${p.rtt} ms → suggested cost ${p.cost} (click to apply to fwd/rev)`,
+    'c10.opt.hdr':         'Congestion optimization (Fortz-Thorup / Tabu)',
+    'c10.opt.hint':        'Auto-searches a set of OSPF weights to lower <b>max link utilization (MLU)</b> = the utilization of the busiest link network-wide; same basis as the "Edge traffic" view (includes transit, busier direction). Constraints: RTT floor + integer [5,500]. Preview first, apply after confirming. Needs demand.js + link capacity.<div class="mt-1 text-gray-400">Different from "Reference" above: Reference gives a per-link suggestion by <b>latency</b>; optimization finds a whole set by <b>traffic/capacity</b> — so after applying, the reference column often lights an <b style="color:#d97706">amber bar</b> (deviating from the latency suggestion), which is normal.</div>',
+    'c10.opt.targetLabel': 'Target utilization cap (%)',
+    'c10.opt.targetTitle': "Push the busiest link's utilization below this value (i.e. the MLU target)",
+    'c10.opt.runBtn':      'Optimize',
+    'c10.opt.advanced':    'Advanced options<span class="font-normal normal-case tracking-normal text-gray-400"> — checking these runs an extra search and keeps only the better result</span>',
+    'c10.opt.cbInvcap':    'Use InvCap as the start point (unchecked = warm from current network)',
+    'c10.opt.cbAsym':      'Allow asymmetric weights (fwd/rev independent)',
+    'c10.opt.cbTransit':   'Also adjust transit interface cost',
+    'c10.opt.noDemand':    'demand.js not loaded — cannot optimize.',
+    'c10.opt.noCap':       'p2p edges lack capacity — no utilization to optimize.',
+    'c10.opt.computing':   'Computing… (Tabu search, ~a few seconds depending on size)',
+    'c10.opt.name.invcap': 'InvCap start',
+    'c10.opt.name.asym':   'asymmetric',
+    'c10.opt.name.transit':'transit',
+    'c10.opt.mluBefore':   'MLU before',
+    'c10.opt.mluAfter':    'MLU after',
+    'c10.opt.statLabel':   'profile · iterations · changes · time',
+    'c10.opt.tipIncluded': 'Transit interface cost is included in the optimization.',
+    'c10.opt.tipExcluded': 'Check "Also adjust transit interface cost (B)" to tune that segment\'s ingress cost directly; otherwise only p2p reroutes can split the ingress.',
+    'c10.opt.noRelax':     'Optimal within the red lines; the bottleneck is insufficient physical capacity.',
+    'c10.opt.relaxPrefix': 'Suggested relaxation: ',
+    'c10.opt.infeasibleLabel':'⚠ No solution within constraints (MLU ≥ 100%)',
+    'c10.opt.feasibleNotMet': 'Feasible but below target',
+    'c10.opt.noChange':    'Current weights are already optimal within constraints; no change needed.',
+    'c10.opt.colOldNew':   'Old→New',
+    'c10.opt.colUtil':     'util before→after',
+    'c10.opt.unchanged':   '(unchanged)',
+    'c10.opt.fwd':         'fwd',
+    'c10.opt.rev':         'rev',
+    'c10.opt.applyBtn':    'Apply these weights',
+    'c10.opt.applied':     'Optimized weights applied. Use "Export topology.js" to take them, or switch to "Edge traffic / Failure simulation" to re-verify.',
+    'c10.opt.statValue':   (p) => `${p.profile} · ${p.iter} iters · ${p.changed} links · ${p.ms}ms`,
+    'c10.opt.advHelpful':  (p) => `Advanced options (${p.names}) helped: MLU ${p.before}% → ${p.after}% (applied).`,
+    'c10.opt.advNoGain':   (p) => `Advanced options (${p.names}) gave no gain (baseline already ${p.base}%); using baseline result.`,
+    'c10.opt.bottleneckTransit': (p) => `Bottleneck includes a transit/LAN segment (${p.edges}) — ${p.tip}`,
+    'c10.opt.relaxItem':   (p) => `${p.edge}→${p.relaxTo} (MLU↓${p.drop}pt)`,
+    'c10.opt.bottleneckValue':     (p) => `Bottleneck: ${p.edges}`,
+    'c10.opt.feasibleNotMetValue': (p) => `Best achievable ${p.mlu}% &gt; target ${p.target}%`,
+    // --- UI chrome (header / left panel / tab buttons) ---
+    'ui.subtitle':         'International-backbone OSPF failure-impact analysis — computes shortest paths and centrality, and simulates traffic redistribution and capacity overflow under single-point / SRLG failures',
+    'ui.controls':         'Controls',
+    'ui.hidePseudo':       'Hide pseudo-nodes',
+    'ui.showPseudo':       'Show pseudo-nodes',
+    'ui.togglePseudoTitle':'A pseudo-node is a virtual node for a switched segment, representing multiple routers sharing one LAN. Hiding shows only physical routers.',
+    'ui.clearFailed':      'Clear all failures',
+    'ui.clearFailedTitle': 'Clear all right-click-marked failed links and nodes, returning to the normal topology.',
+    'ui.demandProfile':    'Traffic scenario',
+    'ui.interactionHint':  'Right-click link/node → toggle failure · left-drag to lay out',
+    'ui.legend':           'Legend',
+    'ui.legend.normal':    'Normal link',
+    'ui.legend.spt':       'SPT primary path',
+    'ui.legend.backup':    'Backup path',
+    'ui.legend.failed':    'Failed link',
+    'ui.legend.flowFailure':'Traffic / failure legend ▸',
+    'ui.legend.overflow':  'Overload (>100%)',
+    'ui.legend.loadInc':   'Load increased (after failure)',
+    'ui.legend.loadDec':   'Affected reduced (after failure)',
+    'ui.knownLimits':      'Known limitations ▸',
+    'ui.limit.1':          'Supports a <b>single routing area</b> (Area 0) only; does not handle inter-area route summaries',
+    'ui.limit.2':          'External-route lookup does exact match + default route only; full longest-prefix match is not implemented',
+    'ui.limit.3':          'Path costs are statically configured; not yet wired to real-time latency measurements',
+    'ui.tab.path':         'Path',
+    'ui.tab.matrix':       'Matrix',
+    'ui.tab.allpairs':     'Centrality',
+    'ui.tab.traffic':      'Edge traffic',
+    'ui.tab.failure':      'Failure sim',
+    'ui.tab.asym':         'Asymmetric',
+    'ui.tab.edges':        'Links',
+    'ui.tabTitle.live':    'Live analysis: reflects the failure state marked on the graph',
+    'ui.tabTitle.traffic': 'Live analysis: computes actual load from the traffic matrix',
+    'ui.tabTitle.audit':   'Design audit: based on the full topology, ignores manual failure marks',
+    'ui.tabTitle.edit':    'Edit link costs, recompute paths live',
+    'ui.tabSep':           'Separator',
+  },
+};
+// 語言預設:localStorage 記住的選擇 > 瀏覽器語言(zh* → zh,其餘 → en)。
+function detectLang() {
+  try { const s = localStorage.getItem('br-lang'); if (s && I18N[s]) return s; } catch (e) {}
+  return (navigator.language || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+}
+let LANG = detectLang();
+// 缺 key → 回傳 key 本身(讓漏譯在畫面上顯眼);值可為字串或 (params)=>字串。
+function t(key, params) {
+  const v = I18N[LANG] && I18N[LANG][key];
+  if (v == null) return key;
+  return typeof v === 'function' ? v(params) : v;
+}
+// 靜態 HTML:[data-i18n] 填純文字(textContent);[data-i18n-html] 填含標記字串(innerHTML)。
+function applyStaticI18n(root) {
+  const r = root || document;
+  r.querySelectorAll('[data-i18n]').forEach(el => {
+    el.textContent = t(el.getAttribute('data-i18n'));
+  });
+  r.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = t(el.getAttribute('data-i18n-html'));
+  });
+  r.querySelectorAll('[data-i18n-title]').forEach(el => {
+    el.title = t(el.getAttribute('data-i18n-title'));
+  });
+  r.querySelectorAll('[data-i18n-optlabel]').forEach(el => {
+    el.label = t(el.getAttribute('data-i18n-optlabel'));
+  });
+}
+// 切語言:存 localStorage + 重填靜態文字 + 更新切換鈕標籤 + 重繪當前分頁(動態字串隨 render 走 t())。
+function setLang(lang) {
+  if (!I18N[lang]) return;
+  LANG = lang;
+  try { localStorage.setItem('br-lang', lang); } catch (e) {}
+  applyStaticI18n(document);
+  const btn = document.getElementById('langToggle');
+  if (btn) btn.textContent = lang === 'en' ? '中文' : 'EN';   // 鈕上顯示「要切過去的語言」
+  const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+  TABS[activeTab]?.activate?.();
+}
+window.setLang = setLang;
 
 // ============================================================================
 // §1 CYTOSCAPE INITIALIZATION
@@ -950,19 +1547,22 @@ function expandSRLG(group) {
 
 {
   const sel = dom('failTarget');
-  const typeLabels = { submarine: '海纜系統', conduit: '共管線路', site: '機房 / 電力', upstream: '上游 ISP' };
+  const typeKeys = { submarine: 'c5.optType.submarine', conduit: 'c5.optType.conduit', site: 'c5.optType.site', upstream: 'c5.optType.upstream' };
   if (typeof srlg !== 'undefined' && srlg.length > 0) {
     const byType = {};
     for (const g of srlg) (byType[g.type] ??= []).push(g);
     for (const [type, groups] of Object.entries(byType)) {
       const og = document.createElement('optgroup');
-      og.label = typeLabels[type] || type;
+      const ogKey = typeKeys[type];
+      if (ogKey) { og.label = t(ogKey); og.setAttribute('data-i18n-optlabel', ogKey); }
+      else og.label = type;
       for (const g of groups) og.appendChild(new Option(g.label, 'srlg:' + g.id));
       sel.appendChild(og);
     }
   }
   const nodeGroup = document.createElement('optgroup');
-  nodeGroup.label = '單一路由器';
+  nodeGroup.label = t('c5.optSingleRouter');
+  nodeGroup.setAttribute('data-i18n-optlabel', 'c5.optSingleRouter');
   for (const n of routerNodes) nodeGroup.appendChild(new Option(n.label, 'node:' + n.id));
   sel.appendChild(nodeGroup);
 }
@@ -996,8 +1596,8 @@ const C1_Path = (() => {
       nodeRoles.set(src, 'endpoint');
       nodeRoles.set(dst, 'endpoint');
       applyRoles({ edgeRoles, nodeRoles });
-      div.innerHTML = `<span class="badge unreach">不可達</span>
-        <div class="hint">${src} → ${dst} 沒有可用路徑(可能因故障導致)。</div>`;
+      div.innerHTML = `<span class="badge unreach">${t('c1.unreach')}</span>
+        <div class="hint">${t('c1.noPath', { src, dst })}</div>`;
       dom('unbackup-result').innerHTML = '';
       return;
     }
@@ -1050,26 +1650,26 @@ const C1_Path = (() => {
     // 兩個獨立的軸,分欄呈現以免混淆:
     //   狀態 = 跟無故障基線比(正常 / 繞道) · 路徑 = 此刻有幾條等價路徑(單一 / ECMP 多路徑)
     const stateBadge = inBackup
-      ? '<span class="badge backup">繞道</span>'
-      : '<span class="badge pass">正常</span>';
+      ? `<span class="badge backup">${t('c1.state.detour')}</span>`
+      : `<span class="badge pass">${t('c1.state.normal')}</span>`;
     const pathBadge = isECMP
-      ? `<span class="badge info">ECMP ×${ecmpCount} 多路徑</span>`
-      : '<span class="badge na">單一路徑</span>';
-    const fieldLabel = (t) =>
-      `<span class="field-label">${t}</span>`;
+      ? `<span class="badge info">${t('c1.path.ecmp', { n: ecmpCount })}</span>`
+      : `<span class="badge na">${t('c1.path.single')}</span>`;
+    const fieldLabel = (label) =>
+      `<span class="field-label">${label}</span>`;
     let html = '';
     html += `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-      <div>${fieldLabel('狀態')}${stateBadge}</div>
-      <div>${fieldLabel('路徑')}${pathBadge}</div></div>`;
+      <div>${fieldLabel(t('c1.field.state'))}${stateBadge}</div>
+      <div>${fieldLabel(t('c1.field.path'))}${pathBadge}</div></div>`;
     html += `<div class="info-card" style="margin-top:0">
-      <div class="label">總成本</div><div class="value">${r.cost}</div></div>`;
+      <div class="label">${t('c1.totalCost')}</div><div class="value">${r.cost}</div></div>`;
     for (const g of disp) {
       html += `<div class="path-item${inBackup ? ' backup' : ''}">
         <span class="cost">${r.cost}</span>${g.nodes.join(' → ')}</div>`;
       // 同一 router 路徑底下有多條平行等價鏈路 → 逐條列出 edgeId,讓工程師看到實體分流
       if (g.variants.length > 1) {
         html += `<div class="hint txt-purple" style="margin:2px 0 6px 8px">
-          ⇉ 平行等價鏈路 ×${g.variants.length}:${g.variants.map(v => v.join('+')).join('  |  ')}</div>`;
+          ${t('c1.parallelLinks', { n: g.variants.length, list: g.variants.map(v => v.join('+')).join('  |  ') })}</div>`;
       }
     }
     div.innerHTML = html;
@@ -1080,7 +1680,7 @@ const C1_Path = (() => {
   function reset() {
     clearAllRoles();
     dom('path-result').innerHTML =
-      '<div class="hint">選擇起點和終點後,點擊「計算最短路徑」。</div>';
+      `<div class="hint">${t('c1.placeholder')}</div>`;
     dom('unbackup-result').innerHTML = '';
   }
 
@@ -1089,24 +1689,24 @@ const C1_Path = (() => {
     for (const eid of unbacked) edgeRoles.set(eid, 'unbacked');
     const div = dom('unbackup-result');
     if (primaryEdges.length === 0) {
-      div.innerHTML = '<div class="hint">目前沒有可分析的主路徑。</div>';
+      div.innerHTML = `<div class="hint">${t('c1.noPrimary')}</div>`;
       return;
     }
     // 收進單一卡片:主路徑鏈路清單 + 逐段備援狀態(消除浮動 badge — 選項 1)
     let html = `<div class="info-card" style="margin-top:8px">
-      <div class="label">主路徑逐段備援(單鏈路 N-1)</div>
+      <div class="label">${t('c1.unbackTitle')}</div>
       <div class="value">${primaryEdges.join(', ')}</div>`;
     if (unbacked.length === 0) {
-      html += '<div style="margin-top:6px"><span class="badge pass">任一單鏈路斷,終點仍可達</span></div>';
+      html += `<div style="margin-top:6px"><span class="badge pass">${t('c1.allBackedUp')}</span></div>`;
     } else {
-      html += `<div style="margin-top:6px"><span class="badge fail">${unbacked.length} 段斷即不可達</span></div>`;
+      html += `<div style="margin-top:6px"><span class="badge fail">${t('c1.unbackedCount', { n: unbacked.length })}</span></div>`;
       for (const eid of unbacked) {
         const e = edgeById.get(eid);
         html += `<div class="path-item fail" title="${eid}" style="margin-top:4px">${e.source} ↔ ${e.target} (cost ${e.cost})</div>`;
       }
     }
     html += '</div>';
-    html += '<div class="hint" style="margin-top:4px">僅測單一鏈路失效,判斷「斷後是否仍可達」;繞道成本可能上升,不保證等成本備援。</div>';
+    html += `<div class="hint" style="margin-top:4px">${t('c1.unbackNote')}</div>`;
     div.innerHTML = html;
   }
 
@@ -1163,7 +1763,7 @@ const C2_Matrix = (() => {
     const failInfo = dom('matrix-fail-info');
     const fE = failedEdges.size, fN = failedNodes.size;
     failInfo.innerHTML = (fE + fN > 0)
-      ? `<span class="txt-danger">目前故障:${fE} 邊 / ${fN} 節點</span>`
+      ? `<span class="txt-danger">${t('c2.failStatus', { e: fE, n: fN })}</span>`
       : '';
 
     // cost → 色階級數(固定門檻,不隨 maxCost 浮動)。回傳第幾級,hex 由 .cost-t{n} 決定。
@@ -1204,7 +1804,7 @@ const C2_Matrix = (() => {
       html += '</tr>';
     }
     html += '</table>';
-    html += `<div class="hint mt-2">最大 cost = ${maxCost === 0 ? 'n/a' : maxCost}。色階門檻與符號說明見上方圖例。</div>`;
+    html += `<div class="hint mt-2">${t('c2.maxCostNote', { max: maxCost === 0 ? 'n/a' : maxCost })}</div>`;
     dom('matrix-result').innerHTML = html;
     dom('matrix-detail').innerHTML = '';
 
@@ -1231,7 +1831,7 @@ const C2_Matrix = (() => {
       nodeRoles.set(dst, 'endpoint');
       applyRoles({ edgeRoles, nodeRoles });
       div.innerHTML = `<span class="badge unreach">UNREACHABLE</span>
-        <div class="hint">${src} → ${dst} 沒有可用路徑。</div>`;
+        <div class="hint">${t('c2.noPath', { src, dst })}</div>`;
       return;
     }
 
@@ -1258,8 +1858,8 @@ const C2_Matrix = (() => {
     }
     if (isAsym) {
       html += `<div class="info-card" style="margin-top:8px;border-color:#a855f7">
-        <div class="label" style="color:#7e22ce">反方向 ${dst} → ${src}</div>
-        <div class="value">cost ${reverse.cost} (非對稱)</div></div>`;
+        <div class="label" style="color:#7e22ce">${t('c2.reverseDir', { dst, src })}</div>
+        <div class="value">${t('c2.asymCostLabel', { cost: reverse.cost })}</div></div>`;
       for (const p of reverse.paths) {
         html += `<div class="path-item" style="background:#f3e8ff;border-left-color:#a855f7">
           <span class="cost">${reverse.cost}</span>${p.join(' → ')}</div>`;
@@ -1282,17 +1882,17 @@ const C3_AllPairs = (() => {
   let nodeWeightMode = 'unit';
   // 配色已移至 .tier-{key} CSS class — 此處只保留文案 (label/action)。
   const TIERS = {
-    hub:    { label: '樞紐',   action: '擴容雙保' },
-    normal: { label: '正常',   action: '維持' },
-    rare:   { label: '偶爾',   action: '降頻寬候選' },
-    idle:   { label: '純備援', action: '砍掉候選' },
+    hub:    { get label() { return t('common.tier.hub'); },    get action() { return t('c3.edge.act.hub'); } },
+    normal: { get label() { return t('common.tier.normal'); }, get action() { return t('c3.edge.act.normal'); } },
+    rare:   { get label() { return t('common.tier.rare'); },   get action() { return t('c3.edge.act.rare'); } },
+    idle:   { get label() { return t('c3.edge.idle'); },       get action() { return t('c3.edge.act.idle'); } },
   };
   // Node 版 tier 文案 — idle 對 router 是「末端/無轉送流量」(非備援,純 stub)
   const NODE_TIERS = {
-    hub:    { label: '樞紐',   action: '雙機雙路' },
-    normal: { label: '正常',   action: '維持' },
-    rare:   { label: '偶爾',   action: '可降規' },
-    idle:   { label: '末端',   action: '無轉送流量' },
+    hub:    { get label() { return t('common.tier.hub'); },    get action() { return t('c3.node.act.hub'); } },
+    normal: { get label() { return t('common.tier.normal'); }, get action() { return t('c3.node.act.normal'); } },
+    rare:   { get label() { return t('common.tier.rare'); },   get action() { return t('c3.node.act.rare'); } },
+    idle:   { get label() { return t('c3.node.idle'); },       get action() { return t('c3.node.act.idle'); } },
   };
 
   function classify(v, maxBC) {
@@ -1384,22 +1984,22 @@ const C3_AllPairs = (() => {
     const lostPairs = bcResult.lostPairs;
     const totalForBanner = bcResult.totalPairs;
     html += lostPairs.length === 0
-      ? reachabilityBanner({ tone: 'ok', label: '可達性',
-          value: `${totalForBanner} 對 pair 全數可達` })
-      : reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 pair 不可達',
-          value: `${bcResult.reachablePairs} / ${totalForBanner} 可達 &nbsp;<span class="banner-sub">(失去 ${lostPairs.length} 對)</span>`,
+      ? reachabilityBanner({ tone: 'ok', label: t('c3.reach.okLabel'),
+          value: t('c3.reach.okValue', { total: totalForBanner }) })
+      : reachabilityBanner({ tone: 'lost', label: t('c3.reach.lostLabel'),
+          value: t('c3.reach.lostValue', { reachable: bcResult.reachablePairs, total: totalForBanner, lost: lostPairs.length }),
           sample: sampleList(lostPairs, LIMITS.pairSample, p => `${p.a}→${p.b}`),
-          note: `以下 BC 排名僅統計 ${bcResult.reachablePairs} 對可達 pair。失效節點 / 鏈路若是 hub,真實衝擊比表面數字更大。` });
+          note: t('c3.reach.lostNote', { reachable: bcResult.reachablePairs }) });
 
     // 4 階採購決策卡(用 grid 2×2 排列)
-    html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], TIERS, tierCounts, '條');
+    html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], TIERS, tierCounts, t('c3.unitLinks'));
 
     html += `<div class="info-card"><div class="label">maxBC</div>
       <div class="value">${maxBC.toFixed(1)}</div></div>`;
 
     // 鏈路樞紐度排行
-    html += '<h2 class="section-h mt-3">鏈路樞紐度排行</h2>';
-    html += '<table><tr><th>連接</th><th>BC</th><th>分類</th><th>建議</th></tr>';
+    html += `<h2 class="section-h mt-3">${t('c3.edgeRankHdr')}</h2>`;
+    html += `<table><tr><th>${t('c3.col.pair')}</th><th>BC</th><th>${t('c3.col.tier')}</th><th>${t('c3.col.advice')}</th></tr>`;
     for (const r of ranking) {
       const t = TIERS[r.tier];
       const cost = r.edge.cost + (r.edge.costRev != null && r.edge.costRev !== r.edge.cost ? `/${r.edge.costRev}` : '');
@@ -1414,22 +2014,22 @@ const C3_AllPairs = (() => {
 
     // 節點樞紐度排行 — 過路數(§6.3 Freeman BC)⇄ 流量加權(§6.3b,吃重力模型 demand)切換
     const unitLabel = useDemand ? 'Gbps' : 'BC';
-    html += `<h2 class="section-h mt-3">節點樞紐度排行
+    html += `<h2 class="section-h mt-3">${t('c3.nodeRankHdr')}
       <span style="float:right;font-weight:400;text-transform:none;letter-spacing:0">
-        <button class="np-mode${!useDemand ? ' active' : ''}" data-np-mode="unit" title="每對 pair 權重=1:純拓樸過路 SPT 數">過路數</button><button class="np-mode${useDemand ? ' active' : ''}" data-np-mode="demand"${demandAvail ? ' title="每對 pair 權重=demand[a][b]:實際轉送 Gbps"' : ' disabled title="未載入 demand.js"'}>流量加權</button>
+        <button class="np-mode${!useDemand ? ' active' : ''}" data-np-mode="unit" title="${t('c3.toggle.transitTitle')}">${t('c3.toggle.transit')}</button><button class="np-mode${useDemand ? ' active' : ''}" data-np-mode="demand"${demandAvail ? ` title="${t('c3.toggle.weightedTitle')}"` : ` disabled title="${t('c3.toggle.noDemandTitle')}"`}>${t('c3.toggle.weighted')}</button>
       </span></h2>`;
     // demand 模式:附 Gbps 可達性帳目 — 失去路徑的 demand 不計入下方節點熱度分母
     if (useDemand && nodeBCResult.lostDemand > 0) {
       const tot = nodeBCResult.totalDemand, lost = nodeBCResult.lostDemand;
-      html += reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 demand 失去路徑',
-        value: `${nodeBCResult.servedDemand.toFixed(0)} / ${tot.toFixed(0)} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${lost.toFixed(0)} Gbps · ${(lost / tot * 100).toFixed(1)}%)</span>`,
+      html += reachabilityBanner({ tone: 'lost', label: t('c3.reach.demandLostLabel'),
+        value: t('c3.reach.demandLostValue', { served: nodeBCResult.servedDemand.toFixed(0), total: tot.toFixed(0), lost: lost.toFixed(0), pct: (lost / tot * 100).toFixed(1) }),
         sample: sampleList(nodeBCResult.lostDemandPairs, LIMITS.demandSample, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
-        note: '以下節點熱度僅統計可達 demand。' });
+        note: t('c3.reach.demandLostNote') });
     }
-    html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], NODE_TIERS, nodeTierCounts, '台');
-    html += `<div class="info-card"><div class="label">最大 Node ${unitLabel}</div>
+    html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], NODE_TIERS, nodeTierCounts, t('c3.unitNodes'));
+    html += `<div class="info-card"><div class="label">${t('c3.maxNodeLabel', { unit: unitLabel })}</div>
       <div class="value">${maxNodeBC.toFixed(1)}</div></div>`;
-    html += `<table><tr><th>Node</th><th>${unitLabel}</th><th>分類</th><th>建議</th></tr>`;
+    html += `<table><tr><th>Node</th><th>${unitLabel}</th><th>${t('c3.col.tier')}</th><th>${t('c3.col.advice')}</th></tr>`;
     for (const r of nodeRanking) {
       const t = NODE_TIERS[r.tier];
       const subLabel = r.node.label && r.node.label.replace(/\n/g, ' ') !== r.nid
@@ -1445,8 +2045,8 @@ const C3_AllPairs = (() => {
     html += '</table>';
 
     // 全 pair 最短路徑列表(保留舊版)
-    html += '<h2 class="section-h mt-3">全 Pair 最短路徑</h2>';
-    html += '<table><tr><th>連接</th><th>Cost</th><th>ECMP</th><th>路徑</th></tr>';
+    html += `<h2 class="section-h mt-3">${t('c3.allPathsHdr')}</h2>`;
+    html += `<table><tr><th>${t('c3.col.pair')}</th><th>Cost</th><th>ECMP</th><th>${t('c3.col.path')}</th></tr>`;
     for (const pr of pairRows) {
       const ecmpBadge = pr.ecmp > 1 ? `<span class="badge ecmp">×${pr.ecmp}</span>` : '';
       const pathsHtml = pr.paths.map(p => `<div style="font-family:monospace">${p.join(' → ')}</div>`).join('');
@@ -1474,11 +2074,11 @@ const C3_AllPairs = (() => {
 // ----------------------------------------------------------------------------
 const C4_Traffic = (() => {
   const TIERS = {
-    overflow: { label: '過載' },
-    high:     { label: '高負載' },
-    mid:      { label: '中負載' },
-    low:      { label: '低負載' },
-    idle:     { label: '閒置' },
+    overflow: { get label() { return t('c4.tier.overflow'); } },
+    high:     { get label() { return t('c4.tier.high'); } },
+    mid:      { get label() { return t('c4.tier.mid'); } },
+    low:      { get label() { return t('c4.tier.low'); } },
+    idle:     { get label() { return t('c4.tier.idle'); } },
   };
   function classify(util) {
     if (util > THRESHOLDS.trafficOverflow) return 'overflow';
@@ -1492,7 +2092,7 @@ const C4_Traffic = (() => {
     const div = dom('traffic-result');
     if (typeof demand === 'undefined' || !demand?.matrix) {
       clearAllRoles();
-      div.innerHTML = '<div class="hint val-danger">未載入 demand.js,無法顯示流量視圖。</div>';
+      div.innerHTML = `<div class="hint val-danger">${t('c4.noDemand')}</div>`;
       return;
     }
     const result = allPairsTraffic(topology, demand, failedEdges, failedNodes);
@@ -1524,23 +2124,23 @@ const C4_Traffic = (() => {
     const lostGbps = result.lostDemand;
     const totalGbps = result.totalDemand;
     if (lostGbps === 0) {
-      html += reachabilityBanner({ tone: 'ok', label: '可達性',
-        value: `${totalGbps.toFixed(0)} Gbps demand 全數有路可走` });
+      html += reachabilityBanner({ tone: 'ok', label: t('c4.reach.okLabel'),
+        value: t('c4.reach.okValue', { gbps: totalGbps.toFixed(0) }) });
     } else {
       const lostPct = totalGbps > 0 ? (lostGbps / totalGbps * 100) : 0;
-      html += reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 demand 失去路徑',
-        value: `${result.servedDemand.toFixed(0)} / ${totalGbps.toFixed(0)} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${lostGbps.toFixed(0)} Gbps · ${lostPct.toFixed(1)}%)</span>`,
+      html += reachabilityBanner({ tone: 'lost', label: t('c4.reach.lostLabel'),
+        value: t('c4.reach.lostValue', { served: result.servedDemand.toFixed(0), total: totalGbps.toFixed(0), lost: lostGbps.toFixed(0), pct: lostPct.toFixed(1) }),
         sample: sampleList(result.lostDemandPairs, LIMITS.demandSample, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
-        note: `以下流量排行僅基於剩餘可達 demand。現實裡這 ${lostGbps.toFixed(0)} Gbps 不會憑空消失,代表「客戶斷線」或「BGP 倒換出域」。` });
+        note: t('c4.reach.lostNote', { lost: lostGbps.toFixed(0) }) });
     }
 
-    html += tierCardGrid(['overflow', 'high', 'mid', 'low', 'idle'], TIERS, tierCounts, '條');
-    html += `<div class="info-card"><div class="label">最大利用率 / 來源</div>
+    html += tierCardGrid(['overflow', 'high', 'mid', 'low', 'idle'], TIERS, tierCounts, t('c4.unitLinks'));
+    html += `<div class="info-card"><div class="label">${t('c4.maxUtilLabel')}</div>
       <div class="value">${(maxUtil * 100).toFixed(1)}%
       <span class="banner-sub">&nbsp;· ${demand.source ?? '(unknown)'}</span></div></div>`;
 
-    html += '<h2 class="section-h mt-3">邊流量排行</h2>';
-    html += '<table><tr><th>連接</th><th>Gbps</th><th>Cap</th><th>Util%</th><th>分類</th></tr>';
+    html += `<h2 class="section-h mt-3">${t('c4.rankHdr')}</h2>`;
+    html += `<table><tr><th>${t('c4.col.pair')}</th><th>Gbps</th><th>Cap</th><th>Util%</th><th>${t('c4.col.tier')}</th></tr>`;
     for (const r of rows) {
       const t = TIERS[r.tier];
       const capStr = isFinite(r.cap) ? r.cap.toFixed(0) : '—';
@@ -1664,16 +2264,16 @@ const C5_Failure = (() => {
 
     // SRLG info card
     if (group) {
-      const typeLabels = { submarine: '海纜', conduit: '共管線路', site: '機房', upstream: '上游 ISP' };
+      const typeLabels = { submarine: t('c5.srlgType.submarine'), conduit: t('c5.srlgType.conduit'), site: t('c5.srlgType.site'), upstream: t('c5.srlgType.upstream') };
       const affEdges = [...fE];
       const affNodes = [...fN];
       html += `<div class="info-card s-card s-srlg mb-2">
         <div class="label">SRLG · ${typeLabels[group.type] || group.type}</div>
         <div class="value">${group.label}</div>
         <div class="s-sub" style="font-family:monospace">
-          ${affNodes.length ? '節點: ' + affNodes.join(', ') : ''}
+          ${affNodes.length ? t('c5.srlgNodes') + affNodes.join(', ') : ''}
           ${affNodes.length && affEdges.length ? ' · ' : ''}
-          ${affEdges.length ? '鏈路: ' + affEdges.join(', ') : ''}
+          ${affEdges.length ? t('c5.srlgLinks') + affEdges.join(', ') : ''}
         </div>
       </div>`;
     }
@@ -1693,8 +2293,8 @@ const C5_Failure = (() => {
       const sample = overflows.slice(0, LIMITS.overflowSample).map(x =>
         `${x.edge.source}↔${x.edge.target} ${(x.util*100).toFixed(0)}%`).join(', ');
       html += `<div class="info-card s-card s-overflow mt-1.5">
-        <div class="label">⚠ 過載</div>
-        <div class="value">${overflows.length} 條鏈路超過容量</div>
+        <div class="label">${t('c5.overflowLabel')}</div>
+        <div class="value">${t('c5.overflowValue', { n: overflows.length })}</div>
         <div class="s-sub" style="font-family:monospace">${sample}</div></div>`;
     }
 
@@ -1703,13 +2303,12 @@ const C5_Failure = (() => {
       const total = tAfterFull.totalDemand;
       if (lost > 0) {
         const pct = total > 0 ? (lost / total * 100) : 0;
-        html += reachabilityBanner({ tone: 'lost', mt: true, label: '⚠ 失去路徑的流量',
-          value: `${lost.toFixed(0)} / ${total.toFixed(0)} Gbps 無法送達
-            <span class="banner-sub">(${pct.toFixed(1)}%)</span>`,
+        html += reachabilityBanner({ tone: 'lost', mt: true, label: t('c5.lostLabel'),
+          value: t('c5.lostValue', { lost: lost.toFixed(0), total: total.toFixed(0), pct: pct.toFixed(1) }),
           sample: sampleList(tAfterFull.lostDemandPairs, LIMITS.demandSample, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`) });
       } else {
-        html += reachabilityBanner({ tone: 'ok', mt: true, label: '流量可達性',
-          value: `${total.toFixed(0)} Gbps demand 全數有路可走` });
+        html += reachabilityBanner({ tone: 'ok', mt: true, label: t('c5.okLabel'),
+          value: t('c5.okValue', { total: total.toFixed(0) }) });
       }
     }
 
@@ -1725,9 +2324,9 @@ const C5_Failure = (() => {
 
     for (const row of edgeRows.slice(0, LIMITS.topAffectedEdges)) {
       const statusCell =
-        row.cls === 'down' ? '<span class="badge fail" title="斷線">✕</span>' :
-        row.cls === 'up'   ? '<span class="badge info" title="負載增加">▲</span>' :
-                             '<span class="badge warn" title="負載減少">▼</span>';
+        row.cls === 'down' ? `<span class="badge fail" title="${t('c5.cell.down')}">✕</span>` :
+        row.cls === 'up'   ? `<span class="badge info" title="${t('c5.cell.up')}">▲</span>` :
+                             `<span class="badge warn" title="${t('c5.cell.dec')}">▼</span>`;
       const arrow = row.cls === 'down' ? '↓' : (row.cls === 'up' ? '↑' : '↓');
       const deltaCls = row.cls === 'down' ? 'delta-down' : (row.cls === 'up' ? 'delta-up' : 'delta-dec');
       const pct = isFinite(row.changePct) ? row.changePct.toFixed(0) + '%' : '∞';
@@ -1757,16 +2356,9 @@ const C5_Failure = (() => {
 // §5.6 C6 — ECMP Backup Check (ECMP 備援完整性檢查)
 // ----------------------------------------------------------------------------
 const C6_Ecmp = (() => {
-  // 中文化 reason — 給 failed 的列說明為什麼掛掉
-  function fmtReason(reason) {
-    if (!reason) return '';
-    const m1 = reason.match(/^removing (.+) → unreachable$/);
-    if (m1) return `砍掉 <b>${m1[1]}</b> 後變不可達`;
-    const m2 = reason.match(/^backup uses non-ECMP edge (.+)$/);
-    if (m2) return `備援繞到群組外的 <b>${m2[1]}</b>`;
-    if (reason === 'no ECMP')         return '無 ECMP(只有一條最短路)';
-    if (reason === 'single first-hop') return '多條 path 共用同一出口邊';
-    return reason;
+  // reason 顯示字串移入 §0.5 I18N(c6.reason.*);engine §7 仍只吐代碼 + 參數(eid/bid)。
+  function fmtReason(r) {
+    return (r && r.reason) ? t('c6.reason.' + r.reason, r) : '';
   }
 
   function render() {
@@ -1780,41 +2372,41 @@ const C6_Ecmp = (() => {
     const summary = { passed: 0, failed: 0, 'n/a': 0 };
     for (const r of results) summary[r.status]++;
 
-    // n/a 細分:no ECMP vs single first-hop
-    const naNoEcmp     = results.filter(r => r.status === 'n/a' && r.reason === 'no ECMP').length;
-    const naSingleHop  = results.filter(r => r.status === 'n/a' && r.reason === 'single first-hop').length;
+    // n/a 細分:no-ecmp vs single-first-hop
+    const naNoEcmp     = results.filter(r => r.status === 'n/a' && r.reason === 'no-ecmp').length;
+    const naSingleHop  = results.filter(r => r.status === 'n/a' && r.reason === 'single-first-hop').length;
 
     let html = `<div class="mini-stat">
-      <div class="info-card stat-card stat-pass"><div class="label">通過</div><div class="value">${summary.passed}</div></div>
-      <div class="info-card stat-card stat-fail"><div class="label">失敗</div><div class="value">${summary.failed}</div></div>
+      <div class="info-card stat-card stat-pass"><div class="label">${t('common.status.passed')}</div><div class="value">${summary.passed}</div></div>
+      <div class="info-card stat-card stat-fail"><div class="label">${t('common.status.failed')}</div><div class="value">${summary.failed}</div></div>
       </div>
-      <div class="info-card stat-card stat-na"><div class="label">不適用</div>
-        <div class="value">${summary['n/a']} <span class="cell-sub">(無 ECMP ${naNoEcmp} · 單一出口 ${naSingleHop})</span></div>
+      <div class="info-card stat-card stat-na"><div class="label">${t('common.status.na')}</div>
+        <div class="value">${summary['n/a']} <span class="cell-sub">${t('c6.stat.breakdown', { noEcmp: naNoEcmp, singleHop: naSingleHop })}</span></div>
       </div>`;
 
     // 只列出 failed 的細項 — 通過跟不適用太多筆,平鋪沒意義
     const failed = results.filter(r => r.status === 'failed');
     if (failed.length === 0) {
-      html += '<div class="mt-2"><span class="badge pass">所有有 ECMP 的 pair 都通過備援檢查</span></div>';
+      html += `<div class="mt-2"><span class="badge pass">${t('c6.allPass')}</span></div>`;
     } else {
-      html += '<h2 class="section-h mt-3">失敗明細</h2>';
-      html += '<table class="mt-1"><tr><th>連接</th><th>原因</th></tr>';
+      html += `<h2 class="section-h mt-3">${t('c6.failDetailHdr')}</h2>`;
+      html += `<table class="mt-1"><tr><th>${t('c6.col.pair')}</th><th>${t('c6.col.reason')}</th></tr>`;
       for (const r of failed) {
         html += `<tr><td>${r.src} → ${r.dst}</td>
-          <td class="val-danger">${fmtReason(r.reason)}</td></tr>`;
+          <td class="val-danger">${fmtReason(r)}</td></tr>`;
       }
       html += '</table>';
     }
 
     // 完整明細放在 collapsible details 裡,需要才展開
-    html += `<details class="mt-3" open><summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-900">全部 ${results.length} 對的掃描結果</summary>`;
-    html += '<table class="mt-1"><tr><th>連接</th><th>狀態</th><th>備註</th></tr>';
+    html += `<details class="mt-3" open><summary class="text-xs text-gray-600 cursor-pointer hover:text-gray-900">${t('c6.fullScan', { n: results.length })}</summary>`;
+    html += `<table class="mt-1"><tr><th>${t('c6.col.pair')}</th><th>${t('c6.col.status')}</th><th>${t('c6.col.note')}</th></tr>`;
     for (const r of results) {
       const cls = r.status === 'passed' ? 'pass' : (r.status === 'failed' ? 'fail' : 'na');
-      const label = r.status === 'passed' ? '通過' : (r.status === 'failed' ? '失敗' : '不適用');
+      const label = r.status === 'passed' ? t('common.status.passed') : (r.status === 'failed' ? t('common.status.failed') : t('common.status.na'));
       html += `<tr><td>${r.src} → ${r.dst}</td>
         <td><span class="badge ${cls}">${label}</span></td>
-        <td class="banner-sub">${r.status === 'passed' ? '' : fmtReason(r.reason)}</td></tr>`;
+        <td class="banner-sub">${r.status === 'passed' ? '' : fmtReason(r)}</td></tr>`;
     }
     html += '</table></details>';
 
@@ -1845,10 +2437,10 @@ const C7_Asym = (() => {
 
     let html = '';
     if (asym.length === 0) {
-      html = '<span class="badge pass">所有 pair 路徑對稱</span>';
+      html = `<span class="badge pass">${t('c7.allSymmetric')}</span>`;
     } else {
-      html += `<span class="badge fail">發現 ${asym.length} 組非對稱路徑</span>`;
-      html += '<div class="hint mt-2">下列 Router pair 在兩個方向上路徑或成本不同,封包來回會走不同路徑。</div>';
+      html += `<span class="badge fail">${t('c7.foundCount', { n: asym.length })}</span>`;
+      html += `<div class="hint mt-2">${t('c7.listNote')}</div>`;
 
       for (const x of asym) {
         // 分類差異原因 — 幫助使用者快速理解
@@ -1856,8 +2448,8 @@ const C7_Asym = (() => {
         const pathDiff = !(x.fwdPaths.length === x.revPaths.length &&
                            x.fwdPaths.every(p => x.revPaths.includes(p)));
         const reasons = [];
-        if (costDiff) reasons.push(`Cost 不同 (${x.fwdCost} vs ${x.revCost})`);
-        if (pathDiff) reasons.push(`路徑集合不同`);
+        if (costDiff) reasons.push(t('c7.reason.cost', { fwd: x.fwdCost, rev: x.revCost }));
+        if (pathDiff) reasons.push(t('c7.reason.path'));
 
         html += `<div class="info-card" style="margin-top:8px">
           <div class="label" style="display:flex;justify-content:space-between;align-items:center">
@@ -1933,9 +2525,9 @@ const C9_N1 = (() => {
   function fmtCulprit(s) {
     if (s.kind === 'edge') {
       const e = s.edge;
-      return `<span class="txt-danger" title="${s.id}">L</span> ${e.source} ↔ ${e.target} 斷`;
+      return t('c9.culprit.edge', { id: s.id, src: e.source, dst: e.target });
     }
-    return `<span class="txt-danger">R</span> ${s.id} 失效`;
+    return t('c9.culprit.node', { id: s.id });
   }
 
   // 共用重繞著色:失效元件標紅(simulated-fail / failed-node),
@@ -2005,20 +2597,20 @@ const C9_N1 = (() => {
     const okPairs = totalPairs - pairRows.length;
 
     let html = `<div class="mini-stat">
-      <div class="info-card sev-card sev-unreach"><div class="label">不可達</div><div class="value">${unreachPairs}</div></div>
-      <div class="info-card sev-card sev-severe"><div class="label">嚴重劣化 (×≥2)</div><div class="value">${severePairs}</div></div>
+      <div class="info-card sev-card sev-unreach"><div class="label">${t('c9.unreach')}</div><div class="value">${unreachPairs}</div></div>
+      <div class="info-card sev-card sev-severe"><div class="label">${t('c9.stat.severe')}</div><div class="value">${severePairs}</div></div>
     </div>
     <div class="mini-stat">
-      <div class="info-card sev-card sev-minor"><div class="label">輕微劣化</div><div class="value">${minorPairs}</div></div>
-      <div class="info-card sev-card sev-ok"><div class="label">不受影響</div><div class="value">${okPairs}</div></div>
+      <div class="info-card sev-card sev-minor"><div class="label">${t('c9.stat.minor')}</div><div class="value">${minorPairs}</div></div>
+      <div class="info-card sev-card sev-ok"><div class="label">${t('c9.stat.ok')}</div><div class="value">${okPairs}</div></div>
     </div>`;
 
-    html += '<h2 class="section-h mt-3">最致命失效 (Top 10)</h2>';
+    html += `<h2 class="section-h mt-3">${t('c9.deadliestHdr')}</h2>`;
     if (failureRows.length === 0) {
-      html += '<span class="badge pass">無單點失效會造成任何 pair 劣化</span>';
+      html += `<span class="badge pass">${t('c9.noFailures')}</span>`;
     } else {
-      html += '<div class="hint mb-2">點任一列模擬該失效情境 — 失效元件標紅,所有受影響 pair 的重繞路徑以橘色高亮。</div>';
-      html += `<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th>${hasDemand ? '<th>溢出</th>' : ''}</tr>`;
+      html += `<div class="hint mb-2">${t('c9.failHint')}</div>`;
+      html += `<table><tr><th>${t('c9.col.failure')}</th><th>${t('c9.unreach')}</th><th>${t('c9.col.degraded')}</th><th>ΣΔcost</th><th>${t('c9.col.maxRatio')}</th>${hasDemand ? `<th>${t('c9.col.overflow')}</th>` : ''}</tr>`;
       for (const f of failureRows.slice(0, LIMITS.topFailures)) {
         const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
         const ov = failOverflow.get(f) ?? 0;
@@ -2037,12 +2629,12 @@ const C9_N1 = (() => {
       html += '</table>';
     }
 
-    html += '<h2 class="section-h mt-3">最脆弱 Pair (Top 20)</h2>';
+    html += `<h2 class="section-h mt-3">${t('c9.fragileHdr')}</h2>`;
     if (pairRows.length === 0) {
-      html += '<span class="badge pass">所有 pair 都能撐過任一單點失效</span>';
+      html += `<span class="badge pass">${t('c9.allSurvive')}</span>`;
     } else {
-      html += '<div class="hint mb-2">點任一列查看該 pair 在最糟失效下的重繞路徑。</div>';
-      html += '<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>cost</th><th>元凶</th></tr>';
+      html += `<div class="hint mb-2">${t('c9.pairHint')}</div>`;
+      html += `<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>cost</th><th>${t('c9.col.culprit')}</th></tr>`;
       for (const row of pairRows.slice(0, LIMITS.topPairs)) {
         const ratioBadge = row.ratio === Infinity
           ? '<span class="badge fail">∞</span>'
@@ -2108,15 +2700,17 @@ const C10_Edges = (() => {
   const RTT_OK  = typeof rtt !== 'undefined' && rtt && Array.isArray(rtt.edges);
   const FIBER_RTT_PER_KM = (RTT_OK && rtt.fiberRttPerKm) ? rtt.fiberRttPerKm : 0.01014;
   const COST_DIV = FIBER_RTT_PER_KM * 90;
-  // 把實際常數填入說明區公式(避免在靜態 HTML 寫死可變 dataset 數值)
-  {
+  // 把實際常數填入說明區公式(避免在靜態 HTML 寫死可變 dataset 數值)。
+  // 包成函式並在 render() 呼叫:i18n 重填 hint(data-i18n-html)會重建這兩個 span,需重填。
+  function fillRttConsts() {
     const c1 = dom('rtt-fiber-const'); if (c1) c1.textContent = `${FIBER_RTT_PER_KM} ms/km`;
     const c2 = dom('rtt-cost-step');   if (c2) c2.textContent = COST_DIV.toFixed(2);
   }
+  fillRttConsts();
   const SRC_META = {
-    'measured': { icon: '🟢', label: '直測' },
-    'city-ref': { icon: '🔵', label: '城市參考' },
-    'model':    { icon: '⚪', label: '模型估計' },
+    'measured': { icon: '🟢', get label() { return t('c10.src.measured'); } },
+    'city-ref': { icon: '🔵', get label() { return t('c10.src.cityRef'); } },
+    'model':    { icon: '⚪', get label() { return t('c10.src.model'); } },
   };
   // node 對 → rtt.edges 記錄(雙向皆登錄,查無回 undefined)
   const rttByPair = new Map();
@@ -2135,9 +2729,10 @@ const C10_Edges = (() => {
   }
 
   function render() {
+    fillRttConsts();
     const div = dom('edges-result');
-    const refCol = RTT_OK ? '<th>參考</th>' : '';
-    let html = `<table><tr><th>連接</th><th>類型</th><th>成本 (去 / 回)</th>${refCol}</tr>`;
+    const refCol = RTT_OK ? `<th>${t('c10.col.ref')}</th>` : '';
+    let html = `<table><tr><th>${t('c10.col.pair')}</th><th>${t('c10.col.type')}</th><th>${t('c10.col.cost')}</th>${refCol}</tr>`;
 
     // 無向表:一條實體鏈路一列。
     // 排序:transit 先、p2p 後;同型內 flagged(⚠ 可能人工調校)置頂,再按正規化 pair key(a<b? a+b : b+a)字母序。
@@ -2166,9 +2761,9 @@ const C10_Edges = (() => {
       const orig = originalEdges.find(o => o.id === e.id);
       const modCls = isModified(e, orig) ? ' modified' : '';
       // 去程 = cost;回程 = costRev(p2p 可不對稱)。transit 無回程,僅顯示「—」。
-      const fwdInput = `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="fwd" value="${e.cost}" title="去程 ${e.source}→${e.target}" />`;
+      const fwdInput = `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="fwd" value="${e.cost}" title="${t('c10.fwdTitle', { src: e.source, dst: e.target })}" />`;
       const revInput = e.type === 'p2p'
-        ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" title="回程 ${e.target}→${e.source}" />`
+        ? `<input type="number" min="1" class="cost-input${modCls}" data-edge="${e.id}" data-dir="rev" value="${e.costRev ?? e.cost}" title="${t('c10.revTitle', { src: e.source, dst: e.target })}" />`
         : '<span class="ref-none">—</span>';
       // 去≠回(非對稱 p2p)→ 成本格左緣紫條(.cost-asym)+ 分隔符灰 `/` 轉紫 `⇄`,整格訊號、不占欄寬;對稱維持灰 `/`。
       const isAsym = e.type === 'p2p' && e.costRev != null && e.costRev !== e.cost;
@@ -2183,10 +2778,10 @@ const C10_Edges = (() => {
             (e.type === 'p2p' && Math.abs((e.costRev ?? e.cost) - ref.cost) > 1);
           const costCls = diverge ? 'ref-cost diverged' : 'ref-cost';
           const chip = `<span class="ref-chip" data-ref-edge="${e.id}" data-ref-cost="${ref.cost}"`
-            + ` title="${ref.label}:來回延遲 ${ref.rtt} ms → 建議成本 ${ref.cost}(點一下帶入去/回程)">`
+            + ` title="${t('c10.chipTitle', { label: ref.label, rtt: ref.rtt, cost: ref.cost })}">`
             + `${ref.icon} <span class="${costCls}">${ref.cost}</span></span>`;
           // 偏離 RTT 建議(diverge)→ 參考格左緣琥珀條(.ref-diverged)+ 建議成本數字轉琥珀;⚠ 文字標移除,改整格訊號。
-          refCell = `<td data-reftd="${e.id}"${diverge ? ' class="ref-diverged" title="目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過"' : ''}>${chip}</td>`;
+          refCell = `<td data-reftd="${e.id}"${diverge ? ` class="ref-diverged" title="${t('c10.divergeTitle')}"` : ''}>${chip}</td>`;
         } else {
           refCell = '<td><span class="ref-none">—</span></td>';
         }
@@ -2245,7 +2840,7 @@ const C10_Edges = (() => {
       // 建議成本數字的琥珀染色(.diverged)= 格內細訊號;參考格左緣琥珀條(.ref-diverged)= 整格訊號,兩者同步。
       cell.querySelector('.ref-cost')?.classList.toggle('diverged', diverge);
       cell.classList.toggle('ref-diverged', diverge);
-      if (diverge) cell.title = '目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過';
+      if (diverge) cell.title = t('c10.divergeTitle');
       else cell.removeAttribute('title');
     }
 
@@ -2337,13 +2932,13 @@ ${posStr}
   function runOptimize() {
     const div = dom('optimize-result');
     if (typeof demand === 'undefined' || !demand?.matrix) {
-      div.innerHTML = '<div class="hint val-danger">未載入 demand.js,無法最佳化。</div>';
+      div.innerHTML = `<div class="hint val-danger">${t('c10.opt.noDemand')}</div>`;
       return;
     }
     const hasCap = topology.edges.some(e =>
       e.type === 'p2p' && isFinite(e.capacity ?? Infinity) && (e.capacity ?? 0) > 0);
     if (!hasCap) {
-      div.innerHTML = '<div class="hint val-danger">p2p 邊缺 capacity,無利用率可優化。</div>';
+      div.innerHTML = `<div class="hint val-danger">${t('c10.opt.noCap')}</div>`;
       return;
     }
     const pct = parseInt(dom('optTarget')?.value, 10);
@@ -2351,7 +2946,7 @@ ${posStr}
 
     // 搜尋是同步的、無 Web Worker → 會短暫凍結。先畫「計算中」再 yield 一個 macrotask,
     // 讓 spinner 真的 paint 出來,使用者才不會以為當掉。
-    div.innerHTML = '<div class="hint">計算中…(Tabu 搜尋,視規模約數秒)</div>';
+    div.innerHTML = `<div class="hint">${t('c10.opt.computing')}</div>`;
     setTimeout(() => runOptimizeCore(target), 30);
   }
 
@@ -2380,12 +2975,12 @@ ${posStr}
       const rSel = optimizeWeights(topology, demand,
         buildWeightBounds(topology, { rttFloor, asymmetric: wantAsym, includeTransit: wantTransit }),
         { ...opt, init: wantInvcap ? 'invcap' : 'warm' });
-      const optNames = [wantInvcap && 'InvCap 起點', wantAsym && '不對稱', wantTransit && 'transit'].filter(Boolean).join(' + ');
+      const optNames = [wantInvcap && t('c10.opt.name.invcap'), wantAsym && t('c10.opt.name.asym'), wantTransit && t('c10.opt.name.transit')].filter(Boolean).join(' + ');
       if (rSel.mlu < rBase.mlu - 1e-9) {
         r = rSel;
-        transitNote = `<div class="hint mt-1 txt-ok">進階選項(${optNames})有助益:MLU ${(rBase.mlu * 100).toFixed(1)}% → ${(rSel.mlu * 100).toFixed(1)}%(已採用)。</div>`;
+        transitNote = `<div class="hint mt-1 txt-ok">${t('c10.opt.advHelpful', { names: optNames, before: (rBase.mlu * 100).toFixed(1), after: (rSel.mlu * 100).toFixed(1) })}</div>`;
       } else {
-        transitNote = `<div class="hint mt-1 txt-warn">進階選項(${optNames})無增益(基準已達 ${(rBase.mlu * 100).toFixed(1)}%),採基準結果。</div>`;
+        transitNote = `<div class="hint mt-1 txt-warn">${t('c10.opt.advNoGain', { names: optNames, base: (rBase.mlu * 100).toFixed(1) })}</div>`;
       }
     }
     lastOpt = r;
@@ -2401,40 +2996,40 @@ ${posStr}
 
     const profLabel = demand.profiles?.[demand.active]?.label ?? demand.active;
     let html = `<div class="mini-stat">
-      <div class="info-card"><div class="label">MLU 前</div><div class="value">${(before.mlu * 100).toFixed(1)}%</div></div>
+      <div class="info-card"><div class="label">${t('c10.opt.mluBefore')}</div><div class="value">${(before.mlu * 100).toFixed(1)}%</div></div>
       <div class="info-card stat-card ${r.feasible ? 'stat-pass' : 'stat-fail'}">
-        <div class="label">MLU 後</div><div class="value">${(r.mlu * 100).toFixed(1)}%</div></div>
+        <div class="label">${t('c10.opt.mluAfter')}</div><div class="value">${(r.mlu * 100).toFixed(1)}%</div></div>
     </div>
-    <div class="info-card"><div class="label">profile · 迭代 · 改動 · 耗時</div>
-      <div class="value">${profLabel} · ${r.iterations} 輪 · ${changed.length} 條 · ${r.elapsedMs}ms</div></div>`;
+    <div class="info-card"><div class="label">${t('c10.opt.statLabel')}</div>
+      <div class="value">${t('c10.opt.statValue', { profile: profLabel, iter: r.iterations, changed: changed.length, ms: r.elapsedMs })}</div></div>`;
     html += transitNote;
 
     // 瓶頸若落在 transit/LAN 段:p2p-only 只能靠重繞間接分流;要直接調該段入向成本需勾選 B
     const transitBn = r.bottleneck.filter(id => edgeById.get(id)?.type === 'transit');
     if (transitBn.length) {
       const tip = dom('optTransit')?.checked
-        ? '已納入 transit 介面成本一併最佳化。'
-        : '可勾選「也調 transit 介面成本(B)」直接調該段入向成本,否則只能靠 p2p 重繞分流入口。';
-      html += `<div class="hint mt-1 txt-warn">瓶頸含 transit/LAN 段(${transitBn.map(edgeName).join(', ')})——${tip}</div>`;
+        ? t('c10.opt.tipIncluded')
+        : t('c10.opt.tipExcluded');
+      html += `<div class="hint mt-1 txt-warn">${t('c10.opt.bottleneckTransit', { edges: transitBn.map(edgeName).join(', '), tip })}</div>`;
     }
 
     if (!r.feasible) {
       const note = r.binding.length
-        ? '建議鬆綁:' + r.binding.map(b =>
-            `${edgeName(b.edgeId)}→${b.relaxTo}(MLU↓${((r.mlu - b.mluAfter) * 100).toFixed(1)}pt)`).join(' · ')
-        : '紅線內已最佳,瓶頸為實體容量不足。';
-      html += reachabilityBanner({ tone: 'lost', mt: true, label: '⚠ 約束內無解(MLU ≥ 100%)',
-        value: `瓶頸:${r.bottleneck.map(edgeName).join(', ')}`, note });
+        ? t('c10.opt.relaxPrefix') + r.binding.map(b =>
+            t('c10.opt.relaxItem', { edge: edgeName(b.edgeId), relaxTo: b.relaxTo, drop: ((r.mlu - b.mluAfter) * 100).toFixed(1) })).join(' · ')
+        : t('c10.opt.noRelax');
+      html += reachabilityBanner({ tone: 'lost', mt: true, label: t('c10.opt.infeasibleLabel'),
+        value: t('c10.opt.bottleneckValue', { edges: r.bottleneck.map(edgeName).join(', ') }), note });
     } else if (!r.targetMet) {
       html += `<div class="info-card s-card s-warn mt-1.5">
-        <div class="label">可行但未達標</div>
-        <div class="value">最佳可得 ${(r.mlu * 100).toFixed(1)}% &gt; 目標 ${(target * 100).toFixed(0)}%</div></div>`;
+        <div class="label">${t('c10.opt.feasibleNotMet')}</div>
+        <div class="value">${t('c10.opt.feasibleNotMetValue', { mlu: (r.mlu * 100).toFixed(1), target: (target * 100).toFixed(0) })}</div></div>`;
     }
 
     if (changed.length === 0) {
-      html += '<div class="hint mt-2">現網權重已是約束內最佳,無需調整。</div>';
+      html += `<div class="hint mt-2">${t('c10.opt.noChange')}</div>`;
     } else {
-      html += '<table class="mt-2"><tr><th>連接</th><th>舊→新</th><th>util 前→後</th></tr>';
+      html += `<table class="mt-2"><tr><th>${t('c10.col.pair')}</th><th>${t('c10.opt.colOldNew')}</th><th>${t('c10.opt.colUtil')}</th></tr>`;
       // 依實體邊聚合:不對稱邊的去(eid)/回(eid|rev)合併成「一條邊一列」,不再同邊兩列
       const byEdge = new Map();
       for (const [key, w] of changed) {
@@ -2450,9 +3045,9 @@ ${posStr}
         const fmt = ([o, n]) => `${o} → ${n}`;
         let costCell;
         if (r.weights.has(eid + '|rev')) {   // 此邊不對稱處理 → 顯示去/回(未改的那向標「不變」)
-          const fwd = slot.fwd ? fmt(slot.fwd) : `${e.cost}<span class="cell-sub">(不變)</span>`;
-          const rev = slot.rev ? fmt(slot.rev) : `${e.costRev ?? e.cost}<span class="cell-sub">(不變)</span>`;
-          costCell = `<span class="cell-sub">去</span> ${fwd} <span class="cell-sub">· 回</span> ${rev}`;
+          const fwd = slot.fwd ? fmt(slot.fwd) : `${e.cost}<span class="cell-sub">${t('c10.opt.unchanged')}</span>`;
+          const rev = slot.rev ? fmt(slot.rev) : `${e.costRev ?? e.cost}<span class="cell-sub">${t('c10.opt.unchanged')}</span>`;
+          costCell = `<span class="cell-sub">${t('c10.opt.fwd')}</span> ${fwd} <span class="cell-sub">· ${t('c10.opt.rev')}</span> ${rev}`;
         } else {
           costCell = fmt(slot.fwd);          // 對稱:單值
         }
@@ -2464,7 +3059,7 @@ ${posStr}
           <td>${ubS} → ${uaS}</td></tr>`;
       }
       html += '</table>';
-      html += '<button class="btn-primary mt-2" data-action="applyOptimize">套用這組權重</button>';
+      html += `<button class="btn-primary mt-2" data-action="applyOptimize">${t('c10.opt.applyBtn')}</button>`;
     }
     div.innerHTML = html;
   }
@@ -2492,7 +3087,7 @@ ${posStr}
     rerenderIfPathActive();
     lastOpt = null;
     dom('optimize-result').innerHTML =
-      '<div class="hint">已套用最佳化權重。可用「輸出 topology.js」帶走,或切到「邊流量 / 失效模擬」複驗。</div>';
+      `<div class="hint">${t('c10.opt.applied')}</div>`;
   }
 
   return { activate: render, exportTopo, resetEdges, runOptimize, applyOptimize };
@@ -2542,9 +3137,10 @@ const ACTIONS = {
   runOptimize:   () => C10_Edges.runOptimize(),
   applyOptimize: () => C10_Edges.applyOptimize(),
   // 全域控制
+  toggleLang: () => setLang(LANG === 'en' ? 'zh' : 'en'),
   togglePseudo: (el) => {
     pseudoVisible = !pseudoVisible;
-    el.textContent = pseudoVisible ? '隱藏 Pseudo-node' : '顯示 Pseudo-node';
+    el.textContent = pseudoVisible ? t('ui.hidePseudo') : t('ui.showPseudo');
     const disp = pseudoVisible ? 'element' : 'none';
     cy.nodes('.pseudonode').style('display', disp);
     cy.edges('[type = "transit"]').style('display', disp);
@@ -2646,6 +3242,8 @@ cy.on('tap', 'edge', (evt) => {
 }
 
 // initial render
+applyStaticI18n(document);
+{ const b = document.getElementById('langToggle'); if (b) b.textContent = LANG === 'en' ? '中文' : 'EN'; }
 C1_Path.render(dom('src').value, dom('dst').value);
 </script>
 

@@ -357,97 +357,88 @@ export function allPairsTraffic(topo, demand, failedEdges = new Set(), failedNod
   };
 }
 
-// Freeman Node Betweenness Centrality (§6.3)
-// σ(s,t|v) / σ(s,t),ECMP 等分;strip pseudo-node;排除 endpoints。
-// 語意:純拓樸結構上,每台 router 平均扛多少 "過路" SPT 流量。
-// 回傳結構與 allPairsLoad 一致,方便 caller 統一處理可達性訊息。
-export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new Set()) {
+// ── 節點介數共用工具(Tier 1)──────────────────────────────────────────────
+// node-distinct:平行等價鏈路 / 同節點序列的 ECMP 路徑收斂成一條(stripPseudo 後比序列)。
+function nodeDistinctPaths(paths) {
+  const seen = new Set(), out = [];
+  for (const p of paths) {
+    const stripped = stripPseudo(p);
+    const sig = stripped.join('>');
+    if (!seen.has(sig)) { seen.add(sig); out.push(stripped); }
+  }
+  return out;
+}
+// Freeman 介數累加:totalWeight 平分到 node-distinct 路徑數,對每條的中繼節點(排除頭尾)加權。
+// 平行等價鏈路不另計(否則束後節點被灌大);鏈路層級的平行分流由 allPairsTraffic 負責。
+function accNodeBetweenness(load, paths, totalWeight) {
+  const nps = nodeDistinctPaths(paths);
+  const w = totalWeight / nps.length;
+  for (const s of nps) for (let i = 1; i < s.length - 1; i++) load[s[i]] = (load[s[i]] || 0) + w;
+}
+
+// Node Betweenness 統一核心(Tier 2)— computeNodeBC + computeNodeTraffic 共用一套全對單源掃描。
+//   demand=null → 結構介數(Freeman §6.3):權重 1、只迭代存活 router、回 { lostPairs } 帳目。
+//   demand 給   → 流量介數(§6.3b):權重 demand[a][b]、迭代全 router(失效端 demand 計 lostDemand)、回 Gbps 帳目。
+// 兩模式都用 dijkstraSource 單源重用(順手修掉舊 computeNodeTraffic 每對重跑 dijkstraECMP 的效能漏)。
+function computeNodeLoad(topo, demand, failedEdges, failedNodes) {
+  const useDemand = !!demand;
   const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
-  const routers = topo.nodes
-    .filter(n => n.type === 'router' && !failedNodes.has(n.id))
-    .map(n => n.id);
+  const routerNodes = topo.nodes.filter(n => n.type === 'router').map(n => n.id);
+  // 結構模式只迭代存活 router;流量模式迭代全部(失效端 demand 算 lost)
+  const iter = useDemand ? routerNodes : routerNodes.filter(r => !failedNodes.has(r));
+  const dflt = useDemand ? (demand.default ?? 0) : 0;
   const load = {};
-  for (const r of routers) load[r] = 0;
-  const lostPairs = [];
-  let totalPairs = 0;
-  for (const a of routers) {
-    const { dist, preds } = dijkstraSource(adj, a);   // 每個來源只算一次(#1)
-    for (const b of routers) {
+  for (const r of routerNodes) if (!failedNodes.has(r)) load[r] = 0;
+  const lostPairs = [], lostDemandPairs = [];
+  let totalPairs = 0, reachablePairs = 0, totalDemand = 0, servedDemand = 0;
+  for (const a of iter) {
+    let src = null;   // lazy 單源(#1):失效 / 全跳過的來源不算
+    for (const b of iter) {
       if (a === b) continue;
       totalPairs++;
-      const r = enumeratePaths(dist, preds, a, b);
-      if (r.cost === Infinity || r.paths.length === 0) {
-        lostPairs.push({ a, b });
+      const gbps = useDemand ? (demand.matrix[a]?.[b] ?? dflt) : 1;
+      if (useDemand) totalDemand += gbps;
+      if (useDemand && (failedNodes.has(a) || failedNodes.has(b))) {
+        if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'endpoint-down' });
         continue;
       }
-      const w = 1 / r.paths.length;
-      for (const p of r.paths) {
-        const stripped = stripPseudo(p);
-        // 排除頭尾(endpoints 不算過路)
-        for (let i = 1; i < stripped.length - 1; i++) {
-          load[stripped[i]] = (load[stripped[i]] || 0) + w;
-        }
+      if (!src) src = dijkstraSource(adj, a);
+      const r = enumeratePaths(src.dist, src.preds, a, b);
+      if (r.cost === Infinity || r.paths.length === 0) {
+        if (useDemand) { if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'no-path' }); }
+        else lostPairs.push({ a, b });
+        continue;
       }
+      reachablePairs++;
+      if (useDemand) servedDemand += gbps;
+      accNodeBetweenness(load, r.paths, gbps);   // 權重:結構=1、流量=gbps
     }
+  }
+  if (useDemand) {
+    lostDemandPairs.sort((x, y) => y.gbps - x.gbps);
+    return {
+      load, totalPairs, reachablePairs,
+      lostPairs: lostDemandPairs.map(({ a, b }) => ({ a, b })),
+      totalDemand, servedDemand, lostDemand: totalDemand - servedDemand, lostDemandPairs,
+    };
   }
   return { load, totalPairs, reachablePairs: totalPairs - lostPairs.length, lostPairs };
 }
 
-// §6.3b 流量加權節點介數 (Demand-weighted Node Betweenness)
-// 與 §6.3 computeNodeBC 同一套「strip pseudo + 排除 endpoints」累加,但每對 (a,b)
-// 的權重從「1」改為 demand[a][b](吃重力模型產出的流量矩陣)。
-// 語意:每台中繼 router 平均轉送多少 Gbps 過路流量 — 採購視角的「節點熱度」。
-// 與 §6.2b allPairsTraffic 對齊:iterate 全部 router(不排除失效節點),demand 到 /
-// 出失效節點計入 lostDemand;回傳附 Gbps 帳目供可達性 banner 重用。
-// 注意:ECMP 等分用 r.paths.length(節點路徑數,與 §6.3 一致),非 edgePaths.length —
-// 節點層級看 router 序列,平行等價鏈路不另計。
+// Freeman Node Betweenness Centrality (§6.3) — computeNodeLoad 的 unit(結構)模式。
+// σ(s,t|v)/σ(s,t),ECMP 等分、strip pseudo-node、排除 endpoints。純拓樸「每台 router 扛多少過路」。
+export function computeNodeBC(topo, failedEdges = new Set(), failedNodes = new Set()) {
+  return computeNodeLoad(topo, null, failedEdges, failedNodes);
+}
+
+// §6.3b 流量加權節點介數(Demand-weighted)— computeNodeLoad 的 demand 模式;缺 demand.js 維持原空回傳。
+// 語意:每台中繼 router 平均轉送多少 Gbps 過路流量(節點熱度)。
 export function computeNodeTraffic(topo, demand, failedEdges = new Set(), failedNodes = new Set()) {
-  const empty = {
+  if (!demand || !demand.matrix) return {
     load: {}, totalPairs: 0, reachablePairs: 0, lostPairs: [],
     totalDemand: 0, servedDemand: 0, lostDemand: 0, lostDemandPairs: [],
   };
-  if (!demand || !demand.matrix) return empty;
-  const adj = buildAdjacency(topo.edges, failedEdges, failedNodes);
-  const allRouters = topo.nodes.filter(n => n.type === 'router').map(n => n.id);
-  const dflt = demand.default ?? 0;
-  const load = {};
-  for (const r of allRouters) if (!failedNodes.has(r)) load[r] = 0;
-  const lostDemandPairs = [];
-  let totalPairs = 0, reachablePairs = 0, totalDemand = 0, servedDemand = 0;
-  for (const a of allRouters) {
-    for (const b of allRouters) {
-      if (a === b) continue;
-      totalPairs++;
-      const gbps = demand.matrix[a]?.[b] ?? dflt;
-      totalDemand += gbps;
-      if (failedNodes.has(a) || failedNodes.has(b)) {
-        if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'endpoint-down' });
-        continue;
-      }
-      const r = dijkstraECMP(adj, a, b);
-      if (r.cost === Infinity || r.paths.length === 0) {
-        if (gbps > 0) lostDemandPairs.push({ a, b, gbps, reason: 'no-path' });
-        continue;
-      }
-      reachablePairs++;
-      servedDemand += gbps;
-      const w = gbps / r.paths.length;
-      for (const p of r.paths) {
-        const stripped = stripPseudo(p);
-        // 排除頭尾(endpoints 不算過路)
-        for (let i = 1; i < stripped.length - 1; i++) {
-          load[stripped[i]] = (load[stripped[i]] || 0) + w;
-        }
-      }
-    }
-  }
-  lostDemandPairs.sort((x, y) => y.gbps - x.gbps);
-  return {
-    load, totalPairs, reachablePairs,
-    lostPairs: lostDemandPairs.map(({ a, b }) => ({ a, b })),
-    totalDemand, servedDemand, lostDemand: totalDemand - servedDemand,
-    lostDemandPairs,
-  };
+  return computeNodeLoad(topo, demand, failedEdges, failedNodes);
 }
 
 // ============================================================================
@@ -458,18 +449,18 @@ export function ecmpBackupCheck(topo, src, dst) {
   const adj = buildAdjacency(topo.edges);
   const primary = dijkstraECMP(adj, src, dst);
   // ECMP 多重度以 edge-distinct 路徑數計 — 兩條平行等價鏈路即構成 ECMP×2
-  if (primary.edgePaths.length < 2) return { status: 'n/a', reason: 'no ECMP' };
+  if (primary.edgePaths.length < 2) return { status: 'n/a', reason: 'no-ecmp' };
 
   const ecmpEdgeIds = new Set();
   for (const ep of primary.edgePaths) {
     if (ep.length) ecmpEdgeIds.add(ep[0]);   // 第一條實體邊 = first-hop interface
   }
-  if (ecmpEdgeIds.size < 2) return { status: 'n/a', reason: 'single first-hop' };
+  if (ecmpEdgeIds.size < 2) return { status: 'n/a', reason: 'single-first-hop' };
 
   for (const eid of ecmpEdgeIds) {
     const backup = backupPath(topo, src, dst, [eid]);
     if (backup.cost === Infinity) {
-      return { status: 'failed', reason: `removing ${eid} → unreachable` };
+      return { status: 'failed', reason: 'remove-unreachable', eid };
     }
     const backupEdgeIds = new Set();
     for (const ep of backup.edgePaths) {
@@ -478,7 +469,7 @@ export function ecmpBackupCheck(topo, src, dst) {
     const remaining = new Set([...ecmpEdgeIds].filter(x => x !== eid));
     for (const bid of backupEdgeIds) {
       if (!remaining.has(bid)) {
-        return { status: 'failed', reason: `backup uses non-ECMP edge ${bid}` };
+        return { status: 'failed', reason: 'backup-non-ecmp', eid, bid };
       }
     }
   }
@@ -613,10 +604,9 @@ export function computeN1WorstCase(topo) {
         if (cost === Infinity) {
           fStat.unreachable++;
           fStat.affected.push({ a, b, base, worst: Infinity, ratio: Infinity });
-          if (pw.worstCost !== Infinity || cost > pw.worstCost) {
-            if (pw.worstCost !== Infinity) { pw.worstCost = Infinity; pw.culprits = []; }
-            pw.culprits.push(s);
-          }
+          // ∞ 是最差:第一次從有限轉 ∞ 時清掉較輕的元凶;之後每個也造成 ∞ 的情境都列入(不只第一個)
+          if (pw.worstCost !== Infinity) { pw.worstCost = Infinity; pw.culprits = []; }
+          pw.culprits.push(s);
         } else if (cost > base) {
           fStat.degraded++;
           fStat.totalDelta += (cost - base);
@@ -660,7 +650,7 @@ export function computeN1WorstCase(topo) {
 // §15 — OSPF WEIGHT OPTIMIZATION (Fortz-Thorup objective + Tabu Search)
 // ============================================================================
 // 單目標壓壅塞:字典序 (MLU, S);S 在可行區(MLU<1)用 Σu²(均衡),超載區用 Σcap·ψ(最不爛)。
-// 硬約束以每條可動邊的整數界 [lo,hi] 剪枝(RTT 下限 / VIP 不能升 / protected 不能降 / [5,250])。
+// 硬約束以每條可動邊的整數界 [lo,hi] 剪枝(RTT 下限 / VIP 不能升 / protected 不能降 / COST_CLAMP [5,500])。
 // 預設只調 p2p 的「對稱」權重(cost=costRev);transit ingress cost 亦可選調(選項 B,includeTransit,
 // 只動 router→PN 的 e.cost,egress 由 buildAdjacency 固定 0)。
 // 純函式,不碰 DOM / Cytoscape;評估壅塞重用 §6.2b allPairsTraffic(ECMP 等分、單向峰值,與本檔一致)。

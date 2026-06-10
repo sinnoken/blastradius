@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>BlastRadius POC — OSPF Full Algorithms</title>
+<title data-i18n="ui.docTitle">BlastRadius — network failure impact</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
 <script src="topology.js"></script>
@@ -919,6 +919,7 @@ const I18N = {
     'c10.opt.bottleneckValue':     (p) => `瓶頸:${p.edges}`,
     'c10.opt.feasibleNotMetValue': (p) => `最佳可得 ${p.mlu}% &gt; 目標 ${p.target}%`,
     // --- UI chrome(頁首 / 左側面板 / 分頁鈕)---
+    'ui.docTitle':         'BlastRadius — 網路故障影響',
     'ui.subtitle':         '國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出',
     'ui.controls':         '控制',
     'ui.hidePseudo':       '隱藏 Pseudo-node',
@@ -1193,6 +1194,7 @@ const I18N = {
     'c10.opt.bottleneckValue':     (p) => `Bottleneck: ${p.edges}`,
     'c10.opt.feasibleNotMetValue': (p) => `Best achievable ${p.mlu}% &gt; target ${p.target}%`,
     // --- UI chrome (header / left panel / tab buttons) ---
+    'ui.docTitle':         'BlastRadius — network failure impact',
     'ui.subtitle':         'International-backbone OSPF failure-impact analysis — computes shortest paths and centrality, and simulates traffic redistribution and capacity overflow under single-point / SRLG failures',
     'ui.controls':         'Controls',
     'ui.hidePseudo':       'Hide pseudo-nodes',

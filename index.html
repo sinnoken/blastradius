@@ -107,6 +107,13 @@
     .legend-line.load-inc  { background: var(--role-load-inc); }
     .legend-line.load-dec  { background: var(--role-load-dec); }
     .legend-line.overflow  { background: var(--role-overflow); height: 5px; border-style: dashed; }
+    /* C7/C8 hint 的節點圖例色塊 — 讀 :root --node-* token,與 NODE_ROLE_STYLES 共用單一來源 */
+    .node-sw { @apply inline-block w-3.5 h-3.5 rounded-full border-2; }
+    .node-sw.heat-green  { background: var(--node-heat-green-bg);  border-color: var(--node-heat-green-bd); }
+    .node-sw.heat-yellow { background: var(--node-heat-yellow-bg); border-color: var(--node-heat-yellow-bd); }
+    .node-sw.heat-orange { background: var(--node-heat-orange-bg); border-color: var(--node-heat-orange-bd); }
+    .node-sw.heat-red    { background: var(--node-heat-red-bg);    border-color: var(--node-heat-red-bd); }
+    .node-sw.asym        { background: var(--node-asym-bg);        border-color: var(--node-asym-bd); }
   }
 </style>
 <style>
@@ -119,6 +126,12 @@
     --role-load-inc:  #3b82f6;  /* blue-500   — 負載增 */
     --role-load-dec:  #eab308;  /* yellow-500 — 負載減 */
     --role-overflow:  #7f1d1d;  /* red-900    — 過載 */
+    /* 節點 role 配色(C8 heatmap / C7 asym)— NODE_ROLE_STYLES 與圖例色塊共用,消除 CSS↔JS↔inline-HTML 三重複 */
+    --node-heat-green-bg:#86efac;  --node-heat-green-bd:#15803d;
+    --node-heat-yellow-bg:#fde047; --node-heat-yellow-bd:#a16207;
+    --node-heat-orange-bg:#fdba74; --node-heat-orange-bd:#c2410c;
+    --node-heat-red-bg:#fca5a5;    --node-heat-red-bd:#b91c1c;
+    --node-asym-bg:#f3e8ff;        --node-asym-bd:#a855f7;
   }
 
   /* Cytoscape canvas grid — not expressible as utilities */
@@ -194,6 +207,17 @@
   .stat-card { background:var(--stat-bg); border-color:var(--stat); }
   .stat-card > .label, .stat-card > .value { color:var(--stat); }
 
+  /* 狀態卡單一來源 — reachabilityBanner 與各 tab 狀態卡共用,取代散落 inline hex(比照 .sev-card 機制)。
+     modifier 設 --sbg(底)/--sb(框)/--sc(label·value 文字)/--ssub(旁註,預設同 --sc)。 */
+  .s-card { background:var(--sbg); border-color:var(--sb); }
+  .s-card > .label, .s-card > .value { color:var(--sc); }
+  .s-card .s-sub { color:var(--ssub, var(--sc)); font-size:10px; margin-top:4px; }
+  .s-ok       { --sbg:#dcfce7; --sb:#15803d; --sc:#15803d; }
+  .s-lost     { --sbg:#fee2e2; --sb:#b91c1c; --sc:#991b1b; --ssub:#7f1d1d; }
+  .s-warn     { --sbg:#fef9c3; --sb:#a16207; --sc:#854d0e; }
+  .s-srlg     { --sbg:#fef3c7; --sb:#d97706; --sc:#92400e; --ssub:#78350f; }
+  .s-overflow { --sbg:#fee2e2; --sb:#dc2626; --sc:#991b1b; --ssub:#7f1d1d; }
+
   /* C4 / C5 util% 三階 — JS 只算 >1 / >0.8 / 其餘,色由此定。
      .util-over 同時供 C4 過載格共用(#991b1b,刻意不同於 .tier-overflow 的 #7f1d1d)。 */
   .util-over   { color:#991b1b; font-weight:600; }
@@ -240,6 +264,12 @@
   /* 危險前景色 — failed 計數 / 不可達數 / 失敗原因等重複 #991b1b 文字。
      僅收斂 color;weight 由既有 .value 或預設繼承。 */
   .val-danger { color:#991b1b; }
+
+  /* 語意文字色 utility — 取代散落各 render 的重複 inline color:#…(同色多處)。 */
+  .txt-ok     { color:#166534; }
+  .txt-warn   { color:#854d0e; }
+  .txt-danger { color:#dc2626; }
+  .txt-purple { color:#7c3aed; }
 
   /* C10 參考晶片:成本偏離 RTT 建議值時,把建議成本數字由藍(.ref-cost 預設)改染琥珀,
      與旁邊的 ⚠ 圖示一起把「可能人工調校」訊號收進晶片本身。unlayered 規則,
@@ -476,7 +506,7 @@
       <div class="audit-banner">⚠ 設計審計:基於完整拓樸,不受手動故障標記影響</div>
       <div class="hint">檢查每對 Router 的去程和回程是否走同樣的路徑、同樣的成本。不對稱時,封包來回走不同路,可能造成延遲不一致或排障困難。
         <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 items-center">
-          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#f3e8ff;border-color:#a855f7"></span>
+          <span class="node-sw asym"></span>
           <span>圖上<b>紫框節點</b> — 非對稱 pair 的兩端</span>
           <span><span class="badge pass">對稱</span></span>
           <span>去回程路徑與成本完全相同</span>
@@ -496,13 +526,13 @@
         每個網段(Prefix)被幾台 Router 宣告?被 2 台以上宣告 = 有備援;只被 1 台宣告 = 該台故障後網段就斷了。
         <div class="mt-1.5">節點顏色 = 該 Router 宣告的網段中「無備援」的比例:</div>
         <div class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 items-center">
-          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#86efac;border-color:#15803d"></span>
+          <span class="node-sw heat-green"></span>
           <span><b>= 0%</b> — 全 prefix 都有冗餘宣告(理想)</span>
-          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#fde047;border-color:#a16207"></span>
+          <span class="node-sw heat-yellow"></span>
           <span><b>0–33%</b> — 少數 prefix 單一宣告</span>
-          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#fdba74;border-color:#c2410c"></span>
+          <span class="node-sw heat-orange"></span>
           <span><b>33–66%</b> — 約一半 prefix 無冗餘</span>
-          <span class="inline-block w-3.5 h-3.5 rounded-full border-2" style="background:#fca5a5;border-color:#b91c1c"></span>
+          <span class="node-sw heat-red"></span>
           <span><b>&gt; 66%</b> — 多數 prefix 單一宣告(高風險)</span>
         </div>
       </div>
@@ -589,11 +619,11 @@ const NODE_ROLE_STYLES = {
   'endpoint':    { 'background-color':'#2563eb','border-color':'#1e3a8a','color':'#fff','border-width':4 },
   'highlight':   { 'border-color':'#2563eb','border-width':5,'background-color':'#dbeafe' },
   'failed-node': { 'background-color':'#fee2e2','border-color':'#ef4444','border-width':4,'opacity':0.5 },
-  'heat-green':  { 'background-color':'#86efac','border-color':'#15803d' },
-  'heat-yellow': { 'background-color':'#fde047','border-color':'#a16207' },
-  'heat-orange': { 'background-color':'#fdba74','border-color':'#c2410c' },
-  'heat-red':    { 'background-color':'#fca5a5','border-color':'#b91c1c' },
-  'asym-mark':   { 'border-color':'#a855f7','border-width':5,'background-color':'#f3e8ff' },
+  'heat-green':  { 'background-color':cssVar('--node-heat-green-bg'), 'border-color':cssVar('--node-heat-green-bd') },
+  'heat-yellow': { 'background-color':cssVar('--node-heat-yellow-bg'),'border-color':cssVar('--node-heat-yellow-bd') },
+  'heat-orange': { 'background-color':cssVar('--node-heat-orange-bg'),'border-color':cssVar('--node-heat-orange-bd') },
+  'heat-red':    { 'background-color':cssVar('--node-heat-red-bg'),   'border-color':cssVar('--node-heat-red-bd') },
+  'asym-mark':   { 'border-color':cssVar('--node-asym-bd'),'border-width':5,'background-color':cssVar('--node-asym-bg') },
   'bc-hub':      { 'background-color':'#86efac','border-color':'#15803d','border-width':5 },
   'bc-normal':   { 'background-color':'#dbeafe','border-color':'#1e40af','border-width':4 },
   'bc-rare':     { 'background-color':'#fef9c3','border-color':'#a16207','border-width':3 },
@@ -866,17 +896,17 @@ function sampleList(arr, n, fmt) {
 
 // 綠 (ok) / 紅 (lost) 可達性會計卡 — C3 / C4 / C5 三處共用。
 function reachabilityBanner({ tone, label, value, sample, note, mt }) {
-  const m = mt ? ';margin-top:6px' : '';
+  const mtCls = mt ? ' mt-1.5' : '';
   if (tone === 'ok') {
-    return `<div class="info-card" style="background:#dcfce7;border-color:#15803d${m}">
-      <div class="label" style="color:#15803d">${label}</div>
-      <div class="value" style="color:#15803d">${value}</div></div>`;
+    return `<div class="info-card s-card s-ok${mtCls}">
+      <div class="label">${label}</div>
+      <div class="value">${value}</div></div>`;
   }
-  const s = sample ? `<div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}</div>` : '';
-  const nt = note ? `<div style="font-size:10px;color:#7f1d1d;margin-top:4px">${note}</div>` : '';
-  return `<div class="info-card" style="background:#fee2e2;border-color:#b91c1c${m}">
-    <div class="label" style="color:#991b1b">${label}</div>
-    <div class="value" style="color:#991b1b">${value}</div>${s}${nt}</div>`;
+  const s = sample ? `<div class="s-sub" style="font-family:monospace">${sample}</div>` : '';
+  const nt = note ? `<div class="s-sub">${note}</div>` : '';
+  return `<div class="info-card s-card s-lost${mtCls}">
+    <div class="label">${label}</div>
+    <div class="value">${value}</div>${s}${nt}</div>`;
 }
 
 // ============================================================================
@@ -1038,7 +1068,7 @@ const C1_Path = (() => {
         <span class="cost">${r.cost}</span>${g.nodes.join(' → ')}</div>`;
       // 同一 router 路徑底下有多條平行等價鏈路 → 逐條列出 edgeId,讓工程師看到實體分流
       if (g.variants.length > 1) {
-        html += `<div class="hint" style="margin:2px 0 6px 8px;color:#7c3aed">
+        html += `<div class="hint txt-purple" style="margin:2px 0 6px 8px">
           ⇉ 平行等價鏈路 ×${g.variants.length}:${g.variants.map(v => v.join('+')).join('  |  ')}</div>`;
       }
     }
@@ -1133,7 +1163,7 @@ const C2_Matrix = (() => {
     const failInfo = dom('matrix-fail-info');
     const fE = failedEdges.size, fN = failedNodes.size;
     failInfo.innerHTML = (fE + fN > 0)
-      ? `<span style="color:#dc2626">目前故障:${fE} 邊 / ${fN} 節點</span>`
+      ? `<span class="txt-danger">目前故障:${fE} 邊 / ${fN} 節點</span>`
       : '';
 
     // cost → 色階級數(固定門檻,不隨 maxCost 浮動)。回傳第幾級,hex 由 .cost-t{n} 決定。
@@ -1637,10 +1667,10 @@ const C5_Failure = (() => {
       const typeLabels = { submarine: '海纜', conduit: '共管線路', site: '機房', upstream: '上游 ISP' };
       const affEdges = [...fE];
       const affNodes = [...fN];
-      html += `<div class="info-card" style="background:#fef3c7;border-color:#d97706;margin-bottom:8px">
-        <div class="label" style="color:#92400e">SRLG · ${typeLabels[group.type] || group.type}</div>
-        <div class="value" style="color:#92400e">${group.label}</div>
-        <div style="font-size:10px;color:#78350f;margin-top:4px;font-family:monospace">
+      html += `<div class="info-card s-card s-srlg mb-2">
+        <div class="label">SRLG · ${typeLabels[group.type] || group.type}</div>
+        <div class="value">${group.label}</div>
+        <div class="s-sub" style="font-family:monospace">
           ${affNodes.length ? '節點: ' + affNodes.join(', ') : ''}
           ${affNodes.length && affEdges.length ? ' · ' : ''}
           ${affEdges.length ? '鏈路: ' + affEdges.join(', ') : ''}
@@ -1662,10 +1692,10 @@ const C5_Failure = (() => {
     if (overflows.length > 0) {
       const sample = overflows.slice(0, LIMITS.overflowSample).map(x =>
         `${x.edge.source}↔${x.edge.target} ${(x.util*100).toFixed(0)}%`).join(', ');
-      html += `<div class="info-card" style="background:#fee2e2;border-color:#dc2626;margin-top:6px">
-        <div class="label" style="color:#991b1b">⚠ 過載</div>
-        <div class="value" style="color:#991b1b">${overflows.length} 條鏈路超過容量</div>
-        <div style="font-size:10px;color:#7f1d1d;margin-top:4px;font-family:monospace">${sample}</div></div>`;
+      html += `<div class="info-card s-card s-overflow mt-1.5">
+        <div class="label">⚠ 過載</div>
+        <div class="value">${overflows.length} 條鏈路超過容量</div>
+        <div class="s-sub" style="font-family:monospace">${sample}</div></div>`;
     }
 
     if (hasDemand && tAfterFull) {
@@ -1903,9 +1933,9 @@ const C9_N1 = (() => {
   function fmtCulprit(s) {
     if (s.kind === 'edge') {
       const e = s.edge;
-      return `<span style="color:#dc2626" title="${s.id}">L</span> ${e.source} ↔ ${e.target} 斷`;
+      return `<span class="txt-danger" title="${s.id}">L</span> ${e.source} ↔ ${e.target} 斷`;
     }
-    return `<span style="color:#dc2626">R</span> ${s.id} 失效`;
+    return `<span class="txt-danger">R</span> ${s.id} 失效`;
   }
 
   // 共用重繞著色:失效元件標紅(simulated-fail / failed-node),
@@ -2353,9 +2383,9 @@ ${posStr}
       const optNames = [wantInvcap && 'InvCap 起點', wantAsym && '不對稱', wantTransit && 'transit'].filter(Boolean).join(' + ');
       if (rSel.mlu < rBase.mlu - 1e-9) {
         r = rSel;
-        transitNote = `<div class="hint mt-1" style="color:#166534">進階選項(${optNames})有助益:MLU ${(rBase.mlu * 100).toFixed(1)}% → ${(rSel.mlu * 100).toFixed(1)}%(已採用)。</div>`;
+        transitNote = `<div class="hint mt-1 txt-ok">進階選項(${optNames})有助益:MLU ${(rBase.mlu * 100).toFixed(1)}% → ${(rSel.mlu * 100).toFixed(1)}%(已採用)。</div>`;
       } else {
-        transitNote = `<div class="hint mt-1" style="color:#854d0e">進階選項(${optNames})無增益(基準已達 ${(rBase.mlu * 100).toFixed(1)}%),採基準結果。</div>`;
+        transitNote = `<div class="hint mt-1 txt-warn">進階選項(${optNames})無增益(基準已達 ${(rBase.mlu * 100).toFixed(1)}%),採基準結果。</div>`;
       }
     }
     lastOpt = r;
@@ -2385,7 +2415,7 @@ ${posStr}
       const tip = dom('optTransit')?.checked
         ? '已納入 transit 介面成本一併最佳化。'
         : '可勾選「也調 transit 介面成本(B)」直接調該段入向成本,否則只能靠 p2p 重繞分流入口。';
-      html += `<div class="hint mt-1" style="color:#854d0e">瓶頸含 transit/LAN 段(${transitBn.map(edgeName).join(', ')})——${tip}</div>`;
+      html += `<div class="hint mt-1 txt-warn">瓶頸含 transit/LAN 段(${transitBn.map(edgeName).join(', ')})——${tip}</div>`;
     }
 
     if (!r.feasible) {
@@ -2396,9 +2426,9 @@ ${posStr}
       html += reachabilityBanner({ tone: 'lost', mt: true, label: '⚠ 約束內無解(MLU ≥ 100%)',
         value: `瓶頸:${r.bottleneck.map(edgeName).join(', ')}`, note });
     } else if (!r.targetMet) {
-      html += `<div class="info-card" style="background:#fef9c3;border-color:#a16207;margin-top:6px">
-        <div class="label" style="color:#854d0e">可行但未達標</div>
-        <div class="value" style="color:#854d0e">最佳可得 ${(r.mlu * 100).toFixed(1)}% &gt; 目標 ${(target * 100).toFixed(0)}%</div></div>`;
+      html += `<div class="info-card s-card s-warn mt-1.5">
+        <div class="label">可行但未達標</div>
+        <div class="value">最佳可得 ${(r.mlu * 100).toFixed(1)}% &gt; 目標 ${(target * 100).toFixed(0)}%</div></div>`;
     }
 
     if (changed.length === 0) {

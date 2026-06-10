@@ -1,132 +1,137 @@
 # BlastRadius
 
-**Know exactly what breaks — before it breaks.**
-
-BlastRadius is a failure-impact analyzer for IGP (OSPF) backbone networks. It answers the question every backbone engineer loses sleep over: *"If this component fails right now, what happens to my traffic?"*
+**OSPF / IGP resilience-audit tool — see exactly how large a "blast radius" the network explodes into when a single link or a single router goes down.**
 
 ---
 
-## The Problem
+## Executive Summary
 
-Backbone engineers today are working blind on failure impact:
+BlastRadius is a **single-file HTML** network-topology analysis tool. It pulls
+together engineering actions that normally live scattered across spreadsheets,
+Visio, the CLI, and people's heads — "shortest path", "ECMP equal-cost paths",
+"failure simulation", "N-1 / SRLG worst-case ranking" — onto one interactive
+topology graph.
 
-- **Shortest-path computation** lives inside the router — you can't see the full picture across the network until something actually breaks.
-- **ECMP verification** means staring at `show ip route` on multiple routers and hoping you didn't miss one.
-- **Failure scenario analysis** means pulling cables during a maintenance window and praying.
-- **Capacity planning** is a spreadsheet that was accurate three months ago.
-- **N-1 compliance** is a PowerPoint slide that says "we're covered" — with no evidence behind it.
+It is positioned as **design-phase resilience auditing** plus **blast-radius
+pre-computation before an incident drill** — it is **not** real-time monitoring.
 
-These workflows are scattered across CLI sessions, Visio diagrams, spreadsheets, and tribal knowledge. Nobody has the full picture. BlastRadius consolidates them into a single interactive view.
-
----
-
-## What BlastRadius Does For You
-
-| Capability | What You Get |
-|------------|-------------|
-| **Shortest Path + ECMP** | See every equal-cost path between any two routers. Know immediately whether you're on primary or backup mode. |
-| **Failure Simulation** | Right-click any link or router to fail it. Watch the network reconverge in real time — no maintenance window required. |
-| **Traffic Load Analysis** | See actual Gbps on every link based on your demand matrix. Know which links are at 90% before your NOC does. |
-| **Betweenness Centrality** | Find the links and routers where a failure cascades hardest. Classify every component into procurement tiers (invest / maintain / downgrade / decommission). |
-| **SPOF Detection** | Automatically find the links where "backup path" = "nothing". No more guessing which segments are unprotected. |
-| **ECMP Backup Validation** | Verify that when one ECMP member fails, traffic stays within the group — not spilling onto some unexpected path. |
-| **Asymmetric Path Detection** | Find every pair where A→B and B→A take different routes. Debug latency inconsistencies before they become trouble tickets. |
-| **Prefix Redundancy Heatmap** | See which prefixes have only one advertiser. Those are silent SPOFs — invisible until the advertising router goes down. |
-| **N-1 Worst-Case Ranking** | Enumerate every possible single-component failure. Rank the most vulnerable pairs and the most lethal failure scenarios. Includes capacity overflow detection. |
-| **Demand Profile Switching** | Toggle between monthly-average and 95th-percentile traffic. See how your network behaves under normal load versus peak. |
-
-### Positioning
-
-BlastRadius is a **design-time resiliency audit tool** and a **failure scenario simulator**. It is not a real-time monitoring system — it does not poll routers or ingest telemetry feeds.
-
-Think of it as the engineering workbench you use *before* the maintenance window, not *during* the outage.
+| Item | Detail |
+|------|--------|
+| **Project phase** | POC — feature-complete, demoable |
+| **Delivery form** | Pure front-end static web page (no backend, no build step) |
+| **Core value** | Turns "what the network looks like when it breaks" into a clickable, auditable, rankable view |
+| **Data source** | Topology / traffic / RTT are synthetic data, replaceable with your own network |
 
 ---
 
-## Getting Started
+## Scope & Stakeholders
 
-1. Serve over HTTP (ES modules require it — `file://` won't work):
-   - **VS Code**: install Live Server → right-click `index.html` → "Open with Live Server"
-   - **CLI**: `python -m http.server 8000` → open `http://localhost:8000/`
-   - **GitHub Pages**: enable in repo Settings → Pages
-2. The default sample loads a 10-PoP intercontinental ISP backbone with pre-tuned demand data. Everything works out of the box.
+**Target users**
 
-### Interaction
+- **OSPF / backbone network engineers** — audit the single-point / shared-risk exposure surface of an existing design
+- **Network planning / capacity teams** — traffic redistribution and capacity-overflow estimation under failure scenarios
+- **Operations / incident drills** — work out in advance "which link hurts to pull, and how much" before a drill
 
-| Action | What Happens |
-|--------|-------------|
-| **Right-click a link** | Toggle link failure — the entire network reconverges instantly |
-| **Right-click a router** | Toggle router failure — all attached links go down with it |
-| **Left-click + drag** | Rearrange the topology layout |
-| **Demand profile toggle** | Switch between monthly-average and 95th-percentile traffic |
-| **"Clear all failures"** | Remove all manual failures; return to baseline topology |
-| **"Hide pseudo-nodes"** | Simplify the view — show only physical routers |
+**What this tool does vs. does not do**
 
-### Two Kinds of Failure
-
-- **Right-click failures** model a *current outage*. The live-analysis tabs reflect this state in real time.
-- **Design-time audits** always work from the *baseline topology*. They answer "is this design resilient?" — not "is it reachable right now?"
-
-This separation is deliberate: you can mark three links as failed to see the current damage, then switch to N-1 tab to check whether the *original design* had adequate redundancy. The two concerns never contaminate each other.
+| In scope | Out of scope |
+|----------|--------------|
+| Single-area (area 0) SPT / ECMP computation | Multi-area / inter-area summary LSA |
+| Single-point + SRLG group failure simulation | Real-time telemetry / online monitoring |
+| Traffic-matrix-driven link utilization | Auto-pulling the LSDB from routers (future direction) |
+| Design-level N-1 worst-case ranking | Device-config generation / push |
 
 ---
 
-## Tabs
+## Status & Milestones
 
-### Live Analysis — reflects your current failure state
-
-| Tab | The Question It Answers |
-|-----|------------------------|
-| **Path** | "What is the shortest path from A to B right now? Am I on backup? Are there unprotected segments along the way?" |
-| **Matrix** | "Show me the full cost matrix. Which pairs are expensive? Which are asymmetric? Where is ECMP available?" |
-| **Link Centrality** | "Which links and routers carry the most transit traffic? Where should I invest in redundancy — and where can I save money?" |
-| **Edge Traffic** | "How many Gbps is each link actually carrying? Which ones are approaching capacity?" |
-
-### Design Audits — always use the clean baseline
-
-| Tab | The Question It Answers |
-|-----|------------------------|
-| **Failure Sim** | "If router X dies, does the network partition? Where does the traffic redistribute? Do any links overflow?" |
-| **ECMP Check** | "Are my ECMP groups truly resilient, or do they leak traffic to unexpected paths when a member fails?" |
-| **Asymmetric** | "Which pairs have different forward and reverse paths — and why?" |
-| **Prefix** | "Which prefixes have no backup advertiser? Where are my silent single points of failure?" |
-| **N-1** | "Across every possible single-component failure, which pairs are most vulnerable and which failures are most destructive?" |
-
-### Editing
-
-| Tab | What It Does |
-|-----|-------------|
-| **Links** | Edit link metrics in real time. Changes propagate instantly. Export the modified topology when done. |
+| Milestone | Status |
+|-----------|--------|
+| C1–C10 ten analysis tabs | ✅ Done |
+| SRLG (submarine cable / shared-conduit / facility / upstream) group failure | ✅ Done |
+| Traffic matrix + multi-scenario snapshots (monthly avg / worst / regional busy hour) | ✅ Done |
+| Deterministic data generator (same input always byte-identical) | ✅ Done |
+| OSPF weight congestion optimization (Fortz-Thorup objective + Tabu search) | ✅ Done |
+| Explicit-path steering (steer) + bandwidth admission (CAC) | ⬜ Planned (see steer.md) |
+| SLO matrix coverage (per-pair max-cost target check) | ⬜ Planned |
+| LSDB → `topology.js` parser | ⬜ Planned |
+| Multi-area / OSPF inter-area cost | ⬜ Planned |
 
 ---
 
-## Your Data
+## Why this is not just another topology viewer
 
-| File | Role | Required? |
-|------|------|-----------|
-| `topology.js` | Network topology — routers, links, coordinates, external routes | Yes |
-| `demand.js` | Traffic demand matrix — per-pair Gbps with avg / 95th profiles, per-link capacity | Recommended |
-| `engine.js` | Algorithm engine — pure functions, no UI dependency | Ship as-is |
-| `index.html` | UI — visualization, state machine, tab handlers | Ship as-is |
+Most tools on the market emphasize "drawing what the network looks like".
+BlastRadius emphasizes **"what the network looks like when it breaks"**:
 
-To model your own network, edit `topology.js` and `demand.js`. Schema details in [SPEC.md](./SPEC.md).
+| Capability | Typical topology viewer | BlastRadius |
+|------------|-------------------------|-------------|
+| Show links / nodes | ✅ | ✅ |
+| Compute shortest path | ✅ | ✅ (incl. ECMP) |
+| Recompute SPT after failure | ⚠ partial | ✅ built into the tabs as scenarios |
+| Find pure-redundancy circuits | ❌ | ✅ full all-pairs scan |
+| Unbackup-segment detection | ❌ | ✅ single-point-of-failure sensitivity |
+| ECMP integrity audit | ❌ | ✅ edge-cut testing |
+| Asymmetric-path detection | ❌ | ✅ |
+| Subnet-redundancy heatmap | ❌ | ✅ LSA-based |
+| SRLG group failure | ❌ | ✅ submarine cable / shared-conduit / facility / upstream |
+| **N-1 worst-case ranking** | ❌ | ✅ "most fragile pair / most lethal failure" |
+| **OSPF weight congestion optimization** | ❌ | ✅ Fortz-Thorup + Tabu (auto-lowers MLU) |
 
 ---
 
-## The Sample Topology
+## How to Run
 
-The default scenario is a **10-PoP intercontinental ISP backbone** — designed so that every analysis capability has at least one trigger:
+Because `engine.js` is an ES module, browsers won't allow loading it over
+`file://`; you need to serve it over HTTP:
 
-| What It Demonstrates | Where |
-|---------------------|-------|
-| ECMP | HKG → TYO: two equal-cost paths (direct vs. via TPE) |
-| Asymmetric metrics | HKG ↔ ICN (20 / 35), SIN ↔ SYD (30 / 45) |
-| Trans-Pacific SPOF | LAX is the sole APAC ↔ Europe transit — its failure partitions the network |
-| Unprotected segment | AMS depends on a single transit link to the EU fabric |
-| External route | TPE advertises the default route (0.0.0.0/0) |
-| Capacity contrast | Deliberate mix: 2 overloaded / 2 high / 5 mid / 9 low under avg; escalates to 5 overloaded under 95th |
+- **Command line**: `python -m http.server 8000` → open `http://localhost:8000/` in a browser
+- **VS Code**: install the Live Server extension → right-click `index.html` → "Open with Live Server"
+- **GitHub Pages**: Repo Settings → Pages → once enabled, open `https://<user>.github.io/<repo>/` directly
 
-This is a *teaching topology* — every design flaw is intentional. Replace it with your own when ready.
+### Interactions
+
+| Action | Effect |
+|--------|--------|
+| **Left-drag a node** | Re-layout |
+| **Right-click a link** | Toggle failure state (persistent, preserved across tabs) |
+| **Right-click a router** | Toggle node failure (a pseudo-node is an LSA2 abstraction and cannot fail) |
+| **"Clear all failures" (left panel)** | One-click reset |
+| **"Hide pseudo-nodes" (left panel)** | Show only the physical-router topology, excluding the LSA2 abstraction |
+
+### Failure-mode semantics
+
+- **Right-click failure**: simulates "this circuit is down right now" — the live-status tab group reflects it immediately.
+- **Design-audit group**: completely ignores right-click failures and works off the original complete topology — because an audit asks "is the design itself resilient enough", not "is it reachable right now".
+
+---
+
+## Tab Overview
+
+### Live-status group (consumes the failure markers on the graph)
+
+| Tab | No. | Purpose |
+|-----|-----|---------|
+| **Path** | C1 | Source → Destination shortest path (SPT + ECMP), auto-classifies PRIMARY / BACKUP MODE, with an unbackup-segment scan |
+| **Matrix** | C2 | All router-pair shortest-path cost matrix; cell shading shows cost magnitude, marks ECMP / asymmetric |
+| **Centrality** | C3 | Link / node betweenness-centrality inventory (nodes can toggle **transit count ⇄ traffic-weighted**) + pure-redundancy circuits (links that normally carry zero traffic) |
+| **Edge traffic** | C4 | Computes each link's actual load and utilization from the traffic matrix; flags overload / high-water |
+
+### Design-audit group (ignores right-click failures, based on the complete topology)
+
+| Tab | No. | Purpose |
+|-----|-----|---------|
+| **Failure simulation** | C5 | Fail a single element or a whole SRLG group simultaneously; inspect connectivity, partitioning, traffic redistribution, and capacity overflow |
+| **N-1** | C9 | Enumerate every single-point failure, rank the **most fragile pair** + **most lethal failure scenario** |
+| **ECMP** | C6 | For each ECMP pair, simulate cutting any one edge in the group and confirm the remaining ECMP can take over |
+| **Asymmetric** | C7 | Pairs where the A→B and B→A path or cost differ |
+| **Prefix** | C8 | Subnet-redundancy heatmap — advertised by ≥2 nodes = backed-up, only 1 = non-backed-up |
+
+### Edit group
+
+| Tab | No. | Purpose |
+|-----|-----|---------|
+| **Link** | C10 | Live-edit link cost (forward / reverse separately, asymmetric p2p); built-in **congestion optimization** (Fortz-Thorup objective + Tabu auto-searching weights to lower MLU); RTT-derived suggested reference values; export `topology.js` |
 
 ---
 
@@ -134,32 +139,29 @@ This is a *teaching topology* — every design flaw is intentional. Replace it w
 
 - **Cytoscape.js** — graph rendering
 - **Tailwind CDN** — UI styling
-- **Vanilla JavaScript** — no framework, no build step, no `node_modules`
-
-One HTML file. Zero dependencies to install. Clone and serve.
+- Pure vanilla JavaScript ES module, no build step
 
 ---
 
-## Known Limitations
+## Risks & Limitations
 
-1. **Single area only** — Area 0. No inter-area routing or ABR processing.
-2. **Simplified external routing** — exact match + default-route fallback. No full longest-prefix matching.
-3. **Static metrics** — link costs are hand-configured. No live latency telemetry integration.
-4. **Manual topology authoring** — no LSDB parser yet; you write `topology.js` by hand.
+1. Currently only **single-area / pure area 0** is supported — no ABR / inter-area summary LSA handling
+2. LSA5 external only does "exact match + default-route fallback", no full LPM
+3. No cost-as-latency telemetry feed — doing latency-aware SPF still requires wiring up an RFC 7471 data source
+4. Topology data is currently a static `topology.js`; there is no online LSDB parser (importing directly from router `show` commands is a future direction)
+5. The built-in data is a **synthetic sample**; before any formal evaluation it must be replaced with your own network's real topology / traffic
 
 ---
 
 ## Roadmap
 
-| Priority | Feature | Why It Matters |
-|----------|---------|---------------|
-| 1 | **LSDB Parser** — ingest `show ip ospf database` output | Eliminates manual topology authoring; real data in minutes |
-| 2 | **What-If Topology Editing** — add/remove links, simulate capacity upgrades | Enables pre-deployment planning in the tool itself |
-| 3 | **SRLG Modeling** — shared-risk link groups, generalize N-1 to N-K | Covers submarine cable cuts and conduit-sharing failures |
-| 4 | **Report Export** — PDF / Excel for CAB submissions | Makes results shareable with management and change boards |
-| 5 | **Maintenance Window Planning** — ordered multi-step failure simulation | Risk-scored maintenance procedures, step by step |
-| 6 | **Multi-Area Support** — OSPF inter-area metric computation | Extends coverage to production multi-area networks |
+- [x] SRLG (Shared Risk Link Group) submarine-cable group failure — N-1 generalized to N-K
+- [ ] SLO matrix coverage (set a per-pair max cost, flag pairs that miss the target)
+- [ ] LSDB → `topology.js` parser
+- [ ] Explicit-path steering (steer / TE): pull specific traffic off the shortest path + bandwidth admission (CAC, "overflow / admission-fail once full") — planning in [steer.md](./steer.md)
+- [ ] Multi-area / OSPF inter-area cost computation
+- [ ] Flex-Algo (RFC 9350) multi-SPF parallel visualization
 
 ---
 
-For data model and algorithm internals, see [SPEC.md](./SPEC.md).
+To switch to your own network: replace `topology.js` (schema in [SPEC.md](./SPEC.md)). Detailed algorithms and data model are also in [SPEC.md](./SPEC.md).

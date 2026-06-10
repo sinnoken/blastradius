@@ -335,12 +335,16 @@ Implementation details:
 
 `ecmpBackupCheck` / `ecmpBackupScanAll` — for each (src, dst):
 
-1. compute primary; if `paths.length < 2` or they share the same first-hop → `status: n/a`
+1. compute primary; if `paths.length < 2` → `reason: 'no-ecmp'`; or if they share the same first-hop → `reason: 'single-first-hop'` (both `status: n/a`)
 2. collect `ecmpEdgeIds` = the primary's set of first-hop edges
 3. for each `eid ∈ ecmpEdgeIds`, remove it and recompute:
-   - if unreachable → `status: failed`, reason = `removing eid → unreachable`
-   - if the new path's first-hop is not in `ecmpEdgeIds \ {eid}` → `status: failed`, reason = `backup uses non-ECMP edge`
-4. all pass → `status: passed`
+   - if unreachable → `status: 'failed', reason: 'remove-unreachable', eid`
+   - if the new path's first-hop is not in `ecmpEdgeIds \ {eid}` → `status: 'failed', reason: 'backup-non-ecmp', eid, bid`
+4. all pass → `status: 'passed'`
+
+> **reason contract**: `reason` is always a **stable code** (kebab) plus structured
+> params (`eid` / `bid`); the engine emits **no prose strings**. Display text is the
+> UI's job, via the `REASON_TEXT` lookup table (which is also the i18n reason dictionary).
 
 **Semantics**: in an ideal ECMP group, after any member fails, traffic should be
 taken over by the other members of the group and should not escape the group.
@@ -677,3 +681,54 @@ optimizeWeights(topo, demand, bounds, opts)      → { weights, mlu, feasible, t
 > results are written back to `edge.cost` via the existing `applyEdgeChange`,
 > then carried away by the existing "export topology.js". The optimizer is the
 > **third weight source**, after manual and RTT.
+
+---
+
+## §16 Internationalization (i18n)
+
+The UI is fully bilingual (zh / en) via a single dictionary + `t()` lookup;
+`engine.js` plays no part in display (it emits codes only — see the §7 reason contract).
+
+### §16.1 Dictionary and lookup
+
+- `index.html` `§0.5 I18N` defines `const I18N = { zh: {...}, en: {...} }`; the two languages' keys **must be symmetric**.
+- `t(key, params)`: looks up `I18N[LANG][key]`; returns the value if a string, or `value(params)` if a function; **a missing key returns the key itself** (so gaps are visible on screen).
+- Strings with variables use function values: `'c2.failStatus': (p) => \`Current failures: ${p.e} edge(s) / ${p.n} node(s)\``.
+- Labels that vary by language but live in object constants (tier `label` / `action`) use a **getter** → `t()`, so they resolve at render time and switch instantly.
+
+### §16.2 Static HTML injection (`applyStaticI18n`)
+
+Four attributes, chosen by injection target:
+
+| Attribute | Injects | For |
+|-----------|---------|-----|
+| `data-i18n` | `textContent` | plain-text elements |
+| `data-i18n-html` | `innerHTML` | copy containing `<b>` / `<span>` markup |
+| `data-i18n-title` | `el.title` | the `title` tooltip attribute |
+| `data-i18n-optlabel` | `el.label` | `<optgroup>` labels |
+
+The Chinese stays in the HTML as a no-JS fallback; `applyStaticI18n()` overwrites it at startup and on language switch. Spans filled by JS at runtime (e.g. the C10 formula constants) must be re-filled in `render()`, because `data-i18n-html` rebuilds child nodes.
+
+### §16.3 Dynamic render
+
+Each tab's `render()` uses `t(key, params)` throughout; switching tabs / language re-renders, so dynamic strings update with it.
+**Note**: if a `render()` declares `const t = …` (e.g. `TIERS[tier]`) it shadows the translation `t()`; within that block only read `t.label` (resolved by the getter) — do not call the translation `t()` there.
+
+### §16.4 Key naming and dedup
+
+- Naming `<scope>.<sub>`: `common.*` (cross-tab shared), `c1.*`–`c10.*` (per tab), `ui.*` (chrome).
+- Strings identical across tabs are pulled into `common.*` (e.g. `common.auditBanner` / `scanAllPairs` / `recalc` / `status.*` / `tier.*`).
+- Engine code → text uses dynamic key building: `t('c6.reason.' + code, row)`, `t('c5.optType.' + type)` (the alignment check will show "defined > literal references", which is expected).
+
+### §16.5 Language state and switching
+
+- Default language: `localStorage['br-lang']` > browser language (`zh*` → zh, otherwise → en).
+- `setLang(lang)`: persists to localStorage + `applyStaticI18n()` + updates the toggle-button label + re-renders the active tab.
+- `#langToggle` in the left "Controls" panel (`data-action="toggleLang"`) shows "the language to switch to".
+
+### §16.6 Not translated
+
+- Identifiers in generated data: node codes (`TPE\nTW`), prefixes, subnets, `§` / `Cx` anchors, CSS classes, role/op names.
+- Intentionally-retained technical English (some headers Node/Total, Connected/DISCONNECTED, etc.).
+
+> **Contract with the engine**: anything the engine returns to the UI as a "reason / status / category" is always a stable code + structured params (§7); display text is the job of `t()` in this section. The engine must contain no user-facing prose strings (only comments may be in Chinese).

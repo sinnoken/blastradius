@@ -364,7 +364,7 @@
       <button class="tab active" data-tab="path" data-group="live" data-i18n="ui.tab.path" data-i18n-title="ui.tabTitle.live" title="即時分析:反映圖上標記的故障狀態">路徑</button>
       <button class="tab" data-tab="matrix" data-group="live" data-i18n="ui.tab.matrix" data-i18n-title="ui.tabTitle.live" title="即時分析:反映圖上標記的故障狀態">矩陣</button>
       <button class="tab" data-tab="allpairs" data-group="live" data-i18n="ui.tab.allpairs" data-i18n-title="ui.tabTitle.live" title="即時分析:反映圖上標記的故障狀態">樞紐度</button>
-      <button class="tab" data-tab="traffic" data-group="live" data-i18n="ui.tab.traffic" data-i18n-title="ui.tabTitle.traffic" title="即時分析:依據流量矩陣計算實際負載">邊流量</button>
+      <button class="tab" data-tab="traffic" data-group="live" data-i18n="ui.tab.traffic" data-i18n-title="ui.tabTitle.traffic" title="即時分析:依據流量矩陣計算實際負載">鏈路流量</button>
       <div class="w-px bg-gray-300 my-1.5" data-i18n-title="ui.tabSep" title="分隔"></div>
       <button class="tab" data-tab="failure" data-group="audit" data-i18n="ui.tab.failure" data-i18n-title="ui.tabTitle.audit" title="設計審計:基於完整拓樸,忽略手動故障標記">失效模擬</button>
       <button class="tab" data-tab="n1" data-group="audit" data-i18n-title="ui.tabTitle.audit" title="設計審計:基於完整拓樸,忽略手動故障標記">N-1</button>
@@ -430,7 +430,7 @@
     </div>
 
     <div class="tab-content" id="tab-traffic">
-      <h2 class="section-h !border-0 !mt-0" data-i18n="c4.title">邊流量視圖</h2>
+      <h2 class="section-h !border-0 !mt-0" data-i18n="c4.title">鏈路流量視圖</h2>
       <div class="hint" data-i18n-html="c4.hint">
         根據流量需求矩陣,計算每條鏈路承載的 <b>Gbps</b>(等成本路徑平均分攤),對照鏈路容量算出<b>利用率</b>。電路為全雙工、<b>容量單向計</b>,故 Gbps 與利用率取<b>較忙方向</b>(去 / 回擇大)。分 5 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · 0–50% 低負載 · <b>0% 閒置</b>(無流量,圖上淡灰虛線)。
       </div>
@@ -457,7 +457,7 @@
 
       <div class="mt-3 border-t border-gray-200 pt-2">
         <h3 class="text-[11px] font-semibold text-gray-600 uppercase tracking-wide mb-1" data-i18n="c10.opt.hdr">壅塞最佳化 (Fortz-Thorup / Tabu)</h3>
-        <div class="hint" data-i18n-html="c10.opt.hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div></div>
+        <div class="hint" data-i18n-html="c10.opt.hint">自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「鏈路流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div></div>
         <div class="grid grid-cols-2 gap-2 mt-2 items-end">
           <div><label class="label-sm" data-i18n="c10.opt.targetLabel">目標利用率上限 (%)</label><input type="number" id="optTarget" class="cost-input !w-full" min="10" max="100" value="75" data-i18n-title="c10.opt.targetTitle" title="把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)" /></div>
           <button class="btn-primary" id="runOptimize" data-action="runOptimize" data-i18n="c10.opt.runBtn">最佳化</button>
@@ -704,7 +704,7 @@ const I18N = {
     'c6.stat.breakdown': (p) => `(無 ECMP ${p.noEcmp} · 單一出口 ${p.singleHop})`,
     'c6.fullScan':       (p) => `全部 ${p.n} 對的掃描結果`,
     'c6.reason.no-ecmp':            () => '無 ECMP(只有一條最短路)',
-    'c6.reason.single-first-hop':   () => '多條 path 共用同一出口邊',
+    'c6.reason.single-first-hop':   () => '多條 path 共用同一出口介面',
     'c6.reason.remove-unreachable': (r) => `砍掉 <b>${r.eid}</b> 後變不可達`,
     'c6.reason.backup-non-ecmp':    (r) => `備援繞到群組外的 <b>${r.bid}</b>`,
     // --- C7 Asymmetric ---
@@ -734,7 +734,7 @@ const I18N = {
     'c2.legend.ecmp':   '= 等成本路徑數(ECMP)',
     'c2.legend.asym':   '= 來回路徑非對稱(斜紋)',
     'c2.noPath':        (p) => `${p.src} → ${p.dst} 沒有可用路徑。`,
-    'c2.failStatus':    (p) => `目前故障:${p.e} 邊 / ${p.n} 節點`,
+    'c2.failStatus':    (p) => `目前故障:${p.e} 鏈路 / ${p.n} 節點`,
     'c2.maxCostNote':   (p) => `最大 cost = ${p.max}。色階門檻與符號說明見上方圖例。`,
     'c2.reverseDir':    (p) => `反方向 ${p.dst} → ${p.src}`,
     'c2.asymCostLabel': (p) => `cost ${p.cost} (非對稱)`,
@@ -763,7 +763,7 @@ const I18N = {
     'c1.parallelLinks': (p) => `⇉ 平行等價鏈路 ×${p.n}:${p.list}`,
     'c1.unbackedCount': (p) => `${p.n} 段斷即不可達`,
     // --- C4 Edge Traffic ---
-    'c4.title':          '邊流量視圖',
+    'c4.title':          '鏈路流量視圖',
     'c4.hint':           '根據流量需求矩陣,計算每條鏈路承載的 <b>Gbps</b>(等成本路徑平均分攤),對照鏈路容量算出<b>利用率</b>。電路為全雙工、<b>容量單向計</b>,故 Gbps 與利用率取<b>較忙方向</b>(去 / 回擇大)。分 5 階:&gt;100% <b>過載</b> · 80–100% 高負載 · 50–80% 中負載 · 0–50% 低負載 · <b>0% 閒置</b>(無流量,圖上淡灰虛線)。',
     'c4.tier.overflow':  '過載',
     'c4.tier.high':      '高負載',
@@ -775,7 +775,7 @@ const I18N = {
     'c4.reach.lostLabel':'可達性會計 — ⚠ 部分 demand 失去路徑',
     'c4.unitLinks':      '條',
     'c4.maxUtilLabel':   '最大利用率 / 來源',
-    'c4.rankHdr':        '邊流量排行',
+    'c4.rankHdr':        '鏈路流量排行',
     'c4.col.pair':       '連接',
     'c4.col.tier':       '分類',
     'c4.reach.okValue':  (p) => `${p.gbps} Gbps demand 全數有路可走`,
@@ -880,7 +880,7 @@ const I18N = {
     'c10.revTitle':    (p) => `回程 ${p.dst}→${p.src}`,
     'c10.chipTitle':   (p) => `${p.label}:來回延遲 ${p.rtt} ms → 建議成本 ${p.cost}(點一下帶入去/回程)`,
     'c10.opt.hdr':         '壅塞最佳化 (Fortz-Thorup / Tabu)',
-    'c10.opt.hint':        '自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「邊流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div>',
+    'c10.opt.hint':        '自動搜尋一組 OSPF 權重,壓低<b>最大鏈路利用率(MLU)</b>= 全網最忙鏈路的利用率;口徑同「鏈路流量」視圖(含 transit、較忙方向)。約束:RTT 下限 + 整數 [5,500]。算完先預覽,確認再套用。需 demand.js + 鏈路 capacity。<div class="mt-1 text-gray-400">與上面「參考」不同:參考照<b>延遲</b>給單條建議,最佳化照<b>流量/容量</b>找整組——所以套用後參考欄常會亮<b style="color:#d97706">琥珀條</b>(偏離延遲建議),屬正常。</div>',
     'c10.opt.targetLabel': '目標利用率上限 (%)',
     'c10.opt.targetTitle': '把全網最忙鏈路的利用率壓到此值以下(即 MLU 目標)',
     'c10.opt.runBtn':      '最佳化',
@@ -889,7 +889,7 @@ const I18N = {
     'c10.opt.cbAsym':      '允許不對稱權重(去/回獨立)',
     'c10.opt.cbTransit':   '也調 transit 介面成本',
     'c10.opt.noDemand':    '未載入 demand.js,無法最佳化。',
-    'c10.opt.noCap':       'p2p 邊缺 capacity,無利用率可優化。',
+    'c10.opt.noCap':       'p2p 鏈路缺 capacity,無利用率可優化。',
     'c10.opt.computing':   '計算中…(Tabu 搜尋,視規模約數秒)',
     'c10.opt.name.invcap': 'InvCap 起點',
     'c10.opt.name.asym':   '不對稱',
@@ -910,7 +910,7 @@ const I18N = {
     'c10.opt.fwd':         '去',
     'c10.opt.rev':         '回',
     'c10.opt.applyBtn':    '套用這組權重',
-    'c10.opt.applied':     '已套用最佳化權重。可用「輸出 topology.js」帶走,或切到「邊流量 / 失效模擬」複驗。',
+    'c10.opt.applied':     '已套用最佳化權重。可用「輸出 topology.js」帶走,或切到「鏈路流量 / 失效模擬」複驗。',
     'c10.opt.statValue':   (p) => `${p.profile} · ${p.iter} 輪 · ${p.changed} 條 · ${p.ms}ms`,
     'c10.opt.advHelpful':  (p) => `進階選項(${p.names})有助益:MLU ${p.before}% → ${p.after}%(已採用)。`,
     'c10.opt.advNoGain':   (p) => `進階選項(${p.names})無增益(基準已達 ${p.base}%),採基準結果。`,
@@ -944,7 +944,7 @@ const I18N = {
     'ui.tab.path':         '路徑',
     'ui.tab.matrix':       '矩陣',
     'ui.tab.allpairs':     '樞紐度',
-    'ui.tab.traffic':      '邊流量',
+    'ui.tab.traffic':      '鏈路流量',
     'ui.tab.failure':      '失效模擬',
     'ui.tab.asym':         '非對稱',
     'ui.tab.edges':        '鏈路',
@@ -978,7 +978,7 @@ const I18N = {
     'c6.stat.breakdown': (p) => `(no ECMP ${p.noEcmp} · single-hop ${p.singleHop})`,
     'c6.fullScan':       (p) => `All ${p.n} pairs scanned`,
     'c6.reason.no-ecmp':            () => 'No ECMP (single shortest path)',
-    'c6.reason.single-first-hop':   () => 'Multiple paths share one egress edge',
+    'c6.reason.single-first-hop':   () => 'Multiple paths share one egress link',
     'c6.reason.remove-unreachable': (r) => `Cutting <b>${r.eid}</b> makes it unreachable`,
     'c6.reason.backup-non-ecmp':    (r) => `Backup escapes the group via <b>${r.bid}</b>`,
     // --- C7 Asymmetric ---
@@ -1002,19 +1002,19 @@ const I18N = {
     'c2.title':         'Shortest-path matrix',
     'c2.hint':          'A table of shortest-path cost between all routers, shaded into 4 tiers by cost. Click any cell to see path details and highlight them on the graph.',
     'c2.legend.t1':     '<b>≤30</b> — intra-region',
-    'c2.legend.t2':     '<b>31–60</b> — cross-region',
-    'c2.legend.t3':     '<b>61–100</b> — trans-ocean',
-    'c2.legend.t4':     '<b>&gt;100</b> — multi-hop trans-ocean',
+    'c2.legend.t2':     '<b>31–60</b> — inter-region',
+    'c2.legend.t3':     '<b>61–100</b> — transoceanic',
+    'c2.legend.t4':     '<b>&gt;100</b> — multi-hop transoceanic',
     'c2.legend.ecmp':   '= number of equal-cost paths (ECMP)',
     'c2.legend.asym':   '= round-trip path asymmetric (hatched)',
     'c2.noPath':        (p) => `No path available for ${p.src} → ${p.dst}.`,
-    'c2.failStatus':    (p) => `Current failures: ${p.e} edge(s) / ${p.n} node(s)`,
+    'c2.failStatus':    (p) => `Current failures: ${p.e} link(s) / ${p.n} node(s)`,
     'c2.maxCostNote':   (p) => `Max cost = ${p.max}. See the legend above for tier thresholds and symbols.`,
     'c2.reverseDir':    (p) => `Reverse ${p.dst} → ${p.src}`,
     'c2.asymCostLabel': (p) => `cost ${p.cost} (asymmetric)`,
     // --- C1 Path ---
     'c1.title':        'Path analysis',
-    'c1.hint':         'Computes the shortest path between two points. Two columns: "Status" shows normal or detour (failure reroute); "Path" shows single or ECMP multipath.',
+    'c1.hint':         'Computes the shortest path between two points. Two columns: "Status" shows normal or rerouted (failover); "Path" shows single or ECMP multipath.',
     'c1.srcLabel':     'Source',
     'c1.dstLabel':     'Destination',
     'c1.swapTitle':    'Swap source and destination',
@@ -1023,7 +1023,7 @@ const I18N = {
     'c1.placeholder':  'Pick a source and destination, then click "Compute shortest path".',
     'c1.unreach':      'Unreachable',
     'c1.state.normal': 'Normal',
-    'c1.state.detour': 'Detour',
+    'c1.state.detour': 'Rerouted',
     'c1.path.single':  'Single path',
     'c1.field.state':  'Status',
     'c1.field.path':   'Path',
@@ -1031,13 +1031,13 @@ const I18N = {
     'c1.noPrimary':    'No primary path available to analyze.',
     'c1.unbackTitle':  'Per-hop backup of the primary path (single-link N-1)',
     'c1.allBackedUp':  'Any single link can fail and the destination stays reachable',
-    'c1.unbackNote':   'Tests single-link failures only, judging "still reachable after a cut"; detour cost may rise — equal-cost backup is not guaranteed.',
+    'c1.unbackNote':   'Tests single-link failures only, judging "still reachable after a cut"; reroute cost may rise — equal-cost backup is not guaranteed.',
     'c1.noPath':        (p) => `No path available for ${p.src} → ${p.dst} (possibly due to a failure).`,
     'c1.path.ecmp':     (p) => `ECMP ×${p.n} multipath`,
     'c1.parallelLinks': (p) => `⇉ Parallel equal-cost links ×${p.n}: ${p.list}`,
     'c1.unbackedCount': (p) => `${p.n} segment(s) cut → unreachable`,
     // --- C4 Edge Traffic ---
-    'c4.title':          'Edge traffic view',
+    'c4.title':          'Link traffic view',
     'c4.hint':           'From the traffic demand matrix, computes the <b>Gbps</b> each link carries (split evenly across equal-cost paths), then <b>utilization</b> against link capacity. Circuits are full-duplex with <b>unidirectional capacity</b>, so Gbps and utilization take the <b>busier direction</b> (max of forward/reverse). 5 tiers: &gt;100% <b>overload</b> · 80–100% high · 50–80% mid · 0–50% low · <b>0% idle</b> (no traffic, faint dashed line).',
     'c4.tier.overflow':  'Overload',
     'c4.tier.high':      'High',
@@ -1049,7 +1049,7 @@ const I18N = {
     'c4.reach.lostLabel':'Reachability accounting — ⚠ some demand lost its path',
     'c4.unitLinks':      'links',
     'c4.maxUtilLabel':   'Max utilization / source',
-    'c4.rankHdr':        'Edge traffic ranking',
+    'c4.rankHdr':        'Link traffic ranking',
     'c4.col.pair':       'Link',
     'c4.col.tier':       'Tier',
     'c4.reach.okValue':  (p) => `${p.gbps} Gbps demand all routable`,
@@ -1078,9 +1078,9 @@ const I18N = {
     'c9.culprit.node': (p) => `<span class="txt-danger">R</span> ${p.id} fails`,
     // --- C3 Centrality ---
     'c3.title':        'Centrality inventory',
-    'c3.hint':         'Measures how many paths traverse each link and node — the higher the value, the more traffic relies on it and the larger the impact when it fails.<div class="mt-1">4 tiers: <b>Hub</b> (needs expansion) / <b>Normal</b> (maintain) / <b>Rare</b> (can downsize) / <b>Pure-backup (links) · Edge node (nodes)</b> (zero transit traffic).</div>',
+    'c3.hint':         'Measures how many paths traverse each link and node — the higher the value, the more traffic relies on it and the larger the impact when it fails.<div class="mt-1">4 tiers: <b>Hub</b> (needs expansion) / <b>Normal</b> (maintain) / <b>Rare</b> (can downsize) / <b>Pure-backup (links) · Leaf (nodes)</b> (zero transit traffic).</div>',
     'c3.edge.idle':    'Pure backup',
-    'c3.node.idle':    'Edge node',
+    'c3.node.idle':    'Leaf',
     'c3.edge.act.hub':    'Expand & dual-home',
     'c3.edge.act.normal': 'Maintain',
     'c3.edge.act.rare':   'Bandwidth-downsize candidate',
@@ -1154,7 +1154,7 @@ const I18N = {
     'c10.revTitle':    (p) => `Reverse ${p.dst}→${p.src}`,
     'c10.chipTitle':   (p) => `${p.label}: round-trip ${p.rtt} ms → suggested cost ${p.cost} (click to apply to fwd/rev)`,
     'c10.opt.hdr':         'Congestion optimization (Fortz-Thorup / Tabu)',
-    'c10.opt.hint':        'Auto-searches a set of OSPF weights to lower <b>max link utilization (MLU)</b> = the utilization of the busiest link network-wide; same basis as the "Edge traffic" view (includes transit, busier direction). Constraints: RTT floor + integer [5,500]. Preview first, apply after confirming. Needs demand.js + link capacity.<div class="mt-1 text-gray-400">Different from "Reference" above: Reference gives a per-link suggestion by <b>latency</b>; optimization finds a whole set by <b>traffic/capacity</b> — so after applying, the reference column often lights an <b style="color:#d97706">amber bar</b> (deviating from the latency suggestion), which is normal.</div>',
+    'c10.opt.hint':        'Auto-searches a set of OSPF weights to lower <b>max link utilization (MLU)</b> = the utilization of the busiest link network-wide; same basis as the "Link traffic" view (includes transit, busier direction). Constraints: RTT floor + integer [5,500]. Preview first, apply after confirming. Needs demand.js + link capacity.<div class="mt-1 text-gray-400">Different from "Reference" above: Reference gives a per-link suggestion by <b>latency</b>; optimization finds a whole set by <b>traffic/capacity</b> — so after applying, the reference column often lights an <b style="color:#d97706">amber bar</b> (deviating from the latency suggestion), which is normal.</div>',
     'c10.opt.targetLabel': 'Target utilization cap (%)',
     'c10.opt.targetTitle': "Push the busiest link's utilization below this value (i.e. the MLU target)",
     'c10.opt.runBtn':      'Optimize',
@@ -1163,7 +1163,7 @@ const I18N = {
     'c10.opt.cbAsym':      'Allow asymmetric weights (fwd/rev independent)',
     'c10.opt.cbTransit':   'Also adjust transit interface cost',
     'c10.opt.noDemand':    'demand.js not loaded — cannot optimize.',
-    'c10.opt.noCap':       'p2p edges lack capacity — no utilization to optimize.',
+    'c10.opt.noCap':       'p2p links lack capacity — no utilization to optimize.',
     'c10.opt.computing':   'Computing… (Tabu search, ~a few seconds depending on size)',
     'c10.opt.name.invcap': 'InvCap start',
     'c10.opt.name.asym':   'asymmetric',
@@ -1184,7 +1184,7 @@ const I18N = {
     'c10.opt.fwd':         'fwd',
     'c10.opt.rev':         'rev',
     'c10.opt.applyBtn':    'Apply these weights',
-    'c10.opt.applied':     'Optimized weights applied. Use "Export topology.js" to take them, or switch to "Edge traffic / Failure simulation" to re-verify.',
+    'c10.opt.applied':     'Optimized weights applied. Use "Export topology.js" to take them, or switch to "Link traffic / Failure simulation" to re-verify.',
     'c10.opt.statValue':   (p) => `${p.profile} · ${p.iter} iters · ${p.changed} links · ${p.ms}ms`,
     'c10.opt.advHelpful':  (p) => `Advanced options (${p.names}) helped: MLU ${p.before}% → ${p.after}% (applied).`,
     'c10.opt.advNoGain':   (p) => `Advanced options (${p.names}) gave no gain (baseline already ${p.base}%); using baseline result.`,
@@ -1218,7 +1218,7 @@ const I18N = {
     'ui.tab.path':         'Path',
     'ui.tab.matrix':       'Matrix',
     'ui.tab.allpairs':     'Centrality',
-    'ui.tab.traffic':      'Edge traffic',
+    'ui.tab.traffic':      'Link traffic',
     'ui.tab.failure':      'Failure sim',
     'ui.tab.asym':         'Asymmetric',
     'ui.tab.edges':        'Links',

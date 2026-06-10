@@ -25,7 +25,6 @@
     --tab-edit:          #cbd5e1;  /* slate-300   — 編輯 (inactive) */
     --tab-edit-on:       #64748b;  /* slate-500   — active bar */
     --tab-edit-text:     #334155;  /* slate-700   — active text */
-    --legend-overflow:   #7f1d1d;  /* red-900     — 過載圖例線 */
   }
   @layer base {
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif; }
@@ -101,15 +100,27 @@
     .legend-dot.pseudo { @apply bg-amber-100 border-amber-600 rounded-sm rotate-45; }
     .legend-line { @apply w-6 h-[3px] rounded; }
     .legend-line.normal   { @apply bg-gray-400; }
-    .legend-line.spt      { @apply bg-blue-600; }
-    .legend-line.backup   { @apply bg-amber-500; }
-    .legend-line.failed   { @apply bg-red-500; }
-    .legend-line.load-inc  { @apply bg-blue-500; }
-    .legend-line.load-dec  { @apply bg-yellow-500; }
-    .legend-line.overflow  { background: var(--legend-overflow); height: 5px; border-style: dashed; }
+    /* 以下色彩讀 :root 的 --role-*(與圖上 EDGE_ROLE_STYLES 共用單一來源);normal 為基準色,非 role,維持 @apply */
+    .legend-line.spt      { background: var(--role-spt); }
+    .legend-line.backup   { background: var(--role-backup); }
+    .legend-line.failed   { background: var(--role-failed); }
+    .legend-line.load-inc  { background: var(--role-load-inc); }
+    .legend-line.load-dec  { background: var(--role-load-dec); }
+    .legend-line.overflow  { background: var(--role-overflow); height: 5px; border-style: dashed; }
   }
 </style>
 <style>
+  /* graph role 配色單一來源 — 圖例 CSS class 與 JS EDGE_ROLE_STYLES 都讀這組 var,消除 CSS↔JS 同色各定義一次。
+     放在此「純 <style>」區(非 type="text/tailwindcss"),才會同步套用、能被 module script 的 getComputedStyle 讀到。 */
+  :root {
+    --role-spt:       #2563eb;  /* blue-600   — SPT 主路徑 */
+    --role-backup:    #f59e0b;  /* amber-500  — 備援路徑 */
+    --role-failed:    #ef4444;  /* red-500    — 故障鏈路 */
+    --role-load-inc:  #3b82f6;  /* blue-500   — 負載增 */
+    --role-load-dec:  #eab308;  /* yellow-500 — 負載減 */
+    --role-overflow:  #7f1d1d;  /* red-900    — 過載 */
+  }
+
   /* Cytoscape canvas grid — not expressible as utilities */
   #cy {
     background-color: #fafbfc;
@@ -317,7 +328,7 @@
   <div id="panel-resize" class="w-1 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors"></div>
 
   <!-- RIGHT: tabbed reports (resizable) -->
-  <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:430px">
+  <aside id="right-panel" class="shrink-0 bg-white overflow-y-auto" style="width:440px">
     <div class="tabs">
       <button class="tab active" data-tab="path" data-group="live" title="即時分析:反映圖上標記的故障狀態">路徑</button>
       <button class="tab" data-tab="matrix" data-group="live" title="即時分析:反映圖上標記的故障狀態">矩陣</button>
@@ -549,20 +560,26 @@ import {
 // ============================================================================
 // §0 CONSTANTS
 // ============================================================================
+// 從 :root 讀 CSS 設計 token — 讓圖上配色與圖例 CSS class 共用同一份 var(單一來源,免 CSS↔JS 同色各定義一次)。
+// 註:--role-* 定義在「純 <style>」區(同步套用),才能在 module script 載入時被 getComputedStyle 讀到
+//     (type="text/tailwindcss" 區是 CDN 非同步處理,讀不到)。
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
 // 單一資料源:role class → Cytoscape style。
 // §1 的 style 陣列、下方的 class 清單(切 Tab 清除用)都由此表衍生,避免三處重複維護。
+// 與圖例重複的 role 色(spt/backup/failed/load-inc/load-dec/overflow)改讀 :root 的 --role-*,圖例 CSS 也讀同一個 var。
 const EDGE_ROLE_STYLES = {
-  'spt':              { 'line-color':'#2563eb','width':4,'z-index':10 },
-  'backup':           { 'line-color':'#f59e0b','line-style':'dashed','width':4,'z-index':9 },
-  'failed':           { 'line-color':'#ef4444','line-style':'dotted','width':3,'opacity':0.6 },
+  'spt':              { 'line-color':cssVar('--role-spt'),'width':4,'z-index':10 },
+  'backup':           { 'line-color':cssVar('--role-backup'),'line-style':'dashed','width':4,'z-index':9 },
+  'failed':           { 'line-color':cssVar('--role-failed'),'line-style':'dotted','width':3,'opacity':0.6 },
   'unbacked':         { 'line-color':'#dc2626','width':4,'z-index':11 },
-  'load-inc':         { 'line-color':'#3b82f6','width':5,'z-index':8 },
-  'load-dec':         { 'line-color':'#eab308','width':4,'z-index':7 },
+  'load-inc':         { 'line-color':cssVar('--role-load-inc'),'width':5,'z-index':8 },
+  'load-dec':         { 'line-color':cssVar('--role-load-dec'),'width':4,'z-index':7 },
   'bc-hub':           { 'line-color':'#16a34a','width':8,'z-index':5 },
   'bc-normal':        { 'line-color':'#3b82f6','width':5,'z-index':4 },
   'bc-rare':          { 'line-color':'#fde047','width':3,'z-index':3 },
   'bc-idle':          { 'line-color':'#94a3b8','line-style':'dashed','width':2,'z-index':2 },
-  'traffic-overflow': { 'line-color':'#7f1d1d','width':10,'line-style':'dashed','z-index':6 },
+  'traffic-overflow': { 'line-color':cssVar('--role-overflow'),'width':10,'line-style':'dashed','z-index':6 },
   'traffic-high':     { 'line-color':'#dc2626','width':8,'z-index':5 },
   'traffic-mid':      { 'line-color':'#f59e0b','width':5,'z-index':4 },
   'traffic-low':      { 'line-color':'#94a3b8','width':2,'z-index':2 },
@@ -602,6 +619,17 @@ const THRESHOLDS = {
   trafficOverflow: 1,
   trafficHigh: 0.8,
   trafficMid: 0.5,
+};
+
+// 顯示筆數上限 — 集中各 Tab 的「取樣 / Top-N 列數」,取代散落各處的魔術數字
+const LIMITS = {
+  pairSample:       6,   // C3 不可達 pair banner 取樣
+  demandSample:     5,   // C3/C4/C5 失去路徑 demand 取樣
+  overflowSample:   3,   // C5 過載鏈路取樣
+  topAffectedEdges: 12,  // C5 受影響鏈路列數
+  topFailures:      10,  // C9 最致命失效列數
+  topPairs:         20,  // C9 最脆弱 pair 列數
+  culprits:         3,   // C9 每列元凶顯示數
 };
 
 // 混合標籤策略的單一資料源:依鏈路對稱性決定用哪一組 Cytoscape label 欄位。
@@ -1330,7 +1358,7 @@ const C3_AllPairs = (() => {
           value: `${totalForBanner} 對 pair 全數可達` })
       : reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 pair 不可達',
           value: `${bcResult.reachablePairs} / ${totalForBanner} 可達 &nbsp;<span class="banner-sub">(失去 ${lostPairs.length} 對)</span>`,
-          sample: sampleList(lostPairs, 6, p => `${p.a}→${p.b}`),
+          sample: sampleList(lostPairs, LIMITS.pairSample, p => `${p.a}→${p.b}`),
           note: `以下 BC 排名僅統計 ${bcResult.reachablePairs} 對可達 pair。失效節點 / 鏈路若是 hub,真實衝擊比表面數字更大。` });
 
     // 4 階採購決策卡(用 grid 2×2 排列)
@@ -1365,7 +1393,7 @@ const C3_AllPairs = (() => {
       const tot = nodeBCResult.totalDemand, lost = nodeBCResult.lostDemand;
       html += reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 demand 失去路徑',
         value: `${nodeBCResult.servedDemand.toFixed(0)} / ${tot.toFixed(0)} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${lost.toFixed(0)} Gbps · ${(lost / tot * 100).toFixed(1)}%)</span>`,
-        sample: sampleList(nodeBCResult.lostDemandPairs, 5, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
+        sample: sampleList(nodeBCResult.lostDemandPairs, LIMITS.demandSample, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
         note: '以下節點熱度僅統計可達 demand。' });
     }
     html += tierCardGrid(['hub', 'normal', 'rare', 'idle'], NODE_TIERS, nodeTierCounts, '台');
@@ -1472,7 +1500,7 @@ const C4_Traffic = (() => {
       const lostPct = totalGbps > 0 ? (lostGbps / totalGbps * 100) : 0;
       html += reachabilityBanner({ tone: 'lost', label: '可達性會計 — ⚠ 部分 demand 失去路徑',
         value: `${result.servedDemand.toFixed(0)} / ${totalGbps.toFixed(0)} Gbps 可達 &nbsp;<span class="banner-sub">(失去 ${lostGbps.toFixed(0)} Gbps · ${lostPct.toFixed(1)}%)</span>`,
-        sample: sampleList(result.lostDemandPairs, 5, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
+        sample: sampleList(result.lostDemandPairs, LIMITS.demandSample, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`),
         note: `以下流量排行僅基於剩餘可達 demand。現實裡這 ${lostGbps.toFixed(0)} Gbps 不會憑空消失,代表「客戶斷線」或「BGP 倒換出域」。` });
     }
 
@@ -1632,7 +1660,7 @@ const C5_Failure = (() => {
         <div class="value">${comps.map(c => '[' + c.join(',') + ']').join(' ')}</div></div>`;
     }
     if (overflows.length > 0) {
-      const sample = overflows.slice(0, 3).map(x =>
+      const sample = overflows.slice(0, LIMITS.overflowSample).map(x =>
         `${x.edge.source}↔${x.edge.target} ${(x.util*100).toFixed(0)}%`).join(', ');
       html += `<div class="info-card" style="background:#fee2e2;border-color:#dc2626;margin-top:6px">
         <div class="label" style="color:#991b1b">⚠ 過載</div>
@@ -1648,7 +1676,7 @@ const C5_Failure = (() => {
         html += reachabilityBanner({ tone: 'lost', mt: true, label: '⚠ 失去路徑的流量',
           value: `${lost.toFixed(0)} / ${total.toFixed(0)} Gbps 無法送達
             <span class="banner-sub">(${pct.toFixed(1)}%)</span>`,
-          sample: sampleList(tAfterFull.lostDemandPairs, 5, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`) });
+          sample: sampleList(tAfterFull.lostDemandPairs, LIMITS.demandSample, p => `${p.a}→${p.b} ${p.gbps.toFixed(1)}G`) });
       } else {
         html += reachabilityBanner({ tone: 'ok', mt: true, label: '流量可達性',
           value: `${total.toFixed(0)} Gbps demand 全數有路可走` });
@@ -1665,7 +1693,7 @@ const C5_Failure = (() => {
     const unit = hasDemand ? ' Gbps' : '';
     html += `<table><tr><th>Edge</th><th></th><th>Before${unit}</th><th>After${unit}</th><th>Δ%</th>${hasDemand ? '<th>Cap</th><th>Util%</th>' : ''}</tr>`;
 
-    for (const row of edgeRows.slice(0, 12)) {
+    for (const row of edgeRows.slice(0, LIMITS.topAffectedEdges)) {
       const statusCell =
         row.cls === 'down' ? '<span class="badge fail" title="斷線">✕</span>' :
         row.cls === 'up'   ? '<span class="badge info" title="負載增加">▲</span>' :
@@ -1924,7 +1952,7 @@ const C9_N1 = (() => {
     const hasDemand = typeof demand !== 'undefined' && demand?.matrix;
     const failOverflow = new Map();
     if (hasDemand) {
-      for (const f of failureRows.slice(0, 10)) {
+      for (const f of failureRows.slice(0, LIMITS.topFailures)) {
         const fE = f.kind === 'edge' ? new Set([f.id]) : new Set();
         const fN = f.kind === 'node' ? new Set([f.id]) : new Set();
         const tar = allPairsTraffic(topology, demand, fE, fN);
@@ -1961,7 +1989,7 @@ const C9_N1 = (() => {
     } else {
       html += '<div class="hint mb-2">點任一列模擬該失效情境 — 失效元件標紅,所有受影響 pair 的重繞路徑以橘色高亮。</div>';
       html += `<table><tr><th>失效</th><th>不可達</th><th>劣化</th><th>ΣΔcost</th><th>最大 ×</th>${hasDemand ? '<th>溢出</th>' : ''}</tr>`;
-      for (const f of failureRows.slice(0, 10)) {
+      for (const f of failureRows.slice(0, LIMITS.topFailures)) {
         const ratioStr = f.maxRatio === Infinity ? '∞' : f.maxRatio === 1 ? '—' : '×' + f.maxRatio.toFixed(2);
         const ov = failOverflow.get(f) ?? 0;
         const ovCell = hasDemand
@@ -1985,13 +2013,13 @@ const C9_N1 = (() => {
     } else {
       html += '<div class="hint mb-2">點任一列查看該 pair 在最糟失效下的重繞路徑。</div>';
       html += '<table><tr><th>Pair</th><th>Base</th><th>Worst</th><th>cost</th><th>元凶</th></tr>';
-      for (const row of pairRows.slice(0, 20)) {
+      for (const row of pairRows.slice(0, LIMITS.topPairs)) {
         const ratioBadge = row.ratio === Infinity
           ? '<span class="badge fail">∞</span>'
           : `<span class="badge backup">×${row.ratio.toFixed(2)}</span>`;
         const worstCell = row.worstCost === Infinity ? '∞' : row.worstCost;
-        const culpritList = row.culprits.slice(0, 3).map(fmtCulprit).join('<br>');
-        const more = row.culprits.length > 3 ? `<br><span class="cell-sub">+${row.culprits.length - 3} more</span>` : '';
+        const culpritList = row.culprits.slice(0, LIMITS.culprits).map(fmtCulprit).join('<br>');
+        const more = row.culprits.length > LIMITS.culprits ? `<br><span class="cell-sub">+${row.culprits.length - LIMITS.culprits} more</span>` : '';
         html += `<tr class="clickable" data-pair-idx="${pairRows.indexOf(row)}">
           <td>${row.a} → ${row.b}</td>
           <td>${row.base}</td>

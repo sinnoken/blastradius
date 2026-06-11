@@ -1,0 +1,15 @@
+/* theme.css — BlastRadius 設計 token(共用單一來源)。
+   設計權威 = index.html;本檔鏡射其淺色調色盤 + 分頁分組色,供 edit.html(及未來共用者)繼承。
+   ⚠ index.html 仍內嵌自己的 token(維持其 self-contained / 不被異動);本檔為其鏡射,
+     若 index 調色,請同步更新此檔。edit.html 不再自帶 token,全部繼承本檔。 */
+:root{
+  /* 淺色基礎調色盤(= index 的 Tailwind gray/blue 色階)*/
+  --bg:#f3f4f6; --panel:#ffffff; --panel-2:#f9fafb; --line:#e5e7eb; --line-2:#d1d5db;
+  --text:#111827; --muted:#6b7280; --accent:#2563eb; --accent-2:#1d4ed8;
+  --ok:#15803d; --warn:#a16207; --danger:#b91c1c; --gold:#d97706; --violet:#a855f7;
+  /* 分頁分組色票(沿用 index.html 的 --tab-*)*/
+  --tab-live:#99f6e4; --tab-live-on:#14b8a6; --tab-live-text:#0f766e;
+  --tab-whatif:#fde68a; --tab-whatif-on:#f59e0b; --tab-whatif-text:#b45309;
+  --tab-audit:#c7d2fe; --tab-audit-on:#6366f1; --tab-audit-text:#4338ca;
+  --tab-edit:#cbd5e1; --tab-edit-on:#64748b; --tab-edit-text:#334155;
+}

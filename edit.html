@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BlastRadius — Data Editor</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="theme.css">
 
 <!-- Cytoscape core(對齊 index.html)+ cxtmenu(右鍵)。建邊/undo 改自寫,不依賴易碎外掛。 -->
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
@@ -13,16 +15,7 @@
 <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 
 <style>
-:root{ /* 對齊 index.html 淺色主題(Tailwind gray/blue 色階)*/
-  --bg:#f3f4f6; --panel:#ffffff; --panel-2:#f9fafb; --line:#e5e7eb; --line-2:#d1d5db;
-  --text:#111827; --muted:#6b7280; --accent:#2563eb; --accent-2:#1d4ed8;
-  --ok:#15803d; --warn:#a16207; --danger:#b91c1c; --gold:#d97706; --violet:#a855f7;
-  /* 分頁分組色票 — 直接沿用 index.html 的 --tab-* */
-  --tab-live:#99f6e4; --tab-live-on:#14b8a6; --tab-live-text:#0f766e;
-  --tab-whatif:#fde68a; --tab-whatif-on:#f59e0b; --tab-whatif-text:#b45309;
-  --tab-audit:#c7d2fe; --tab-audit-on:#6366f1; --tab-audit-text:#4338ca;
-  --tab-edit:#cbd5e1; --tab-edit-on:#64748b; --tab-edit-text:#334155;
-}
+/* 設計 token 已抽至 theme.css(繼承 index 設計權威)— 見上方 <link rel="stylesheet" href="theme.css"> */
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;font-size:13px}
@@ -65,6 +58,9 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
 .field input:disabled{opacity:.6}
 .field input.invalid,.field textarea.invalid,.ext-row input.invalid{border-color:#dc2626;background:#fef2f2}
+input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
+.dt input[type=number]::-webkit-inner-spin-button,.dt input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.dt input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .cidr-err{color:#b91c1c;font-size:11px;margin:-4px 0 10px;line-height:1.45}
 .field textarea{resize:vertical;min-height:54px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -240,7 +236,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
   <div class="status" id="status">
     <span><span class="dot ok" id="connDot"></span><b id="stRouters">0</b> routers</span>
     <span><b id="stEdges">0</b> edges</span>
-    <span><b id="stCountries">0</b> 國</span>
+    <span><b id="stCountries">0</b> countries</span>
     <span><b id="stPseudo">0</b> pseudo</span>
     <span id="stMsg" style="color:var(--muted)"></span>
     <div class="legend">
@@ -266,8 +262,10 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
 'use strict';
+// 演算法重用 engine.js(SoC:演算法單一來源,UI 不重寫 BFS)。需經 http server(ESM import)。
+import { buildAdjacency, connectedComponents } from './engine.js';
 // ════════════════════════════════════════════════════════════════════════
 // BlastRadius Topology Editor — 自包含 Cytoscape 編輯器(zero-build)。
 // 依賴:cytoscape core + cxtmenu(右鍵)。建邊與 undo/redo 自寫,不用易碎外掛。
@@ -456,8 +454,8 @@ cy.on('tap', (e)=>{ if(e.target===cy && !connectMode) select(null); });
 cy.on('tap','node,edge', (e)=>{ if(!connectMode) select(e.target); });
 
 // ── Inspector ──────────────────────────────────────────────────────────
-function field(label, value, attr, type){
-  return `<div class="field"><label>${label}</label><input ${type?`type="${type}"`:''} data-k="${attr}" value="${esc(value??'')}"></div>`;
+function field(label, value, attr, type, extra){
+  return `<div class="field"><label>${label}</label><input ${type?`type="${type}"`:''} ${extra||''} data-k="${attr}" value="${esc(value??'')}"></div>`;
 }
 function renderInspector(){
   const body=$('inspBody'), kind=$('inspKind'), title=$('inspTitle');
@@ -473,7 +471,7 @@ function renderInspector(){
     title.textContent=d.id; kind.textContent='Router';
     body.innerHTML =
       field('ID(節點代碼)', d.id, 'id') +
-      `<div class="row2">${field('Country',d.country,'country')}${field('City',d.city,'city')}</div>` +
+      `<div class="row2">${field('Country',d.country,'country',null,'pattern="[A-Za-z]{2}" title="ISO 兩碼,如 TW"')}${field('City',d.city,'city')}</div>` +
       field('OSPF Area', d.area, 'area') +
       `<div class="field"><label>Stubs(每行一個 CIDR)</label><textarea data-k="stubs">${esc((d.stubs||[]).join('\n'))}</textarea><div class="cidr-err"></div></div>` +
       `<label class="check"><input type="checkbox" data-k="isASBR" ${d.isASBR?'checked':''}> ASBR(注入 LSA5 預設路由)</label>` +
@@ -498,12 +496,12 @@ function renderInspector(){
         <option value="p2p" ${d.type==='p2p'?'selected':''}>p2p</option>
         <option value="transit" ${d.type==='transit'?'selected':''}>transit</option></select></div>` +
       `<div class="row2">
-        ${field('Cost(去)', d.cost, 'cost', 'number')}
-        ${field('Capacity Gbps', d.capacity, 'capacity', 'number')}</div>` +
+        ${field('Cost(去)', d.cost, 'cost', 'number', 'min="1" step="1"')}
+        ${field('Capacity Gbps', d.capacity, 'capacity', 'number', 'min="1" step="1"')}</div>` +
       (d.type==='p2p'
         ? `<label class="check"><input type="checkbox" data-k="_hasRev" ${!sym?'checked':''}> 不對稱(去≠回)</label>
            <div class="field" id="revWrap" style="${sym?'display:none':''}"><label>Cost(回 / costRev)</label>
-             <input type="number" min="1" data-k="costRev" value="${esc(d.costRev ?? d.cost)}"></div>`
+             <input type="number" min="1" step="1" data-k="costRev" value="${esc(d.costRev ?? d.cost)}"></div>`
         : `<p style="color:var(--muted);font-size:12px">Transit:Router→PN 走此 cost;PN→Router 固定 0(Type-2)。</p>`) +
       `<div class="sub">危險操作</div><button class="btn danger" id="delSel">🗑 刪除此鏈路</button>`;
   }
@@ -660,23 +658,24 @@ function validate(){
   routers.forEach(n=>(n.data('stubs')||[]).forEach(c=>{ if(!isCIDR(c)){ badCidr.push(n.id()+':'+c); badNodes.add(n.id()); } }));
   cy.nodes('[type="pseudonode"]').forEach(n=>{ const sn=n.data('subnet'); if(sn&&!isCIDR(sn)){ badCidr.push(n.id()+':'+sn); badNodes.add(n.id()); } });
   externals.forEach(x=>{ if(x.subnet&&!isCIDR(x.subnet)) badCidr.push('ext:'+x.subnet); });
-  const adj={}; routers.forEach(n=>adj[n.id()]=new Set());
-  cy.edges().forEach(e=>{ const s=e.data('source'),t=e.data('target'); if(adj[s]&&adj[t]){adj[s].add(t);adj[t].add(s);} });
-  cy.nodes('[type="pseudonode"]').forEach(pn=>{
-    const rs=pn.connectedEdges().map(e=> e.data('source')===pn.id()?e.data('target'):e.data('source')).filter(r=>adj[r]);
-    rs.forEach(a=>rs.forEach(b=>{ if(a!==b) adj[a].add(b); }));
-  });
+  const allIds=new Set([...cy.nodes().map(n=>n.id()), ...cy.edges().filter(e=>e.id()!=='__ghostE__').map(e=>e.id())]);
+  const badSrlg=[];
+  S.forEach(g=>(g.affects||[]).forEach(a=>{ if(!allIds.has(a)) badSrlg.push((g.id||'?')+'→'+a); }));
+  // 連通性與 degree 重用 engine.js(取代原手寫 adj+BFS+PN mesh)
+  const eadj=buildAdjacency(cy.edges().filter(e=>e.id()!=='__ghostE__').map(e=>e.data()));
   const ids=routers.map(n=>n.id());
-  const seen=new Set([ids[0]]), stack=[ids[0]];
-  while(stack.length){ const u=stack.pop(); for(const v of adj[u]) if(!seen.has(v)){seen.add(v);stack.push(v);} }
-  const iso=ids.filter(i=>!seen.has(i));
-  const deg1=ids.filter(i=>adj[i].size<2);
+  const comps=connectedComponents(eadj, ids);
+  const main=new Set(comps.find(c=>c.includes(ids[0])) || comps[0] || []);
+  const iso=ids.filter(i=>!main.has(i));
+  const deg1=ids.filter(i=> new Set((eadj[i]||[]).map(x=>x[0])).size < 2);
   if(badCidr.length) flash([...badNodes],'#dc2626');
-  const cidrTxt='無效 CIDR ×'+badCidr.length+':'+badCidr.slice(0,4).join(' ')+(badCidr.length>4?'…':'');
-  if(iso.length){ setStatus('bad','不連通,孤立:'+iso.join(',')+(badCidr.length?'  ·  '+cidrTxt:'')); flash(iso,'#ef4444'); }
-  else if(badCidr.length){ setStatus('bad','資料檢查:'+cidrTxt); }
+  const di=[];
+  if(badCidr.length) di.push('無效 CIDR ×'+badCidr.length+'('+badCidr.slice(0,3).join(' ')+(badCidr.length>3?'…':'')+')');
+  if(badSrlg.length) di.push('SRLG 參照不存在 ×'+badSrlg.length+'('+badSrlg.slice(0,3).join(' ')+(badSrlg.length>3?'…':'')+')');
+  if(iso.length){ setStatus('bad','不連通,孤立:'+iso.join(',')+(di.length?'  ·  '+di.join(' · '):'')); flash(iso,'#ef4444'); }
+  else if(di.length){ setStatus('bad','資料檢查:'+di.join(' · ')); }
   else if(deg1.length){ setStatus('warn','degree<2(無備援):'+deg1.join(',')); flash(deg1,'#f59e0b'); }
-  else setStatus('ok','✔ 連通、degree≥2、CIDR 全合法');
+  else setStatus('ok','✔ 連通、degree≥2、資料合法');
 }
 function flash(ids,color){
   ids.forEach(id=>{ const n=cy.getElementById(id);
@@ -821,7 +820,7 @@ function renderDemand(){
   for(const r of ax){ h+=`<tr><td class="rowh">${esc(r)}</td>`+ax.map(c=>{
     if(r===c) return '<td style="background:#eef1f4"></td>';
     const v=(p.matrix[r]&&p.matrix[r][c]!=null)?p.matrix[r][c]:'';
-    return `<td><input class="num" data-r="${esc(r)}" data-c="${esc(c)}" value="${v}"></td>`;
+    return `<td><input type="number" min="0" step="any" class="num" data-r="${esc(r)}" data-c="${esc(c)}" value="${v}"></td>`;
   }).join('')+'</tr>'; }
   const tb=$('dmMatrix'); tb.innerHTML=h;
   tb.querySelectorAll('input[data-r]').forEach(inp=>inp.oninput=()=>{
@@ -863,7 +862,7 @@ function rttFlatTable(tb, rows, cols){
   let h='<tr>'+cols.map(c=>`<th>${c.h}</th>`).join('')+'<th></th></tr>';
   rows.forEach((r,i)=>{ h+=`<tr data-i="${i}">`+cols.map(c=>{
     if(c.sel) return `<td><select data-k="${c.k}">${c.sel.map(o=>`<option ${o===r[c.k]?'selected':''}>${o}</option>`).join('')}</select></td>`;
-    return `<td><input ${c.num?'class="num"':''} data-k="${c.k}" value="${esc(r[c.k])}"></td>`;
+    return `<td><input ${c.num?'type="number" min="0" step="any" class="num"':''} data-k="${c.k}" value="${esc(r[c.k])}"></td>`;
   }).join('')+`<td class="x" data-del="${i}">✕</td></tr>`; });
   tb.innerHTML=h;
   tb.querySelectorAll('[data-k]').forEach(inp=>{ const ev=inp.tagName==='SELECT'?'onchange':'oninput';
@@ -874,7 +873,7 @@ function rttFlatTable(tb, rows, cols){
 function renderRtt(){
   if(!R.matrix)R.matrix={}; if(!R.cityRef)R.cityRef=[]; if(!R.edges)R.edges=[];
   $('rttMeta').innerHTML=`<label>unit <input id="rUnit" value="${esc(R.unit||'ms')}" style="width:56px"></label>
-    <label>fiberRttPerKm <input id="rFib" class="num" value="${esc(R.fiberRttPerKm??0.01014)}" style="width:96px"></label>
+    <label>fiberRttPerKm <input id="rFib" type="number" min="0" step="any" class="num" value="${esc(R.fiberRttPerKm??0.01014)}" style="width:96px"></label>
     <label>timestamp <input id="rTs" value="${esc(R.timestamp||'')}" style="width:108px"></label>
     <label style="flex:1;min-width:200px">note <input id="rNote" value="${esc(R.note||'')}" style="width:100%"></label>`;
   $('rUnit').oninput=e=>R.unit=e.target.value;
@@ -889,7 +888,7 @@ function renderRtt(){
   for(const r of ax){ h+=`<tr><td class="rowh">${esc(r)}</td>`+ax.map(c=>{
     if(r===c) return '<td style="background:#eef1f4"></td>';
     const v=(R.matrix[r]&&R.matrix[r][c]!=null)?R.matrix[r][c]:'';
-    return `<td><input class="num" data-r="${esc(r)}" data-c="${esc(c)}" value="${v}"></td>`;
+    return `<td><input type="number" min="0" step="any" class="num" data-r="${esc(r)}" data-c="${esc(c)}" value="${v}"></td>`;
   }).join('')+'</tr>'; }
   const tb=$('rttMatrix'); tb.innerHTML=h;
   tb.querySelectorAll('input[data-r]').forEach(inp=>inp.oninput=()=>{

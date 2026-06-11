@@ -22,15 +22,15 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
 button,input,select,textarea{font-family:inherit;font-size:inherit}
 .app{display:flex;flex-direction:column;height:100%}
 
-.toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--header-bg);
+.toolbar{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--header-bg);
   color:var(--header-text);box-shadow:0 1px 3px rgba(0,0,0,.15);flex-wrap:wrap}
 .toolbar .brand{font-weight:700;letter-spacing:.3px;margin-right:6px}
 .toolbar .brand span{color:var(--header-accent)}
-.sep{width:1px;height:22px;background:rgba(255,255,255,.25);margin:0 4px}
-.nav-switch{margin-left:8px;padding:5px 11px;border:1px solid rgba(255,255,255,.4);border-radius:7px;
+.sep{width:1px;height:18px;background:rgba(255,255,255,.25);margin:0 4px}
+.nav-switch{margin-left:8px;padding:3px 11px;border:1px solid rgba(255,255,255,.4);border-radius:7px;
   color:var(--header-text);text-decoration:none;font-size:12px;font-weight:500;white-space:nowrap}
 .nav-switch:hover{background:rgba(255,255,255,.15);border-color:#fff}
-.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border:1px solid #d1d5db;
+.btn{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid #d1d5db;
   background:#f3f4f6;color:#111827;border-radius:6px;cursor:pointer;transition:.15s;white-space:nowrap;font-size:12px}
 .btn:hover{background:#e5e7eb;border-color:#9ca3af}
 .btn:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
@@ -167,7 +167,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
     <div class="sep"></div>
     <button class="btn" id="btnUndo" title="Ctrl+Z" disabled>↶ 復原</button>
     <button class="btn" id="btnRedo" title="Ctrl+Shift+Z" disabled>↷ 重做</button>
-    <select class="btn" id="layoutSel" title="佈局演算法" style="padding:6px 8px">
+    <select class="btn" id="layoutSel" title="佈局演算法" style="padding:4px 8px">
       <option value="dagre">Dagre 階層</option>
       <option value="cose">CoSE 力導向</option>
       <option value="breadthfirst">Breadthfirst</option>

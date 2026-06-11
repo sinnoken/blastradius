@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title data-i18n="ui.docTitle">BlastRadius — network failure impact</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="theme.css">
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
 <script src="topology.js"></script>
 <script src="demand.js"></script>
@@ -11,21 +12,7 @@
 <script src="rtt.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style type="text/tailwindcss">
-  /* tab group accent palette + 非 utility 圖例色 — 集中於此,避免 hex 散落各規則 */
-  :root {
-    --tab-live:          #99f6e4;  /* teal-200    — 即時狀態 (inactive) */
-    --tab-live-on:       #14b8a6;  /* teal-500    — active bar */
-    --tab-live-text:     #0f766e;  /* teal-700    — active text */
-    --tab-whatif:        #fde68a;  /* amber-200   — What-if (inactive) */
-    --tab-whatif-on:     #f59e0b;  /* amber-500   — active bar */
-    --tab-whatif-text:   #b45309;  /* amber-700   — active text */
-    --tab-audit:         #c7d2fe;  /* indigo-200  — 設計審計 (inactive) */
-    --tab-audit-on:      #6366f1;  /* indigo-500  — active bar */
-    --tab-audit-text:    #4338ca;  /* indigo-700  — active text */
-    --tab-edit:          #cbd5e1;  /* slate-300   — 編輯 (inactive) */
-    --tab-edit-on:       #64748b;  /* slate-500   — active bar */
-    --tab-edit-text:     #334155;  /* slate-700   — active text */
-  }
+  /* tab 分組色票(--tab-*)已抽至共用 theme.css(index 與 edit 共用單一來源)— 見 <head> 的 <link href="theme.css">;其餘 role/node 圖色見下方純 <style> :root */
   @layer base {
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif; }
     table { @apply w-full border-collapse text-xs; }
@@ -587,6 +574,7 @@ import {
   detectAsymmetric, computeHeatmap, computeN1WorstCase,
   evalCongestion, buildWeightBounds, optimizeWeights,
 } from './engine.js';
+import { baseGraphStyle } from './graph-style.js';
 
 // ============================================================================
 // §0 CONSTANTS
@@ -1299,17 +1287,7 @@ const cy = cytoscape({
     })),
   ],
   style: [
-    { selector: 'node.router', style: {
-      'background-color':'#fff','border-color':'#1e40af','border-width':3,
-      'label':'data(label)','color':'#1f2937','font-size':'12px','font-weight':'bold',
-      'text-valign':'center','text-halign':'center','text-wrap':'wrap','line-height':1.1,
-      'width':50,'height':50,
-    }},
-    { selector: 'node.pseudonode', style: {
-      'background-color':'#fef3c7','border-color':'#d97706','border-width':2,
-      'shape':'diamond','label':'data(label)','color':'#78350f','font-size':'10px',
-      'text-valign':'bottom','text-margin-y':6,'text-wrap':'wrap','width':36,'height':36,
-    }},
+    ...baseGraphStyle(),   // node 基礎樣式(router/pseudonode)抽至共用 graph-style.js
     { selector: 'edge', style: {
       // bezier + 明確的 control-point-step-size:同一對節點間的平行等價鏈路
       // (如 e_TPE_TYO / e_TPE_TYO_b)會自動扇形分開,不會疊在同一條弧線上,

@@ -266,6 +266,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
 'use strict';
 // 演算法重用 engine.js(SoC:演算法單一來源,UI 不重寫 BFS)。需經 http server(ESM import)。
 import { buildAdjacency, connectedComponents } from './engine.js';
+import { baseGraphStyle } from './graph-style.js';
 // ════════════════════════════════════════════════════════════════════════
 // BlastRadius Topology Editor — 自包含 Cytoscape 編輯器(zero-build)。
 // 依賴:cytoscape core + cxtmenu(右鍵)。建邊與 undo/redo 自寫,不用易碎外掛。
@@ -303,16 +304,8 @@ const cy = cytoscape({
   container: $('cy'), wheelSensitivity:0.25, minZoom:0.2, maxZoom:3,
   style:[
     // ── 節點/邊基礎樣式:繼承 index.html(白底藍框圓 router、琥珀菱形 pseudonode、slate bezier 邊)──
-    { selector:'node[type="router"]', style:{
-      'background-color':'#fff','border-color':'#1e40af','border-width':3,
-      'label':'data(label)','color':'#1f2937','font-size':'12px','font-weight':'bold',
-      'text-valign':'center','text-halign':'center','text-wrap':'wrap','line-height':1.1,
-      'width':50,'height':50 }},
-    { selector:'node[type="router"][?isASBR]', style:{ 'border-color':'#d97706','border-width':4 }},
-    { selector:'node[type="pseudonode"]', style:{
-      'background-color':'#fef3c7','border-color':'#d97706','border-width':2,'shape':'diamond',
-      'label':'data(label)','color':'#78350f','font-size':'10px','text-valign':'bottom','text-margin-y':6,
-      'text-wrap':'wrap','width':36,'height':36 }},
+    ...baseGraphStyle(),   // node 基礎樣式抽至共用 graph-style.js(router/pseudonode)
+    { selector:'node.router[?isASBR]', style:{ 'border-color':'#d97706','border-width':4 }},
     { selector:'edge', style:{
       'width':'mapData(capacity,300,1100,1.5,4)','line-color':'#94a3b8','curve-style':'bezier',
       'control-point-step-size':28,'target-arrow-shape':'none',
@@ -380,7 +373,7 @@ function edgeData(id, s, t, o={}){
   return d;
 }
 // 低階(不碰 undo)— undo 由各「動作」邊界統一 push
-function addNodeRaw(data, pos){ const e=cy.add({group:'nodes', data, position:pos||{x:Math.random()*400+150,y:Math.random()*300+120}}); refresh(); return e; }
+function addNodeRaw(data, pos){ const e=cy.add({group:'nodes', data, classes:data.type, position:pos||{x:Math.random()*400+150,y:Math.random()*300+120}}); refresh(); return e; }
 function addEdgeRaw(data){ const e=cy.add({group:'edges', data}); refresh(); return e; }
 function removeRaw(eles){ if(eles&&eles.length){ eles.remove(); refresh(); } }
 
@@ -556,7 +549,7 @@ function renameEle(ele, newId){
   const conn=ele.connectedEdges().map(e=>({...e.data()}));
   cy.batch(()=>{
     ele.connectedEdges().remove(); ele.remove();
-    cy.add({group:'nodes', data:d, position:pos});
+    cy.add({group:'nodes', data:d, classes:d.type, position:pos});
     conn.forEach(ed=>{ ed.source=ed.source===oldId?newId:ed.source; ed.target=ed.target===oldId?newId:ed.target;
       cy.add({group:'edges', data:ed}); });
   });
@@ -720,7 +713,7 @@ function loadTopologyText(src){
   const pos=topo.positions||{}, eles=[];
   for(const n of topo.nodes){
     const data = n.type==='pseudonode' ? pnData(n.id,n) : routerData(n.id,n);
-    eles.push({ group:'nodes', data, position: pos[n.id]?{...pos[n.id]}:undefined });
+    eles.push({ group:'nodes', data, classes:data.type, position: pos[n.id]?{...pos[n.id]}:undefined });
   }
   for(const e of topo.edges||[]) eles.push({ group:'edges', data:edgeData(e.id,e.source,e.target,e) });
   cy.add(eles);

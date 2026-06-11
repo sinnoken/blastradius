@@ -22,11 +22,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
 button,input,select,textarea{font-family:inherit;font-size:inherit}
 .app{display:flex;flex-direction:column;height:100%}
 
-.toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--panel);
-  border-bottom:1px solid var(--line);flex-wrap:wrap}
+.toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--header-bg);
+  color:var(--header-text);box-shadow:0 1px 3px rgba(0,0,0,.15);flex-wrap:wrap}
 .toolbar .brand{font-weight:700;letter-spacing:.3px;margin-right:6px}
-.toolbar .brand span{color:var(--accent)}
-.sep{width:1px;height:22px;background:var(--line-2);margin:0 4px}
+.toolbar .brand span{color:var(--header-accent)}
+.sep{width:1px;height:22px;background:rgba(255,255,255,.25);margin:0 4px}
 .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border:1px solid #d1d5db;
   background:#f3f4f6;color:#111827;border-radius:6px;cursor:pointer;transition:.15s;white-space:nowrap;font-size:12px}
 .btn:hover{background:#e5e7eb;border-color:#9ca3af}
@@ -147,7 +147,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
 
   <div class="warn-banner" id="warnBanner"></div>
 
-  <div class="toolbar">
+  <header class="toolbar">
     <div class="brand">Blast<span>Radius</span> · Data Editor</div>
     <div class="sep"></div>
     <button class="btn" id="btnLoadAll" title="fetch 同目錄 4 個 .js">⤓ 載入全部</button>
@@ -176,18 +176,18 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
     <button class="btn" id="btnFit">⤢ 置中</button>
     <div class="spacer"></div>
     <button class="btn" id="btnValidate">✔ 驗證</button>
-  </div>
+  </header>
 
-  <div class="tabbar" id="tabbar">
+  <nav class="tabbar" id="tabbar">
     <div class="tab active" data-tab="topo" data-group="live">Topology</div>
     <div class="tab" data-tab="demand" data-group="whatif">Demand</div>
     <div class="tab" data-tab="srlg" data-group="audit">SRLG</div>
     <div class="tab" data-tab="rtt" data-group="edit">RTT</div>
-  </div>
+  </nav>
 
   <div class="main panel active" id="panel-topo">
     <div id="cy"></div>
-    <div class="inspector">
+    <aside class="inspector">
       <div class="insp-head"><span id="inspTitle">Inspector</span><span class="pill" id="inspKind">未選取</span></div>
       <div class="insp-body" id="inspBody">
         <div class="empty">
@@ -197,7 +197,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
           <span style="font-size:11px">拖曳建邊請開「連線模式」(E)</span>
         </div>
       </div>
-    </div>
+    </aside>
   </div>
 
   <div class="panel scroll" id="panel-demand">
@@ -233,7 +233,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
     <div class="mgrid"><table class="dt" id="rttMatrix"></table></div>
   </div>
 
-  <div class="status" id="status">
+  <footer class="status" id="status">
     <span><span class="dot ok" id="connDot"></span><b id="stRouters">0</b> routers</span>
     <span><b id="stEdges">0</b> edges</span>
     <span><b id="stCountries">0</b> countries</span>
@@ -243,7 +243,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
       <span><i></i>p2p</span><span><i class="dash"></i>transit</span>
       <span class="tag" style="border-color:var(--gold);color:var(--gold)">ASBR</span>
     </div>
-  </div>
+  </footer>
 </div>
 
 <div class="modal" id="modal">

@@ -1,5 +1,6 @@
-/* theme.css — BlastRadius 共用設計 token(單一來源)。index.html 與 edit.html 皆 <link> 本檔。
+/* theme.css — BlastRadius 共用設計 token(共用單一來源)。index.html 與 edit.html 皆 <link> 本檔。
    - 分頁分組色 --tab-*:兩頁共用,真單一來源(改這裡兩頁同步)。
+   - header 設計 --header-*:深藍標題欄(= index 的 bg-blue-900 / text-white),供 edit 繼承。
    - 淺色基礎調色盤 --bg/--panel/--accent…:供 edit.html 套用;index.html 的對應顏色走 Tailwind 類別
      (色階相同),不引用這些變數 — 若調 index base 配色,需手動對齊本檔。
    - role/node 圖色(--role-* / --node-*)為 index 專用,仍留在 index.html 自己的 :root。
@@ -9,6 +10,8 @@
   --bg:#f3f4f6; --panel:#ffffff; --panel-2:#f9fafb; --line:#e5e7eb; --line-2:#d1d5db;
   --text:#111827; --muted:#6b7280; --accent:#2563eb; --accent-2:#1d4ed8;
   --ok:#15803d; --warn:#a16207; --danger:#b91c1c; --gold:#d97706; --violet:#a855f7;
+  /* header 深藍標題欄(= index 的 blue-900 / white)*/
+  --header-bg:#1e3a8a; --header-text:#ffffff; --header-accent:#93c5fd;
   /* 分頁分組色票 — index.html 與 edit.html 共用 */
   --tab-live:#99f6e4; --tab-live-on:#14b8a6; --tab-live-text:#0f766e;
   --tab-whatif:#fde68a; --tab-whatif-on:#f59e0b; --tab-whatif-text:#b45309;

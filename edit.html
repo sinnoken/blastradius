@@ -27,6 +27,9 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
 .toolbar .brand{font-weight:700;letter-spacing:.3px;margin-right:6px}
 .toolbar .brand span{color:var(--header-accent)}
 .sep{width:1px;height:22px;background:rgba(255,255,255,.25);margin:0 4px}
+.nav-switch{margin-left:8px;padding:5px 11px;border:1px solid rgba(255,255,255,.4);border-radius:7px;
+  color:var(--header-text);text-decoration:none;font-size:12px;font-weight:500;white-space:nowrap}
+.nav-switch:hover{background:rgba(255,255,255,.15);border-color:#fff}
 .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border:1px solid #d1d5db;
   background:#f3f4f6;color:#111827;border-radius:6px;cursor:pointer;transition:.15s;white-space:nowrap;font-size:12px}
 .btn:hover{background:#e5e7eb;border-color:#9ca3af}
@@ -176,6 +179,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
     <button class="btn" id="btnFit">⤢ 置中</button>
     <div class="spacer"></div>
     <button class="btn" id="btnValidate">✔ 驗證</button>
+    <a class="nav-switch" href="index.html" title="切換到分析檢視">← 分析檢視</a>
   </header>
 
   <nav class="tabbar" id="tabbar">

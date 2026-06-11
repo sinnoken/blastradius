@@ -183,6 +183,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
       <option value="mds">RTT 自適應 (MDS)</option>
       <option value="cluster-rtt">RTT 群聚炸開</option>
       <option value="latency-map">RTT 真比例圖</option>
+      <option value="geo-map">地圖真實比例(經緯)</option>
       <option value="breadthfirst">Breadthfirst</option>
       <option value="breadthfirst-adaptive">Breadthfirst × root</option>
       <option value="concentric">Concentric</option>
@@ -739,6 +740,62 @@ function layoutLatencyMap(){
   let mx=0,pr=''; for(let i=0;i<geo.length;i++)for(let j=i+1;j<geo.length;j++){ const v=d(cityOf[i],cityOf[j]); if(v!=null&&v>mx){ mx=v; pr=cityOf[i]+'–'+cityOf[j]; } }
   toast('真比例延遲圖:螢幕距離 ∝ RTT(無壓縮/炸開)。最長 '+pr+' ≈ '+Math.round(mx/fpk).toLocaleString()+' km;metro 太近請放大看。');
 }
+// ── 地圖真實比例(WGS84 等距圓柱投影)── 兩級座標:city 查不到→退國家中心點→再退鄰居平均。
+// 北朝上、東朝右、經緯同尺度(真比例);不去重疊(近城市自然相疊,設計上交給人手動拖開)。
+// GEO_CITY 來源 = working/gen.mjs 的 GEO(已驗證)+ rtt.js cityRef 出現的真實城市,皆 [lat, lon]。
+const GEO_CITY = {
+  // gen.mjs GEO(PoP 級,含合成 PoP 變體)
+  TPE:[25.0,121.5], KHH:[22.6,120.3], TYO:[35.7,139.7], OSA:[34.7,135.5],
+  SHA:[31.2,121.5], HKG:[22.3,114.2], SIN:[1.35,103.8],
+  TPE2:[25.1,121.6], TYN:[25.0,121.2], TCH:[24.1,120.7], HSZ:[24.8,121.0],
+  TYO2:[35.6,139.8], NGO:[35.2,136.9], FUK:[33.6,130.4],
+  PEK:[39.9,116.4], CAN:[23.1,113.3], SZX:[22.5,114.1], CTU:[30.6,104.1],
+  WUH:[30.6,114.3], HKG2:[22.3,114.1], HKG3:[22.4,114.2],
+  SIN2:[1.30,103.9], SIN3:[1.40,103.7],
+  LAX:[34.0,-118.2], SJC:[37.3,-121.9], SEA:[47.6,-122.3], JFK:[40.6,-73.8],
+  IAD:[38.95,-77.45], ORD:[41.98,-87.9], DAL:[32.8,-96.8], ATL:[33.7,-84.4],
+  LHR:[51.47,-0.45], LHR2:[51.5,-0.1], MAN:[53.4,-2.2],
+  FRA:[50.0,8.6], FRA2:[50.1,8.7], MUC:[48.1,11.6],
+  SYD:[-33.9,151.2], MEL:[-37.8,144.9], PER:[-31.95,115.9], BNE:[-27.5,153.0],
+  BOM:[19.1,72.9], DEL:[28.6,77.1], MAA:[13.1,80.3], BLR:[13.0,77.6],
+  // 都會別名(gen.mjs CITY 映射:JFK→NYC、ORD→CHI、DAL→DFW、LHR→LON、IAD→WAS、PEK→BJS、TCH→TXG)
+  NYC:[40.71,-74.0], CHI:[41.88,-87.63], DFW:[32.78,-96.8], LON:[51.5,-0.13],
+  WAS:[38.9,-77.04], BJS:[39.9,116.4], TXG:[24.15,120.67],
+  // rtt.js cityRef 出現、上面未含的真實城市
+  AMS:[52.37,4.9], ATH:[37.98,23.73], BER:[52.52,13.4], BKK:[13.75,100.5],
+  BRU:[50.85,4.35], CPH:[55.68,12.57], DUB:[53.35,-6.26], HAN:[21.03,105.85],
+  HEL:[60.17,24.94], IST:[41.0,28.98], DXB:[25.2,55.27], MAD:[40.42,-3.7],
+  MIL:[45.46,9.19], OSL:[59.91,10.75], PAR:[48.85,2.35], SEL:[37.57,126.98],
+  SGN:[10.82,106.63], JKT:[-6.2,106.85], KUL:[3.14,101.69], MNL:[14.6,120.98],
+};
+// 國家中心點(ISO-3166-1 alpha-2),供 city 查不到時 fallback。皆 [lat, lon]。
+const GEO_COUNTRY = {
+  TW:[23.7,121.0], JP:[36.2,138.3], CN:[35.9,104.2], HK:[22.3,114.2], SG:[1.35,103.8],
+  US:[39.8,-98.6], GB:[54.0,-2.0], UK:[54.0,-2.0], DE:[51.2,10.4], FR:[46.6,2.4],
+  NL:[52.1,5.3], AU:[-25.3,133.8], IN:[22.0,79.0], KR:[36.5,127.8], TH:[15.0,101.0],
+  VN:[16.0,107.8], ID:[-2.5,118.0], MY:[4.2,101.9], PH:[12.9,121.8], AE:[24.0,54.0],
+  GR:[39.0,22.0], ES:[40.0,-4.0], IT:[42.8,12.8], BE:[50.6,4.6], TR:[39.0,35.0],
+};
+function layoutGeoMap(){
+  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  const ll={}, placed=[], unplaced=[];
+  all.forEach(n=>{
+    const c=n.data('city'), co=(n.data('country')||'').toUpperCase();
+    const p=(c&&GEO_CITY[c]) || (co&&GEO_COUNTRY[co]) || null;   // 兩級:城市 → 國家
+    if(p){ ll[n.id()]=p; placed.push(n); } else unplaced.push(n);
+  });
+  if(!placed.length){ toast('無 city/country 座標可用,無法畫地圖'); return; }
+  const PX_PER_DEG=8;                  // 經緯同尺度 → 真比例;最後 fit 再整體 zoom(不破壞比例)
+  const pos={};
+  placed.forEach(n=>{ let [lat,lon]=ll[n.id()]; if(lon<-30) lon+=360;   // 太平洋視角:美洲移到亞洲右側,跨太平洋連續
+    pos[n.id()]={ x:lon*PX_PER_DEG, y:-lat*PX_PER_DEG }; });            // -lat:北朝上
+  for(let pass=0; pass<2; pass++) unplaced.forEach(nd=>{ const nb=nd.neighborhood().nodes().filter(x=>pos[x.id()]);
+    if(nb.length){ let sx=0,sy=0; nb.forEach(x=>{ sx+=pos[x.id()].x; sy+=pos[x.id()].y; }); pos[nd.id()]={ x:sx/nb.length, y:sy/nb.length }; } });
+  all.forEach(nd=>{ if(!pos[nd.id()]) pos[nd.id()]={...nd.position()}; });
+  cy.layout({ name:'preset', positions:(node)=>pos[node.id()], fit:true, padding:40, animate:true, animationDuration:350 }).run();
+  const byCity=placed.filter(n=>{ const c=n.data('city'); return c&&GEO_CITY[c]; }).length;
+  toast('地圖真實比例:'+byCity+' 用城市座標、'+(placed.length-byCity)+' 退國家中心點、'+unplaced.length+' 無座標(沿鄰居);重疊請手動拖開。');
+}
 // cose 用:每條邊的理想長度 = 城市對 RTT(ms→px)。無 RTT(pseudonode transit 邊)用短邊,讓 PN 靠攏所屬 router。
 function rttEdgeLen(edge){
   const M=(R&&R.matrix)||{};
@@ -832,6 +889,7 @@ function runLayout(name){
   if(name==='mds') return layoutMDS();           // 自訂:非 cytoscape plugin,用 rtt.matrix 跑 MDS
   if(name==='cluster-rtt') return layoutClusterRTT();  // 自訂:RTT 分群 + 群間炸開(兩尺度)
   if(name==='latency-map') return layoutLatencyMap();  // 自訂:raw-RTT MDS 真比例圖(忠實物理,無壓縮)
+  if(name==='geo-map') return layoutGeoMap();          // 自訂:經緯等距投影,city→country 兩級 fallback,北朝上
   if(name==='dagre-rtt') return layoutDagreAdaptive();  // 自訂:dagre + RTT/area/country 後處理
   if(name==='breadthfirst-adaptive') return layoutBreadthfirstAdaptive();  // 自訂:資料挑 root + depthSort
   if(name==='concentric-adaptive') return layoutConcentricAdaptive();  // 自訂:demand/centrality 指標

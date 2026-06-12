@@ -4,32 +4,39 @@ OSPF/IGP 韌性審計單頁式 SPA(Cytoscape.js + Tailwind CDN + vanilla ES modu
 **專案持續維護**(index.html / engine.js / 文件都會改);**dataset 穩定** — 沒事不用重產,
 需要時才跑 `working/gen.mjs`。「凍結」的是資料,不是專案。
 
-## 檔案結構(完整可跑只需這 6 檔,全在本目錄)
+## 檔案結構(完整可跑需這 8 檔,全在本目錄)
 
 | 檔 | 性質 | exports |
 |----|------|---------|
 | `index.html` | 前端 UI,**手維護**,可直接編輯 | — |
 | `engine.js` | 純演算法 ES module(每函式 export,無 DOM/Cytoscape/全域依賴) | 每函式 export |
+| `theme.css` | 設計 token,**手維護**,index 與 edit 兩頁 `<link>` | — |
+| `graph-style.js` | cy 節點基礎樣式,兩頁 `import` | `baseGraphStyle()` |
 | `topology.js` | 拓樸資料,generated | global const,**無** module.exports |
 | `demand.js` | 流量需求,generated | **有** module.exports |
 | `srlg.js` | 共同風險群組,generated | global const,**無** module.exports |
 | `rtt.js` | 城市對 RTT,generated | **有** module.exports |
 
 輔助文件(非執行所需):`README.md`(PM 視角專案說明)、`SPEC.md`(工程規格,以 § 編號錨定)。
+工具(非執行所需):`edit.html` — 資料編輯器(編 topology/demand/srlg/rtt 四檔,見下方「編輯器」段)。
+共用模組(非「可跑 8 檔」之一):`ospf-import.js` — OSPF LSDB 解析純函式(SSOT),`edit.html` 與 `working/ospf_to_topology.mjs` 共 import;`index.html` 不依賴。
+OSPF 匯入資料集:`*.imported.js`(topology/demand/srlg/rtt)— 由匯入流程產生的真實骨幹資料,與 demo 的 `*.js` 平行並存、不互蓋。
+共用前端資產的設計細節(資產本身見上表):`theme.css` 的 `--tab-*` 為真單一來源,base 調色盤因 index 走 Tailwind 需手動對齊。
 
 **本檔三層,分工不重複(同一件事只在所屬層講一次)**:**鐵則**(紅線 / 程序,違反即壞資料或失準)→ **設計原則**(理念,改 code 自我檢查)→ **慣例**(UI / 樣式的具體 do / don't)。
 
 ## 鐵則
 
-1. **generated `.js` 永不手改** — `topology / demand / srlg / rtt.js` 全由
-   `working/gen.mjs` 產生。要改資料 → 只改 `gen.mjs` → 重跑 → 用 `verify.mjs` 獨立重算驗證
-   byte-identical(確定性要求)→ **驗證時輸出到暫存目錄,絕不覆寫 output/**。
+1. **generated `.js` 永不「手 key」** — `topology / demand / srlg / rtt.js` 由工具產生,不手動逐字編輯。**兩條合法生產路徑,別混驗**:
+   - **`working/gen.mjs`(確定性樣本)** — 改資料 → 只改 `gen.mjs` → 重跑 → 用 `verify.mjs` 獨立重算驗 byte-identical(確定性要求)→ **驗證時輸出到暫存目錄,絕不覆寫 output/**。
+   - **`edit.html`(人工策展)** — 用編輯器 UI 改 → 匯出回 `.js`。屬人工資料,**不受 byte-identical / 確定性約束**,`gen.mjs` 不保證能重現(見「編輯器」段)。
+   - **不可混驗**:edit 匯出的資料別拿 gen 的 byte-identical 標準去驗;gen 的確定性樣本也別用 edit 手改(會脫離確定性鏈)。
 2. **index.html / engine.js 手維護** — 可直接編輯(engine 的純函式紅線見設計原則 → Pure Functions)。
 3. **改完任何檔,用絕對路徑確認 `/mnt/workspace/output/` 的成品。**
 4. **engine.js 改動的驗證**:
    - **純重構**(要求結果不變,如 PQ 換堆、單源重用等效能優化)→ 比照鐵則 1:**改前先抓數值快照、改後比對 byte-identical**(載入 topology/demand 跑全套 all-pairs / N-1 / 優化器,雜湊比對)。
    - **刻意改變結果**(如把 MLU 口徑改為含 transit)→ 改用**行為驗證**(人工核對新行為合理、跨視圖一致),**不可**用 byte-identical 當通過標準。
-   - 兩者都用 `vm` 把 generated `.js` 灌進 context 測(它們是 global const、**無** module.exports,不能直接 import)。
+   - 兩者都用 `vm` 把 generated `.js` 灌進 context 測:`topology / srlg.js` 是 global const、**無** module.exports,不能直接 import;`demand / rtt.js` 雖**有** exports,為求一致仍一律走 `vm`。
 5. **engine 不吐白話、UI 不硬編字串** — `engine.js` 只回傳穩定代碼(kebab)+ 結構化參數,**不吐顯示字串**;所有 UI 文案集中在 `index.html` 的 `§0.5 I18N`(zh/en),經 `t(key, params)` 取用。新增 UI 字串一律進字典,**禁止散落硬編**(違反不會報錯,只會默默漏譯)。詳見 SPEC §16。
 
 ## 設計原則(對照業界慣例)
@@ -43,7 +50,7 @@ OSPF/IGP 韌性審計單頁式 SPA(Cytoscape.js + Tailwind CDN + vanilla ES modu
 - **No Magic Numbers** — 散落數字收成具名常數(`THRESHOLDS` / `LIMITS`)。
 - **Event Delegation** — 按鈕走 `data-action` → `ACTIONS` 單一委派。
 - **Convention over Configuration** — Tab = IIFE `{ init, activate }` + `TABS` 註冊表。
-- **Zero-build / Self-contained** — 單一自包含 HTML,無 build(故 CSS 不外部化、Tailwind 走 CDN inline)。
+- **Zero-build / Self-contained** — 單一自包含 HTML,無 build(故 CSS 不外部化、Tailwind 走 CDN inline;CDN 非同步衍生的 `@apply` 雷見樣式慣例 #2)。
 - **Pure Functions(無副作用)** — `engine.js` 全函式 export、不依賴 DOM/Cytoscape/全域,state 全經參數(內部工作狀態如 Dijkstra `visited` 不算)。
 - **Determinism / Reproducibility** — `mulberry32(seed)` + `maxEvals`(非 wall-clock)→ 同輸入同輸出;export 穩定。驗證靠 **byte-identical 快照(Golden-master / Characterization testing,鐵則 #1/#4)**。
 - **Immutability(copy-on-write)** — engine 不 mutate 輸入(如 `applyWeights` 回淺拷貝)。
@@ -68,7 +75,7 @@ OSPF/IGP 韌性審計單頁式 SPA(Cytoscape.js + Tailwind CDN + vanilla ES modu
 具體規則 / 雷(原則見上):
 
 1. **語意 class 目錄**:狀態卡 `.s-card`(`.s-ok/lost/warn/srlg/overflow` + `.s-sub`)、文字 `.txt-* / .val-danger / .tier-* / .sev-*`。新狀態色加進這套,勿 inline。
-2. **兩個 `<style>` 區分工(易踩)**:`type="text/tailwindcss"` 區 CDN **非同步**、`@apply` 對**動態 innerHTML 卡片會間歇失效**;純 `<style>` 區**同步** → 放 (a) 動態注入規則、(b) **JS 要讀的 `:root` token**(`cssVar()` 只讀得到此區)。
+2. **樣式分區(兩頁同策略)**:靜態 chrome(工具列 `.btn` / 分頁 `.tab` / inspector 外殼)走 `type="text/tailwindcss"` 的 `@apply`;**動態 innerHTML 一律純 `<style>`**(CDN 非同步,`@apply` 對動態注入會失效;此區另放 `cssVar()` 要讀的 `:root` token)。header 例外 = markup 內 utility class(非 @apply)。**顏色源依頁不同**:共用 token 照 `var()`,base 調色盤兩頁各異(見上「共用前端資產」段)。
 3. **Cytoscape 樣式必須 JS**(不吃 CSS class),但顏色讀 token。
 4. **可接受的 inline**:一次性結構 / 版面(獨有 margin、用一次的漸層);規則是「重複 / 語意色不 inline」,非全禁。
 
@@ -91,6 +98,24 @@ OSPF/IGP 韌性審計單頁式 SPA(Cytoscape.js + Tailwind CDN + vanilla ES modu
 `gen.mjs`(產生器,Node ES module)、`verify.mjs`(獨立驗證,import output/engine.js 重算超載)、
 `measured_rtt.csv`(節點直測)、`city_rtt_reference.csv`(城市對參考)。
 RTT 優先序:**ASYM 人為 > measured 直測 > city-ref 城市參考 > geo 模型**。
+
+**OSPF 匯入**(讀 `input/` 的 `show ip ospf database router/network`):`ospf_to_topology.mjs`(+ `rid_hostname.csv` RID↔hostname → `topology.imported.js`)、`companions.mjs`(由 imported topology 產 demand/srlg/rtt,demand 自動校準 MLU)。解析核心共用 `output/ospf-import.js`;**產生順序固定:`ospf_to_topology` → `companions`**(後者讀前者輸出)。companions 的 RTT 來源**與 gen.mjs 對齊**:同兩份 CSV(`measured_rtt.csv` / `city_rtt_reference.csv`,皆城市碼為鍵)、同優先序(見上,唯無 ASYM 人為層)。
+匯入 **node id 一律為安全 token(開頭字母:城市碼+序號 / `PN_*` / 無 hostname 退 `R_*`)**,意義放 `rid`/`hostname`(label)/`city`/`country` 欄位 — 避免 cytoscape 選擇器(`.`/`#`)與 JS 數字分隔符(開頭數字+底線被當數字)兩個雷。
+
+原則:
+- **`--scale` 與節點數綁定** — 對特定 `--nodes` 校準,改節點數必重校(同 SCALE 跨節點 MLU 嚴重失準)。
+- **忙時 profile 預設為 demo 誇大值**(放大方向性以展示不對稱權重優化),非真實忙時;真實值靠 CLI 參數還原。
+- **`measured=0`(gen 結尾統計)= CSV 查找表耦合斷裂**,非正常狀態。
+
+## 編輯器(`edit.html`,非執行所需)
+
+獨立資料編輯器:4 分頁編 `topology / demand / srlg / rtt`,匯入/匯出回 generated `.js`。原則:
+
+- **繼承 index 而非複製** — index 為設計權威;共用透過檔案而非拷貝:**`theme.css`**(token)、**`graph-style.js`**(cy 節點基礎樣式)、**`engine.js`**(連通性等演算法,edit 不重寫 BFS)。各頁自留 overlay:index 的 role/op 狀態樣式、edit 的 edge 標籤/ghost/動態欄位列樣式。edit **也載 Tailwind,樣式分區同 index(見樣式慣例 #2)** —— 靜態 chrome 走 @apply、動態 innerHTML 留純 `<style>`、header 為 markup utility class(`<header>` 兩頁 class 完全一致)。
+  - 節點同時帶 **class `router`/`pseudonode`**(供 `graph-style.js` 的 `.router`/`.pseudonode` 共用樣式)+ **data `type`**(供 JS 查詢);spread `...baseGraphStyle()` 須排在 role/op overlay **之前**(後者覆蓋)。
+- **依賴** — cytoscape core + cxtmenu + Tailwind CDN(僅用 utility class,與 index 對齊);**建邊與 undo/redo 自寫**,不用 edgehandles / undo-redo(5 年未維護,且 UMD 未打包相依 — edgehandles 需 lodash)。Dagre 佈局需 **dagre 先於 cytoscape-dagre** 載入。
+- **匯出對齊 gen.mjs 格式** — `topology` 可 byte-identical;`demand / srlg / rtt` 因含註解(解析即丟)僅**語意 round-trip**,但都能載回 `index.html`。手改過的資料不再由 `gen.mjs` 重現(鐵則 1 只約束 generated 流程)。
+- **輸入即驗證** — 所有資料輸入欄位都應在輸入當下驗證格式與一致性、即時標示無效值(不靠匯出或載入才發現錯誤);「驗證」鈕彙總全圖資料問題。CIDR(stubs / subnet)、ID 唯一性等為具體案例。
 
 ## 本機預覽
 

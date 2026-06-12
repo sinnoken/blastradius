@@ -42,9 +42,10 @@ const topology = {
 ```ts
 type Node =
   | {
-      id: string;            // unique id, usually a PoP short code (TPE / TYO / ...)
+      id: string;            // unique id; PoP short code (TPE / TYO …) or, for OSPF imports, a safe token (city code + index / R_<rid> / PN_*)
       label: string;         // graph display text, supports \n line breaks
       type: 'router';
+      rid?: string;          // OSPF Router-ID (set by the OSPF importer; hostname, if present, feeds `label`)
       country?: string;      // ISO country code (for UI grouping / coloring)
       city?: string;         // city code (anchor for RTT city-pair lookup)
       area: string;          // OSPF area (currently only '0' supported)
@@ -99,12 +100,20 @@ type External = {
 | File | Global / export | Which UI tab | Behavior when missing |
 |------|-----------------|--------------|-----------------------|
 | `demand.js` | `module.exports = { demand }` | C4 edge traffic, C5 failure-sim traffic view | Traffic views show "demand.js not loaded" |
-| `rtt.js` | `module.exports = { rtt }` | Link RTT labels | RTT field left blank |
+| `rtt.js` | `module.exports = { rtt }` | C2 RTT/SLO matrix mode (§4.5), C10 cost reference | C2 falls back to cost-only; C10 reference column hidden |
 | `srlg.js` | global `srlg` (no exports) | C5 failure-sim SRLG dropdown | Only single-element failure remains |
 
 `demand.js` provides multiple scenario profiles (monthly avg / worst / regional
 busy hour), switched via `demand.active`; `engine.js` only reads
 `demand.matrix` / `demand.default` (profile switching is transparent to the algorithms).
+
+**OSPF-imported datasets**: `topology.imported.js` (+ companions
+`demand/srlg/rtt.imported.js`) are produced by the import pipeline from real
+`show ip ospf database router/network` output and live **alongside** the demo
+`*.js` (they do not overwrite). The LSDB parser is the shared pure module
+`ospf-import.js` (imported by both the data editor and
+`working/ospf_to_topology.mjs`); imported router nodes carry `rid` (§1.2) and a
+safe-token `id`. See CLAUDE.md for the toolchain and fixed generation order.
 
 ---
 
@@ -213,6 +222,16 @@ shortest paths source → dst.
 `resolveLPM(prefixIndex, target)`: currently implemented as "exact match +
 default-route (`0.0.0.0/0`) fallback". Full LPM is on the Roadmap.
 
+### §4.5 Matrix RTT / SLO mode (C2 presentation)
+
+C2 offers two view modes (**default RTT**). **Cost** shows the §4 shortest-path
+cost. **RTT / SLO** sums each edge's RTT along the shortest path (per-edge RTT
+from `rtt.edges`, else the `rtt.matrix[cityA][cityB]` city-pair lookup; ECMP →
+min over paths) and shades each cell against an SLO target (default ≤150 ms),
+reporting coverage (% of reachable pairs within target). This is a presentation
+layer in `index.html` — the path itself is still §4's cost-based SPT. Needs
+`rtt.js`; without it the mode falls back to cost.
+
 ---
 
 ## §5 Backup Path
@@ -291,10 +310,11 @@ BC(v) = Σ over all (s, t) pairs where s ≠ v ≠ t:
 
 Implementation details:
 
-- ECMP equal-weight `w = 1 / r.paths.length`
+- ECMP equal-weight over **node-distinct** paths: `w = 1 / (node-distinct path count)`. Parallel equal-cost links (two cables, identical node sequence) collapse to one path and do **not** inflate the node's centrality — link-level parallelism is a capacity matter (handled per-edge by §6.2b), not node betweenness.
 - `stripPseudo(path)` filters pseudo-nodes first, keeping only the router-level view
 - exclude endpoints: loop `for i in [1, stripped.length - 1)`, head and tail don't count as "transit"
 - shares the same SPT-enumeration round as §6.2 `allPairsLoad` (Edge BC), but accumulates onto the intermediate node instead of the edge
+- **shared core**: §6.3 and §6.3b both run through one `computeNodeLoad(topo, demand, …)` (`demand=null` → unit/structural; `demand` given → Gbps), via the `nodeDistinctPaths` / `accNodeBetweenness` helpers with single-source reuse. The two exported names are thin wrappers.
 
 > **UI mapping**: tab **C3 Centrality** presents both §6.2's **Edge BC** (per link)
 > and this section's **Node BC** (per router); each does a 4-tier classification
@@ -317,7 +337,8 @@ WBC(v) = Σ over all (s, t) pairs where s ≠ v ≠ t:
 
 Implementation details:
 
-- ECMP equal-weight `w = demand[a][b] / r.paths.length` (node path count, consistent with §6.3, **not** edgePaths)
+- ECMP equal-weight over **node-distinct** paths: `w = demand[a][b] / (node-distinct path count)` (consistent with §6.3; parallel links collapse, **not** edgePaths)
+- single-source reuse (`dijkstraSource` once per source, then `enumeratePaths` per dst) — same as the rest of the all-pairs family
 - aligned with §6.2b `allPairsTraffic`: iterate all routers (do not exclude failed nodes); demand into / out of failed nodes counts as `lostDemand`
 - returns Gbps accounting (`totalDemand / servedDemand / lostDemand / lostDemandPairs`), reused by the C3 reachability banner
 - when `demand.js` is missing, returns an empty result; the UI toggle auto-disables and falls back to §6.3 unit mode
@@ -412,6 +433,9 @@ pairWorst[a>b] = {
 }
 ```
 
+`culprits` collects **all** scenarios that reach the worst cost — including every
+single-point failure that makes the pair unreachable (∞), not just the first one.
+
 **Per-failure**
 
 ```
@@ -486,7 +510,7 @@ authoritative mapping of UI tab → backing § / function:
 | UI tab | UI No. | Backing § / function | Auto-run on switch |
 |--------|--------|----------------------|--------------------|
 | Path | C1 | §4 `dijkstraECMP` + §5.4 `unbackupSegmentScan` | `renderPath(src, dst)` |
-| Matrix | C2 | §4 all-pair `dijkstraDist` | `renderMatrix()` |
+| Matrix | C2 | §4 all-pair `dijkstraDist` (+ §4.5 RTT/SLO mode) | `renderMatrix()` |
 | Centrality | C3 | §6.2 `allPairsLoad` (Edge BC) + §6.3 `computeNodeBC` (Node BC); node ranking can switch to §6.3b `computeNodeTraffic` (traffic-weighted, needs demand.js) | `listAllPairs.click()` |
 | Edge traffic | C4 | §6.2b `allPairsTraffic` (needs demand.js) | auto-computes actual load / utilization |
 

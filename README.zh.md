@@ -35,7 +35,7 @@ BlastRadius 是一個**單檔 HTML** 的網路拓樸分析工具,把「最短路
 |--------|--------|
 | 單一 Area(area 0)SPT / ECMP 計算 | 多 Area / inter-area summary LSA |
 | 單點 + SRLG 群組失效模擬 | 即時遙測 / 線上監控 |
-| 流量矩陣驅動的鏈路利用率 | 自動從 router 拉 LSDB(未來方向) |
+| 流量矩陣驅動的鏈路利用率 | **即時**從 router 自動拉 LSDB(文字 `show` 輸出可匯入) |
 | 設計層級的 N-1 worst-case 排行 | 設備設定產生 / 下發 |
 
 ---
@@ -50,8 +50,8 @@ BlastRadius 是一個**單檔 HTML** 的網路拓樸分析工具,把「最短路
 | 確定性資料產生器(同輸入永遠 byte-identical) | ✅ 完成 |
 | OSPF 權重壅塞最佳化(Fortz-Thorup 目標 + Tabu 搜尋) | ✅ 完成 |
 | 明確路徑導流(steer)+ 頻寬准入(CAC) | ⬜ 規劃中(見 steer.md) |
-| SLO 矩陣覆蓋(每 pair max cost 達標檢查) | ⬜ 規劃中 |
-| LSDB → `topology.js` parser | ⬜ 規劃中 |
+| SLO 矩陣覆蓋(C2 每 pair 路徑 RTT vs SLO 目標,覆蓋率 %) | ✅ 完成 |
+| LSDB → `topology.js` parser(貼上 / 檔案 `show ip ospf database`) | ✅ 完成 |
 | 多 Area / OSPF inter-area cost | ⬜ 規劃中 |
 
 ---
@@ -108,7 +108,7 @@ BlastRadius 是一個**單檔 HTML** 的網路拓樸分析工具,把「最短路
 | Tab | 編號 | 用途 |
 |-----|------|------|
 | **路徑** | C1 | Source → Destination 最短路徑(SPT + ECMP),自動判定 PRIMARY / BACKUP MODE,附 Unbackup 段掃描 |
-| **矩陣** | C2 | 全 Router pair 最短路徑 cost 矩陣,底色深淺呈現 cost 大小,標記 ECMP / 非對稱 |
+| **矩陣** | C2 | 全 Router pair 矩陣 — **成本** 或 **RTT / SLO** 模式(預設 RTT:每 pair 路徑 RTT vs SLO 目標,附覆蓋率 %);底色分階,標記 ECMP / 非對稱 |
 | **樞紐度** | C3 | 鏈路 / 節點介數中心性盤點(節點可切**過路數 ⇄ 流量加權**)+ 純備援電路(平時零流量的鏈路) |
 | **邊流量** | C4 | 依流量矩陣計算每條鏈路實際負載與利用率,標出過載 / 高水位 |
 
@@ -143,7 +143,7 @@ BlastRadius 是一個**單檔 HTML** 的網路拓樸分析工具,把「最短路
 1. 目前只支援 **單一 Area / 純 area 0** — 沒有 ABR / inter-area summary LSA 處理
 2. LSA5 external 只有「精確匹配 + default route fallback」,無完整 LPM
 3. 沒有 cost-as-latency 的 telemetry feed — 想做 latency-aware SPF 還需要對接 RFC 7471 的資料源
-4. 拓樸資料目前為靜態 `topology.js`,沒有線上 LSDB parser(從 router show 指令直接 import 是未來方向)
+4. 拓樸可用靜態 `topology.js`,或從貼上 / 檔案的 `show ip ospf database router/network` 輸出匯入(資料編輯器的 OSPF 匯入);**即時**從 router 自動拉(SNMP/API)仍是未來方向
 5. 內建資料為**合成樣本**,正式評估前需替換為自有網路的真實拓樸 / 流量
 
 ---
@@ -151,8 +151,8 @@ BlastRadius 是一個**單檔 HTML** 的網路拓樸分析工具,把「最短路
 ## Roadmap
 
 - [x] SRLG(Shared Risk Link Group)海纜群組失效 — N-1 進階成 N-K
-- [ ] SLO 矩陣覆蓋(每 pair 設定 max cost,標出未達標)
-- [ ] LSDB → `topology.js` parser
+- [x] SLO 矩陣覆蓋 — C2 RTT / SLO 模式(每 pair 路徑 RTT vs SLO 目標,覆蓋率 %)
+- [x] LSDB → `topology.js` parser — 經資料編輯器貼上 / 檔案 `show ip ospf database`
 - [ ] 明確路徑導流(steer / TE):把特定流量拉離最短路 + 頻寬准入(CAC,「填滿才溢出 / admission 失敗」)— 規劃見 [steer.md](./steer.md)
 - [ ] 多 Area / OSPF inter-area cost 計算
 - [ ] Flex-Algo (RFC 9350) 多 SPF 並行視覺化

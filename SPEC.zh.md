@@ -37,9 +37,10 @@ const topology = {
 ```ts
 type Node =
   | {
-      id: string;            // 唯一識別,通常為 PoP 簡稱(TPE / TYO / ...)
+      id: string;            // 唯一識別;PoP 簡稱(TPE / TYO …)或 OSPF 匯入時為安全 token(城市碼+序號 / R_<rid> / PN_*)
       label: string;         // 圖上顯示文字,支援 \n 換行
       type: 'router';
+      rid?: string;          // OSPF Router-ID(OSPF 匯入器設定;hostname 若有則餵入 `label`)
       country?: string;      // ISO 國別碼(UI 分群 / 著色用)
       city?: string;         // 城市碼(RTT 城市對查表錨點)
       area: string;          // OSPF area(目前僅支援 '0')
@@ -94,11 +95,17 @@ type External = {
 | 檔案 | 全域 / 匯出 | 供哪個 UI 分頁 | 缺檔時行為 |
 |------|-------------|----------------|------------|
 | `demand.js` | `module.exports = { demand }` | C4 邊流量、C5 失效模擬流量視角 | 流量視圖顯示「未載入 demand.js」 |
-| `rtt.js` | `module.exports = { rtt }` | 鏈路 RTT 標示 | RTT 欄位留空 |
+| `rtt.js` | `module.exports = { rtt }` | C2 RTT/SLO 矩陣模式(§4.5)、C10 成本參考 | C2 退回純成本;C10 參考欄隱藏 |
 | `srlg.js` | global `srlg`(無 exports) | C5 失效模擬的 SRLG 下拉 | 僅剩單一元件失效選項 |
 
 `demand.js` 提供多情境 profile(月均 / 最壞 / 區域忙時),透過 `demand.active` 切換;
 `engine.js` 只讀 `demand.matrix` / `demand.default`(profile 切換對演算法透明)。
+
+**OSPF 匯入資料集**:`topology.imported.js`(+ companion `demand/srlg/rtt.imported.js`)
+由匯入流程從真實 `show ip ospf database router/network` 輸出產生,與 demo 的 `*.js`
+**平行並存、不互蓋**。LSDB 解析為共用純模組 `ospf-import.js`(資料編輯器與
+`working/ospf_to_topology.mjs` 共 import);匯入的 router 節點帶 `rid`(§1.2)與安全 token 的 `id`。
+工具鏈與固定產生順序見 CLAUDE.md。
 
 ---
 
@@ -200,6 +207,14 @@ for each neighbor (v, c) of u:
 
 `resolveLPM(prefixIndex, target)`:目前實作為「精確匹配 + default route(`0.0.0.0/0`)fallback」。完整 LPM 為 Roadmap。
 
+### §4.5 矩陣 RTT / SLO 模式(C2 呈現)
+
+C2 提供兩種檢視模式(**預設 RTT**)。**成本**顯示 §4 最短路徑成本。**RTT / SLO**
+沿最短路徑加總各邊 RTT(每邊 RTT 取自 `rtt.edges`,否則查 `rtt.matrix[cityA][cityB]`
+城市對;ECMP → 取各路徑最小),依 SLO 目標(預設 ≤150 ms)為每格上色,並回報覆蓋率
+(達標 pair 佔可達 pair 的 %)。此為 `index.html` 的呈現層 —— 路徑本身仍是 §4 以成本為準的
+SPT。需 `rtt.js`;缺則退回成本模式。
+
 ---
 
 ## §5 Backup Path
@@ -268,10 +283,11 @@ BC(v) = Σ over all (s, t) pairs where s ≠ v ≠ t:
 
 實作細節:
 
-- ECMP 等分權重 `w = 1 / r.paths.length`
+- ECMP 等分以 **node-distinct 路徑數**為分母:`w = 1 / (node-distinct 路徑數)`。平行等價鏈路(兩條纜、節點序列相同)收斂成一條,**不灌大**該節點中心性 —— 平行是鏈路容量的事(由 §6.2b 在邊層級處理),非節點介數。
 - `stripPseudo(path)` 先過濾 pseudo-node,只保留 router-level 視角
 - 排除 endpoints:迴圈 `for i in [1, stripped.length - 1)`,首尾不算「過路」
 - 與 §6.2 `allPairsLoad`(Edge BC)共用同一輪 SPT 列舉,但累計目標從 edge 改為中繼 node
+- **共用核心**:§6.3 與 §6.3b 都走同一個 `computeNodeLoad(topo, demand, …)`(`demand=null` → 結構;`demand` 給 → Gbps),透過 `nodeDistinctPaths` / `accNodeBetweenness` 工具 + 單源重用。兩個對外函式名只是薄 wrapper。
 
 > **UI 對應**:分頁 **C3 樞紐度** 同時呈現 §6.2 的 **Edge BC**(每條鏈路)與本節的 **Node BC**(每台 router),
 > 兩者各做 4 階分類(`idle = 0 / rare > 0 / normal > 0.1·max / hub > 0.4·max`),
@@ -290,7 +306,8 @@ WBC(v) = Σ over all (s, t) pairs where s ≠ v ≠ t:
 
 實作細節:
 
-- ECMP 等分權重 `w = demand[a][b] / r.paths.length`(節點路徑數,與 §6.3 一致,**非** edgePaths)
+- ECMP 等分以 **node-distinct 路徑數**為分母:`w = demand[a][b] / (node-distinct 路徑數)`(與 §6.3 一致;平行鏈路收斂,**非** edgePaths)
+- 單源重用(`dijkstraSource` 每來源一次,再對各 dst `enumeratePaths`)—— 與全對家族其餘函式一致
 - 與 §6.2b `allPairsTraffic` 對齊:iterate 全部 router(不排除失效節點),demand 到 / 出失效節點計入 `lostDemand`
 - 回傳附 Gbps 帳目(`totalDemand / servedDemand / lostDemand / lostDemandPairs`),供 C3 可達性 banner 重用
 - 缺 `demand.js` 時回傳空結果;UI 切換鈕自動 disable 並退回 §6.3 unit 模式
@@ -376,6 +393,8 @@ pairWorst[a>b] = {
 }
 ```
 
+`culprits` 會收齊**所有**達到最差 cost 的情境 —— 包含每一個讓該 pair 不可達(∞)的單點失效,**不只第一個**。
+
 **Per-failure**
 
 ```
@@ -447,7 +466,7 @@ op 優先:
 | UI 分頁 | UI 編號 | 背後 § / 函式 | 切換時自動執行 |
 |---------|---------|----------------|----------------|
 | 路徑 | C1 | §4 `dijkstraECMP` + §5.4 `unbackupSegmentScan` | `renderPath(src, dst)` |
-| 矩陣 | C2 | §4 全 pair `dijkstraDist` | `renderMatrix()` |
+| 矩陣 | C2 | §4 全 pair `dijkstraDist`(+ §4.5 RTT/SLO 模式) | `renderMatrix()` |
 | 樞紐度 | C3 | §6.2 `allPairsLoad`(Edge BC)+ §6.3 `computeNodeBC`(Node BC);節點排行可切 §6.3b `computeNodeTraffic`(流量加權,需 demand.js) | `listAllPairs.click()` |
 | 邊流量 | C4 | §6.2b `allPairsTraffic`(需 demand.js) | 自動算實際負載 / 利用率 |
 

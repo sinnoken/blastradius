@@ -38,7 +38,7 @@ pre-computation before an incident drill** — it is **not** real-time monitorin
 |----------|--------------|
 | Single-area (area 0) SPT / ECMP computation | Multi-area / inter-area summary LSA |
 | Single-point + SRLG group failure simulation | Real-time telemetry / online monitoring |
-| Traffic-matrix-driven link utilization | Auto-pulling the LSDB from routers (future direction) |
+| Traffic-matrix-driven link utilization | **Live** LSDB auto-pull from routers (text `show` output can be imported) |
 | Design-level N-1 worst-case ranking | Device-config generation / push |
 
 ---
@@ -53,8 +53,8 @@ pre-computation before an incident drill** — it is **not** real-time monitorin
 | Deterministic data generator (same input always byte-identical) | ✅ Done |
 | OSPF weight congestion optimization (Fortz-Thorup objective + Tabu search) | ✅ Done |
 | Explicit-path steering (steer) + bandwidth admission (CAC) | ⬜ Planned (see steer.md) |
-| SLO matrix coverage (per-pair max-cost target check) | ⬜ Planned |
-| LSDB → `topology.js` parser | ⬜ Planned |
+| SLO matrix coverage (C2 per-pair path-RTT vs SLO target, coverage %) | ✅ Done |
+| LSDB → `topology.js` parser (paste / file `show ip ospf database`) | ✅ Done |
 | Multi-area / OSPF inter-area cost | ⬜ Planned |
 
 ---
@@ -113,7 +113,7 @@ Because `engine.js` is an ES module, browsers won't allow loading it over
 | Tab | No. | Purpose |
 |-----|-----|---------|
 | **Path** | C1 | Source → Destination shortest path (SPT + ECMP), auto-classifies PRIMARY / BACKUP MODE, with an unbackup-segment scan |
-| **Matrix** | C2 | All router-pair shortest-path cost matrix; cell shading shows cost magnitude, marks ECMP / asymmetric |
+| **Matrix** | C2 | All router-pair matrix — **Cost** or **RTT / SLO** mode (default RTT: per-pair path RTT vs an SLO target, with coverage %); tier shading, marks ECMP / asymmetric |
 | **Centrality** | C3 | Link / node betweenness-centrality inventory (nodes can toggle **transit count ⇄ traffic-weighted**) + pure-redundancy circuits (links that normally carry zero traffic) |
 | **Edge traffic** | C4 | Computes each link's actual load and utilization from the traffic matrix; flags overload / high-water |
 
@@ -148,7 +148,7 @@ Because `engine.js` is an ES module, browsers won't allow loading it over
 1. Currently only **single-area / pure area 0** is supported — no ABR / inter-area summary LSA handling
 2. LSA5 external only does "exact match + default-route fallback", no full LPM
 3. No cost-as-latency telemetry feed — doing latency-aware SPF still requires wiring up an RFC 7471 data source
-4. Topology data is currently a static `topology.js`; there is no online LSDB parser (importing directly from router `show` commands is a future direction)
+4. Topology can be a static `topology.js` or imported from pasted / file `show ip ospf database router/network` output (the data editor's OSPF import); **live** auto-pull from routers (SNMP/API) is still a future direction
 5. The built-in data is a **synthetic sample**; before any formal evaluation it must be replaced with your own network's real topology / traffic
 
 ---
@@ -156,8 +156,8 @@ Because `engine.js` is an ES module, browsers won't allow loading it over
 ## Roadmap
 
 - [x] SRLG (Shared Risk Link Group) submarine-cable group failure — N-1 generalized to N-K
-- [ ] SLO matrix coverage (set a per-pair max cost, flag pairs that miss the target)
-- [ ] LSDB → `topology.js` parser
+- [x] SLO matrix coverage — C2 RTT / SLO mode (per-pair path RTT vs SLO target, coverage %)
+- [x] LSDB → `topology.js` parser — paste / file `show ip ospf database` via the data editor
 - [ ] Explicit-path steering (steer / TE): pull specific traffic off the shortest path + bandwidth admission (CAC, "overflow / admission-fail once full") — planning in [steer.md](./steer.md)
 - [ ] Multi-area / OSPF inter-area cost computation
 - [ ] Flex-Algo (RFC 9350) multi-SPF parallel visualization

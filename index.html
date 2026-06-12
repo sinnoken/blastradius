@@ -406,7 +406,7 @@
         <label><span data-i18n="c2.mode">檢視</span>
           <select id="matrixMode" class="border rounded px-1 py-0.5">
             <option value="cost" data-i18n="c2.mode.cost">成本</option>
-            <option value="rtt" data-i18n="c2.mode.rtt">RTT / SLO</option>
+            <option value="rtt" data-i18n="c2.mode.rtt" selected>RTT / SLO</option>
           </select></label>
         <span id="c2-slo-wrap" style="display:none"><span data-i18n="c2.sloLabel">SLO 目標 ≤</span>
           <input id="sloTarget" type="number" min="1" step="1" value="150" class="border rounded px-1" style="width:64px"> ms</span>
@@ -744,6 +744,7 @@ const I18N = {
     'c2.rttLegend':     '色階:綠 ≤SLO · 黃 ≤1.5×SLO · 橙 超標 · 紅 不可達。RTT = geo 模型沿路徑加總(地理下限,非實測)。',
     'c2.noRtt':         '未載入 rtt.js — 無法顯示 RTT / SLO。',
     'c2.coverage':      (p) => `SLO ≤${p.t}ms 覆蓋:${p.met}/${p.total}(${p.pct}%)· 破標 ${p.bad}`,
+    'c2.rttDetail':     'RTT 明細(每跳累加,ECMP 取最小)',
     // --- C1 Path ---
     'c1.title':        '路徑分析',
     'c1.hint':         '計算兩點之間的最短路徑。結果分兩欄:「狀態」標示正常或繞道(故障重路由),「路徑」標示單一或 ECMP 多路徑分流。',
@@ -1027,6 +1028,7 @@ const I18N = {
     'c2.rttLegend':     'Shade: green ≤SLO · amber ≤1.5×SLO · orange over · red unreachable. RTT = geo model summed along the path (geographic floor, not measured).',
     'c2.noRtt':         'rtt.js not loaded — RTT / SLO unavailable.',
     'c2.coverage':      (p) => `SLO ≤${p.t}ms coverage: ${p.met}/${p.total} (${p.pct}%) · over ${p.bad}`,
+    'c2.rttDetail':     'RTT detail (per-hop cumulative, min over ECMP)',
     // --- C1 Path ---
     'c1.title':        'Path analysis',
     'c1.hint':         'Computes the shortest path between two points. Two columns: "Status" shows normal or rerouted (failover); "Path" shows single or ECMP multipath.',
@@ -1783,7 +1785,8 @@ const C2_Matrix = (() => {
         if (r.cost !== Infinity && r.cost > maxCost) maxCost = r.cost;
       }
     }
-    matrixCache = { routers, matrix, maxCost };
+    const edgeById = {}; for (const e of topology.edges) edgeById[e.id] = e;
+    matrixCache = { routers, matrix, maxCost, edgeRtt: RTT_OK2 ? edgeRttById : null, edgeById };
 
     // 顯示故障狀態
     const failInfo = dom('matrix-fail-info');
@@ -1911,6 +1914,22 @@ const C2_Matrix = (() => {
         html += `<div class="path-item" style="background:#f3e8ff;border-left-color:#a855f7">
           <span class="cost">${reverse.cost}</span>${p.join(' → ')}</div>`;
       }
+    }
+    // RTT 明細(cost 永遠顯示;RTT 有資料才補):每條 ECMP 路徑逐跳累加,總值=該格路徑 RTT(ECMP 取 min)
+    if (matrixCache.edgeRtt && cell.cost !== Infinity && cell.edgePaths.length) {
+      const er = matrixCache.edgeRtt, eb = matrixCache.edgeById;
+      const totals = cell.edgePaths.map(ep => ep.reduce((s, eid) => s + (er[eid] || 0), 0));
+      const minT = Math.min(...totals);
+      html += `<div class="info-card" style="margin-top:8px;border-color:#0ea5e9">
+        <div class="label" style="color:#0369a1">${t('c2.rttDetail')}</div>
+        <div class="value">${minT.toFixed(1)} ms</div></div>`;
+      cell.edgePaths.forEach((ep, k) => {
+        let cum = 0, cur = src;   // 沿路徑方向走(src→…→dst),箭頭才正確
+        const hops = ep.map(eid => { const e = eb[eid]; const to = (e.source === cur ? e.target : e.source);
+          cum += er[eid] || 0; const seg = `${cur}→${to} +${(er[eid] || 0).toFixed(1)} (${cum.toFixed(1)})`; cur = to; return seg; });
+        html += `<div class="path-item" style="border-left-color:#0ea5e9${totals[k] === minT ? '' : ';opacity:.55'}">
+          <span class="cost">${totals[k].toFixed(1)}</span>${hops.join(' · ')}</div>`;
+      });
     }
     div.innerHTML = html;
   }

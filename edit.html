@@ -66,13 +66,13 @@
 /* 設計 token 已抽至 theme.css(繼承 index 設計權威)— 見上方 <link rel="stylesheet" href="theme.css"> */
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;font-size:13px}
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif}
+/* 僅 body 設 13px 密集基準;html 維持瀏覽器預設 16px,讓 rem-based Tailwind utility(text-sm/xs、px-5…)與 index 同尺寸 */
+body{font-size:13px}
 button,input,select,textarea{font-family:inherit;font-size:inherit}
 .app{display:flex;flex-direction:column;height:100%}
 
-/* header 改用 index 同款 Tailwind utility class(見 <header>);此處只留 brand 子樣式 */
-.brand{font-weight:700;letter-spacing:.3px;margin-right:6px}
-.brand span{color:var(--header-accent)}
+/* header + brand 皆用 index 同款 utility class(<header> 與 <h1> 兩頁一致);無自訂 brand 樣式 */
 .sep{width:1px;height:18px;background:rgba(255,255,255,.25);margin:0 4px}
 .nav-switch{margin-left:8px;padding:3px 11px;border:1px solid rgba(255,255,255,.4);border-radius:7px;
   color:var(--header-text);text-decoration:none;font-size:12px;font-weight:500;white-space:nowrap}
@@ -95,7 +95,7 @@ button,input,select,textarea{font-family:inherit;font-size:inherit}
   border:1px solid var(--line-2);border-radius:6px;color:var(--text);outline:none}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
 .field input:disabled{opacity:.6}
-.field input.invalid,.field textarea.invalid,.ext-row input.invalid{border-color:#dc2626;background:#fef2f2}
+.field input.invalid,.field textarea.invalid,.ext-row input.invalid,.dt input.invalid{border-color:#dc2626;background:#fef2f2}
 input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
 .dt input[type=number]::-webkit-inner-spin-button,.dt input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .dt input[type=number]{-moz-appearance:textfield;appearance:textfield}
@@ -173,7 +173,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
   <div class="warn-banner" id="warnBanner"></div>
 
   <header class="bg-blue-900 text-white px-5 py-2 shadow-sm flex items-baseline gap-3 flex-wrap">
-    <div class="brand">Blast<span>Radius</span> · Data Editor</div>
+    <h1 class="text-sm font-semibold tracking-wide shrink-0">BlastRadius <span class="font-normal text-blue-200">· Data Editor</span></h1>
     <div class="sep"></div>
     <button class="btn" data-g="io" id="btnLoadAll" title="fetch 同目錄 4 個 .js">⤓ 載入全部</button>
     <button class="btn" data-g="io" id="btnExportAll" title="下載 4 個 .js">⇩ 匯出全部</button>
@@ -1323,10 +1323,10 @@ function renderDemand(){
   if(!p){ $('dmMeta').innerHTML=''; $('dmMatrix').innerHTML=''; return; }
   $('dmMeta').innerHTML=`<label>label <input id="dmLabel" value="${esc(p.label||'')}"></label>
     <label><input type="checkbox" id="dmSym" ${p.symmetric?'checked':''}> symmetric</label>
-    <label>default <input class="num" id="dmDflt" type="number" value="${esc(p.default??1)}" style="width:70px"></label>`;
+    <label>default <input class="num" id="dmDflt" type="number" step="any" value="${esc(p.default??1)}" style="width:70px"></label>`;
   $('dmLabel').oninput=e=>p.label=e.target.value;
   $('dmSym').onchange=e=>p.symmetric=e.target.checked;
-  $('dmDflt').oninput=e=>{ const v=parseInt(e.target.value,10); if(!isNaN(v))p.default=v; };
+  $('dmDflt').oninput=e=>{ const v=parseFloat(e.target.value); if(!isNaN(v))p.default=v; };
   const ids=new Set();
   for(const a of Object.keys(p.matrix||{})){ ids.add(a); for(const b of Object.keys(p.matrix[a])) ids.add(b); }
   const ax=[...ids].sort();
@@ -1340,7 +1340,7 @@ function renderDemand(){
   tb.querySelectorAll('input[data-r]').forEach(inp=>inp.oninput=()=>{
     const r=inp.dataset.r,c=inp.dataset.c,raw=inp.value.trim();
     if(!p.matrix[r])p.matrix[r]={};
-    if(raw===''){ delete p.matrix[r][c]; } else { const v=parseInt(raw,10); if(!isNaN(v))p.matrix[r][c]=v; }
+    if(raw===''){ delete p.matrix[r][c]; } else { const v=parseFloat(raw); if(!isNaN(v))p.matrix[r][c]=v; }   // parseFloat:demand 為浮點 Gbps,勿截斷
   });
 }
 $('dmAddProfile').onclick=()=>{ history.push();
@@ -1354,6 +1354,13 @@ $('dmAddProfile').onclick=()=>{ history.push();
 // ── SRLG 編輯器 ──────────────────────────────────────────────────────────
 function renderSrlg(){
   const tb=$('srlgTable');
+  // 輸入即驗證:affects 參照須存在於拓樸(node/edge id);id 不可空、不可重複。
+  const validIds=new Set([...cy.nodes().filter(n=>n.id()!=='__ghost__').map(n=>n.id()),
+    ...cy.edges().filter(e=>e.id()!=='__ghostE__').map(e=>e.id())]);
+  const markAffects=inp=>{ const bad=inp.value.split(',').map(s=>s.trim()).filter(Boolean).filter(t=>!validIds.has(t));
+    inp.classList.toggle('invalid', bad.length>0); inp.title=bad.length?('未知 id:'+bad.join(', ')):''; };
+  const markId=(inp,i)=>{ const v=inp.value.trim(), dup=S.some((g,j)=>j!==i&&(g.id||'')===v);
+    inp.classList.toggle('invalid', v===''||dup); inp.title=v===''?'id 不可空':(dup?'id 重複':''); };
   let h='<tr><th>id</th><th>label</th><th>type</th><th>affects (逗號分隔)</th><th></th></tr>';
   S.forEach((g,i)=>{ h+=`<tr data-i="${i}">
     <td><input data-k="id" value="${esc(g.id||'')}"></td>
@@ -1364,8 +1371,11 @@ function renderSrlg(){
   tb.innerHTML=h;
   tb.querySelectorAll('[data-k]').forEach(inp=>{ const ev=inp.tagName==='SELECT'?'onchange':'oninput';
     inp[ev]=()=>{ const i=+inp.closest('tr').dataset.i,k=inp.dataset.k;
-      if(k==='affects') S[i].affects=inp.value.split(',').map(s=>s.trim()).filter(Boolean);
-      else S[i][k]=inp.value; }; });
+      if(k==='affects'){ S[i].affects=inp.value.split(',').map(s=>s.trim()).filter(Boolean); markAffects(inp); }
+      else { S[i][k]=inp.value; if(k==='id') tb.querySelectorAll('input[data-k="id"]').forEach(o=>markId(o,+o.closest('tr').dataset.i)); } }; });
+  // 初始標記:載入即顯示既有問題(未知參照 / 空 id / 重複 id),不必等輸入。
+  tb.querySelectorAll('input[data-k="affects"]').forEach(markAffects);
+  tb.querySelectorAll('input[data-k="id"]').forEach(inp=>markId(inp,+inp.closest('tr').dataset.i));
   tb.querySelectorAll('[data-del]').forEach(x=>x.onclick=()=>{ history.push(); S.splice(+x.dataset.del,1); renderSrlg(); });
 }
 $('srlgAdd').onclick=()=>{ history.push(); let n=1; const ids=new Set(S.map(g=>g.id)); while(ids.has('srlg_'+n))n++;
@@ -1373,6 +1383,9 @@ $('srlgAdd').onclick=()=>{ history.push(); let n=1; const ids=new Set(S.map(g=>g
 
 // ── RTT 編輯器 ───────────────────────────────────────────────────────────
 function rttFlatTable(tb, rows, cols){
+  // col.chk = Set:該欄位值須存在於此集合(如 edges 的 a/b 須為拓樸 node id),否則紅框。
+  const markChk=(inp,set)=>{ const v=inp.value.trim(), bad=v!==''&&!set.has(v);
+    inp.classList.toggle('invalid', bad); inp.title=bad?'未知 id':''; };
   let h='<tr>'+cols.map(c=>`<th>${c.h}</th>`).join('')+'<th></th></tr>';
   rows.forEach((r,i)=>{ h+=`<tr data-i="${i}">`+cols.map(c=>{
     if(c.sel) return `<td><select data-k="${c.k}">${c.sel.map(o=>`<option ${o===r[c.k]?'selected':''}>${o}</option>`).join('')}</select></td>`;
@@ -1380,8 +1393,11 @@ function rttFlatTable(tb, rows, cols){
   }).join('')+`<td class="x" data-del="${i}">✕</td></tr>`; });
   tb.innerHTML=h;
   tb.querySelectorAll('[data-k]').forEach(inp=>{ const ev=inp.tagName==='SELECT'?'onchange':'oninput';
-    inp[ev]=()=>{ const i=+inp.closest('tr').dataset.i,k=inp.dataset.k,col=cols.find(c=>c.k===k);
-      if(col.num){ const v=parseFloat(inp.value); if(!isNaN(v))rows[i][k]=v; } else rows[i][k]=inp.value; }; });
+    const col=cols.find(c=>c.k===inp.dataset.k);
+    inp[ev]=()=>{ const i=+inp.closest('tr').dataset.i,k=inp.dataset.k,col2=cols.find(c=>c.k===k);
+      if(col2.num){ const v=parseFloat(inp.value); if(!isNaN(v))rows[i][k]=v; } else rows[i][k]=inp.value;
+      if(col2.chk) markChk(inp,col2.chk); };
+    if(col&&col.chk) markChk(inp,col.chk); });   // 初始標記
   tb.querySelectorAll('[data-del]').forEach(x=>x.onclick=()=>{ history.push(); rows.splice(+x.dataset.del,1); renderRtt(); });
 }
 function renderRtt(){
@@ -1394,7 +1410,9 @@ function renderRtt(){
   $('rFib').oninput=e=>{ const v=parseFloat(e.target.value); if(!isNaN(v))R.fiberRttPerKm=v; };
   $('rTs').oninput=e=>R.timestamp=e.target.value;
   $('rNote').oninput=e=>R.note=e.target.value;
-  rttFlatTable($('rttEdges'), R.edges, [{h:'a',k:'a'},{h:'b',k:'b'},{h:'rtt',k:'rtt',num:1},{h:'src',k:'src',sel:['measured','city-ref','model']}]);
+  // edges 的 a/b 為拓樸 node id → 帶 chk 驗證;cityRef 的 a/b 為城市碼,不驗(可含拓樸外城市)。
+  const nodeIds=new Set(cy.nodes().filter(n=>n.id()!=='__ghost__').map(n=>n.id()));
+  rttFlatTable($('rttEdges'), R.edges, [{h:'a',k:'a',chk:nodeIds},{h:'b',k:'b',chk:nodeIds},{h:'rtt',k:'rtt',num:1},{h:'src',k:'src',sel:['measured','city-ref','model']}]);
   rttFlatTable($('rttRef'), R.cityRef, [{h:'a',k:'a'},{h:'b',k:'b'},{h:'rtt',k:'rtt',num:1}]);
   const ids=new Set(); for(const a of Object.keys(R.matrix)){ ids.add(a); for(const b of Object.keys(R.matrix[a])) ids.add(b); }
   const ax=[...ids].sort();

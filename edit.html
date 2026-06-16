@@ -1,0 +1,1794 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BlastRadius — Data Editor</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="theme.css">
+
+<!-- Cytoscape core(對齊 index.html)+ cxtmenu(右鍵)。建邊/undo 改自寫,不依賴易碎外掛。 -->
+<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/cytoscape-cxtmenu@3.5.0/cytoscape-cxtmenu.js"></script>
+<!-- dagre 階層佈局:dagre 核心 + cytoscape 轉接(轉接層 externalize dagre,故 dagre 要先載) -->
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- 靜態 chrome 的 @apply 元件樣式(對齊 index.html 的 type="text/tailwindcss" 慣例)。
+     僅放「載入時就存在、非動態 innerHTML」的工具列 / 結構樣式 — 動態卡片樣式仍走下方純 <style>
+     (CDN 非同步,@apply 對動態注入會間歇失效,見 CLAUDE.md 樣式慣例 #2)。
+     色彩策略:theme.css 有對應 token 的(中性底 / accent)用 var();無 token 的分組淡色票用 Tailwind 色階。 -->
+<style type="text/tailwindcss">
+@layer components {
+  /* 工具列按鈕 — 結構走 @apply;中性底/文字/accent 讀 theme.css token;分組淡色票用 Tailwind 色階 */
+  .btn { @apply inline-flex items-center gap-[5px] px-2.5 py-[3px] rounded-md cursor-pointer transition-colors whitespace-nowrap text-xs border border-solid;
+    border-color:var(--line-2); background:var(--bg); color:var(--text); }
+  .btn:hover { @apply border-gray-400; background:var(--line); }
+  .btn:disabled { @apply opacity-50 cursor-not-allowed pointer-events-none; }
+  /* 工具列分組色(分隔分組;各組淡色票 — theme.css 無對應 token,用 Tailwind 色階)*/
+  .btn[data-g="io"]    { @apply bg-blue-50 border-blue-200; }    .btn[data-g="io"]:hover    { @apply bg-blue-100 border-blue-300; }
+  .btn[data-g="file"]  { @apply bg-violet-50 border-violet-200; } .btn[data-g="file"]:hover  { @apply bg-violet-100 border-violet-300; }
+  .btn[data-g="edit"]  { @apply bg-green-50 border-green-200; }   .btn[data-g="edit"]:hover  { @apply bg-green-100 border-green-300; }
+  .btn[data-g="hist"]  { @apply bg-slate-50 border-slate-200; }   .btn[data-g="hist"]:hover  { @apply bg-slate-100 border-slate-300; }
+  .btn[data-g="view"]  { @apply bg-amber-50 border-amber-200; }   .btn[data-g="view"]:hover  { @apply bg-amber-100 border-amber-300; }
+  .btn[data-g="check"] { @apply bg-teal-50 border-teal-200; }     .btn[data-g="check"]:hover { @apply bg-teal-100 border-teal-300; }
+  .btn.active { @apply text-white font-medium; background:var(--accent); border-color:var(--accent); }
+  .btn.active:hover { background:var(--accent-2); border-color:var(--accent-2); }
+  .btn.danger { @apply bg-red-100 border-red-200 text-red-800; }
+  .btn.danger:hover { @apply bg-red-200 border-red-300 text-red-800; }
+  .btn .k { @apply text-[11px] opacity-60; }
+
+  /* 分頁列 — 沿用 index.html 的 .tabs/.tab(平鋪、頂底色條);結構 + 中性色走 @apply,
+     分組色票走 theme.css 的 --tab-*(兩頁真單一來源,屬性選擇器維持純宣告,同 index)*/
+  .tabbar { @apply flex border-b border-gray-200 bg-gray-50; }
+  .tab { @apply flex-1 px-1.5 py-2.5 text-xs font-medium text-center text-gray-500 bg-transparent border-t-2 border-b-2 border-transparent cursor-pointer transition-colors hover:bg-gray-100 hover:text-gray-700; }
+  .tab[data-group="live"]   { border-top-color: var(--tab-live); }
+  .tab[data-group="whatif"] { border-top-color: var(--tab-whatif); }
+  .tab[data-group="audit"]  { border-top-color: var(--tab-audit); }
+  .tab[data-group="edit"]   { border-top-color: var(--tab-edit); }
+  .tab.active { @apply bg-white; }
+  .tab.active[data-group="live"]   { color: var(--tab-live-text);   border-top-color: var(--tab-live-on);   border-bottom-color: var(--tab-live-on); }
+  .tab.active[data-group="whatif"] { color: var(--tab-whatif-text); border-top-color: var(--tab-whatif-on); border-bottom-color: var(--tab-whatif-on); }
+  .tab.active[data-group="audit"]  { color: var(--tab-audit-text);  border-top-color: var(--tab-audit-on);  border-bottom-color: var(--tab-audit-on); }
+  .tab.active[data-group="edit"]   { color: var(--tab-edit-text);   border-top-color: var(--tab-edit-on);   border-bottom-color: var(--tab-edit-on); }
+
+  /* Inspector「靜態外殼」— 載入時就在 DOM、非動態 innerHTML(內部 .field 等欄位列由 innerHTML 注入,
+     仍留純 <style>,見樣式慣例 #2)。結構走 @apply;色彩讀 theme.css token(panel/line/muted…)。 */
+  .inspector { @apply overflow-y-auto p-0 border-l border-solid; background:var(--panel); border-color:var(--line); }
+  .insp-head { @apply flex items-center gap-2 py-[11px] px-3.5 border-b border-solid font-semibold sticky top-0 z-[2]; background:var(--panel); border-color:var(--line); }
+  .insp-head .pill { @apply text-[10px] py-0.5 px-[7px] rounded-full border border-solid; background:var(--panel-2); border-color:var(--line-2); color:var(--muted); }
+  .insp-body { @apply py-3 px-3.5; }
+}
+</style>
+
+<style>
+/* 設計 token 已抽至 theme.css(繼承 index 設計權威)— 見上方 <link rel="stylesheet" href="theme.css"> */
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif}
+/* 僅 body 設 13px 密集基準;html 維持瀏覽器預設 16px,讓 rem-based Tailwind utility(text-sm/xs、px-5…)與 index 同尺寸 */
+body{font-size:13px}
+button,input,select,textarea{font-family:inherit;font-size:inherit}
+.app{display:flex;flex-direction:column;height:100%}
+
+/* header + brand 皆用 index 同款 utility class(<header> 與 <h1> 兩頁一致);無自訂 brand 樣式 */
+/* .btn / .nav-switch / .spacer / .sep 已移除:工具列按鈕→@apply;導覽鈕→index 同款 utility class;分組靠 gap-3 + 色票自然分隔 */
+
+.main{display:grid;grid-template-columns:1fr 320px;grid-template-rows:1fr;min-height:0}
+#cy{width:100%;height:100%;background-color:#fafbfc;
+  background-image:linear-gradient(rgba(0,0,0,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,0.03) 1px,transparent 1px);
+  background-size:24px 24px}
+#cy.connect{cursor:crosshair}
+/* .inspector / .insp-head / .pill / .insp-body 靜態外殼已移至上方 type="text/tailwindcss" 區;
+   以下 .empty / .field* 等為 innerHTML 動態注入,維持純 <style>(樣式慣例 #2)。 */
+.empty{color:var(--muted);text-align:center;padding:40px 16px;line-height:1.7}
+.empty .big{font-size:34px;opacity:.35}
+.field{margin-bottom:11px}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;letter-spacing:.2px}
+.field input,.field select,.field textarea{width:100%;padding:7px 9px;background:var(--panel-2);
+  border:1px solid var(--line-2);border-radius:6px;color:var(--text);outline:none}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent)}
+.field input:disabled{opacity:.6}
+.field input.invalid,.field textarea.invalid,.ext-row input.invalid,.dt input.invalid{border-color:#dc2626;background:#fef2f2}
+input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
+.dt input[type=number]::-webkit-inner-spin-button,.dt input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.dt input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.cidr-err{color:#b91c1c;font-size:11px;margin:-4px 0 10px;line-height:1.45}
+.field textarea{resize:vertical;min-height:54px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.check{display:flex;align-items:center;gap:7px;margin-bottom:9px;cursor:pointer}
+.check input{width:16px;height:16px;accent-color:var(--accent)}
+.sub{font-size:11px;color:var(--muted);margin:14px 0 7px;text-transform:uppercase;letter-spacing:.6px;
+  border-top:1px solid var(--line);padding-top:11px}
+.ext-row{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
+.ext-row .x{cursor:pointer;color:var(--muted);padding:4px 7px;border:1px solid var(--line-2);border-radius:6px}
+.ext-row .x:hover{color:var(--danger);border-color:var(--danger)}
+.tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid var(--line-2);color:var(--muted)}
+
+.status{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--panel-2);
+  border-top:1px solid var(--line);color:var(--muted);font-size:12px;flex-wrap:wrap}
+.status b{color:var(--text);font-weight:600}
+.status .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--danger)}
+.legend{display:flex;gap:10px;align-items:center;margin-left:auto}
+.legend i{width:18px;height:0;border-top:2px solid var(--line-2);display:inline-block;vertical-align:middle;margin-right:4px}
+.legend i.dash{border-top-style:dashed;border-color:var(--violet)}
+
+.modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50}
+.modal.open{display:flex}
+.modal .box{background:var(--panel);border:1px solid var(--line-2);border-radius:12px;
+  width:min(720px,92vw);max-height:84vh;display:flex;flex-direction:column;box-shadow:0 20px 60px #000a}
+.modal .box h3{margin:0;padding:14px 16px;border-bottom:1px solid var(--line);font-size:14px}
+.modal .box .pad{padding:14px 16px;overflow:auto}
+.modal textarea{width:100%;height:300px;background:var(--panel-2);border:1px solid var(--line-2);
+  border-radius:8px;color:var(--text);padding:10px;font-family:ui-monospace,monospace;font-size:12px;outline:none}
+.modal .foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--line)}
+.warn-banner{background:#fef3c7;border-bottom:1px solid #d97706;color:#92400e;padding:7px 12px;font-size:12px;display:none}
+.warn-banner.show{display:block}
+.toast{position:fixed;bottom:54px;left:50%;transform:translateX(-50%);background:var(--panel);
+  border:1px solid var(--line-2);padding:9px 16px;border-radius:8px;box-shadow:0 8px 24px #000a;
+  opacity:0;transition:.25s;pointer-events:none;z-index:60}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+
+/* .tabbar / .tab 群已移至上方 type="text/tailwindcss" 區(@apply + --tab-* token);此處不再重複 */
+.panel{display:none;min-height:0}
+.panel.active{display:grid;flex:1 1 auto;min-height:0}
+.panel.scroll{display:none;overflow:auto;padding:16px 18px}
+.panel.scroll.active{display:block;flex:1 1 0;min-height:0}
+/* data tables */
+.dt{border-collapse:collapse;width:100%;font-size:12px;margin-bottom:14px}
+.dt th,.dt td{border:1px solid var(--line);padding:3px 5px;text-align:left}
+.dt th{background:#f9fafb;color:#374151;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0;z-index:1}
+.dt input,.dt select{width:100%;min-width:54px;background:transparent;border:none;color:var(--text);
+  outline:none;padding:3px 4px;border-radius:4px}
+.dt input:focus,.dt select:focus{background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--accent)}
+.dt input.num{text-align:right;font-variant-numeric:tabular-nums}
+.dt td.rowh{background:var(--panel-2);color:var(--accent);font-weight:600;text-align:center;position:sticky;left:0}
+.dt td.x{cursor:pointer;color:var(--muted);text-align:center;width:26px}
+.dt td.x:hover{color:var(--danger);background:#fee2e2}
+.mgrid{overflow:auto;max-height:62vh;border:1px solid var(--line);border-radius:8px}
+.sec{font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:.05em;
+  border-bottom:2px solid #e5e7eb;padding-bottom:4px;margin:0 0 8px}
+.sec:not(:first-child){margin-top:16px}
+.pchip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--line-2);
+  background:var(--panel-2);border-radius:7px;cursor:pointer;margin:0 6px 6px 0}
+.pchip.active{border-color:var(--accent);background:#dbeafe;color:#1e40af}
+.pchip.live{box-shadow:0 0 0 2px var(--ok) inset}
+/* SRLG affects 一對多:已選顯示為可刪 chip + datalist 加入框(封閉集合 → 只接受拓樸 id)*/
+.affects-cell{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:1px 4px 1px 8px;
+  border:1px solid var(--line-2);border-radius:999px;background:var(--panel-2);white-space:nowrap}
+.chip.bad{border-color:#dc2626;background:#fef2f2;color:#b91c1c}
+.chip .chip-x{cursor:pointer;color:var(--muted);font-weight:700;line-height:1}
+.chip .chip-x:hover{color:var(--danger)}
+.chip-add{border:none;outline:none;background:transparent;font-size:11px;min-width:90px;flex:1 1 90px;padding:2px}
+.chip-add.invalid{color:#b91c1c}
+.meta-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.meta-row label{font-size:12px;color:var(--muted)}
+.meta-row input,.meta-row select{padding:6px 9px;background:var(--panel-2);border:1px solid var(--line-2);
+  border-radius:6px;color:var(--text);outline:none}
+.hint{font-size:12px;color:#6b7280;line-height:1.625;background:#f9fafb;border-radius:6px;padding:8px 10px;margin:6px 0 12px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="warn-banner" id="warnBanner"></div>
+
+  <header class="bg-blue-900 text-white px-5 py-2 min-h-[42px] shadow-sm flex items-baseline gap-3 flex-wrap">
+    <h1 class="text-sm font-semibold tracking-wide shrink-0">BlastRadius <span class="font-normal text-blue-200">· Data Editor</span></h1>
+    <!-- 共用群組:所有 tab 都顯示,位置固定在左側 -->
+    <!-- 共用群組:所有 tab 都顯示,位置固定在左側 -->
+    <button class="btn" data-g="io"  id="btnLoadAll"  title="從同目錄 fetch topology / demand / srlg / rtt.js 全部載入">⤓ 載入全部</button>
+    <button class="btn" data-g="io"  id="btnExportAll" title="將 topology / demand / srlg / rtt.js 全部下載到本機">⇩ 匯出全部</button>
+    <button class="btn" data-g="cur" id="btnLoadLocal" title="從同目錄 fetch 當前分頁對應的 .js 載入">⤓ 載入</button>
+    <button class="btn" data-g="cur" id="btnImport"    title="貼上或選取檔案,將 JS 資料載入當前分頁">⇪ 匯入</button>
+    <button class="btn" data-g="cur" id="btnExport"    title="將當前分頁的資料下載為 .js 檔">⇩ 匯出本檔</button>
+    <button class="btn" data-g="hist" id="btnUndo" title="復原上一步操作 (Ctrl+Z)" disabled>↶ 復原</button>
+    <button class="btn" data-g="hist" id="btnRedo" title="重做已復原的操作 (Ctrl+Shift+Z)" disabled>↷ 重做</button>
+    <button class="btn" data-g="check" id="btnValidate" title="檢查連通性、CIDR 格式、SRLG 參照是否合法">✔ 驗證</button>
+    <!-- topo 專屬:非 Topology tab 時從右側消失,不影響左側共用按鈕位置 -->
+    <button class="btn" data-g="file" id="btnImportOspf" title="貼上 show ip ospf database router/network 輸出，自動解析建出 topology 骨架">⇪ 匯入 OSPF</button>
+    <button class="btn" data-g="edit" id="btnAddRouter" title="在畫布中央新增一個 Router 節點">＋ Router</button>
+    <button class="btn" data-g="edit" id="btnAddPN"     title="在畫布中央新增一個 Pseudo-node（交換式網段抽象）">＋ Pseudonode</button>
+    <button class="btn" data-g="edit" id="btnConnect"   title="開啟連線模式，從一個節點拖曳到另一個節點建立鏈路 (E)">🖉 連線模式 <span class="k">E</span></button>
+    <button class="btn danger" data-g="edit" id="btnDelete" title="刪除目前選取的節點或鏈路 (Del)">🗑 刪除 <span class="k">Del</span></button>
+    <select class="btn" data-g="view" id="layoutSel" title="佈局演算法" style="padding-left:8px;padding-right:8px">
+      <optgroup label="地理 / RTT">
+        <option value="geo-map" selected>地圖真實比例(Equal Earth)</option>
+        <option value="cluster-rtt">RTT 群聚炸開</option>
+        <option value="mds">RTT 自適應 (MDS)</option>
+        <option value="latency-map">RTT 真比例圖</option>
+        <option value="cose-rtt">CoSE × RTT(延遲)</option>
+        <option value="dagre-rtt">Dagre × area/RTT</option>
+      </optgroup>
+      <optgroup label="拓樸 / 階層">
+        <option value="dagre">Dagre 階層</option>
+        <option value="cose">CoSE 力導向</option>
+        <option value="breadthfirst-adaptive">Breadthfirst × root</option>
+        <option value="breadthfirst">Breadthfirst</option>
+        <option value="concentric-adaptive">Concentric × demand</option>
+        <option value="concentric">Concentric</option>
+      </optgroup>
+      <optgroup label="幾何">
+        <option value="circle-country">Circle × country</option>
+        <option value="circle">Circle</option>
+        <option value="grid-country">Grid × country</option>
+        <option value="grid">Grid</option>
+      </optgroup>
+    </select>
+    <button class="btn" data-g="view" id="btnLayout" title="依選單指定的演算法重新排列所有節點位置">⟲ 佈局</button>
+    <button class="btn" data-g="view" id="btnFit"    title="縮放並捲動，讓所有節點都在視窗範圍內">⤢ 置中</button>
+    <a href="index.html" class="ml-auto shrink-0 px-2.5 py-1 border border-white/40 rounded text-xs text-white no-underline hover:bg-white/15" title="切換到分析檢視">← 分析檢視</a>
+  </header>
+
+  <nav class="tabbar" id="tabbar">
+    <div class="tab active" data-tab="topo" data-group="live">Topology</div>
+    <div class="tab" data-tab="demand" data-group="whatif">Demand</div>
+    <div class="tab" data-tab="rtt" data-group="edit">RTT</div>
+    <div class="tab" data-tab="srlg" data-group="audit">SRLG</div>
+  </nav>
+
+  <div class="main panel active" id="panel-topo">
+    <div id="cy"></div>
+    <aside class="inspector">
+      <div class="insp-head"><span id="inspTitle">Inspector</span><span class="pill" id="inspKind">未選取</span></div>
+      <div class="insp-body" id="inspBody">
+        <div class="empty">
+          <div class="big">⤢</div>
+          選一個節點或鏈路來編輯<br>
+          右鍵畫布 = 新增 · 右鍵元件 = 選單<br>
+          <span style="font-size:11px">拖曳建邊請開「連線模式」(E)</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="panel scroll" id="panel-demand">
+    <div class="sec">Demand profiles</div>
+    <div class="meta-row">
+      <label>Active profile</label><select id="dmActive"></select>
+      <button class="btn" id="dmAddProfile">＋ profile</button>
+      <span class="hint" style="margin:0">綠框 = active(engine 讀的那個)</span>
+    </div>
+    <div id="dmChips"></div>
+    <div class="sec">Profile meta + matrix</div>
+    <div class="meta-row" id="dmMeta"></div>
+    <div class="hint">矩陣:列=來源、欄=目的;單位 Gbps。空白格 = 用 default。值即時寫回。</div>
+    <div class="mgrid"><table class="dt" id="dmMatrix"></table></div>
+  </div>
+
+  <div class="panel scroll" id="panel-srlg">
+    <div class="sec">SRLG groups <button class="btn" id="srlgAdd" style="margin-left:10px">＋ group</button></div>
+    <div class="hint">affects:在「＋ 加入」框輸入或從建議清單選 edge id(e_xxx)/ node id,每個成一個標籤,點 × 移除。type 影響匯出時的分組註解。</div>
+    <table class="dt" id="srlgTable"></table>
+  </div>
+
+  <div class="panel scroll" id="panel-rtt">
+    <div class="sec">RTT scalars</div>
+    <div class="meta-row" id="rttMeta"></div>
+    <div class="sec">Edge RTT (直連鏈路) <button class="btn" id="rttEdgeAdd" style="margin-left:10px">＋ edge</button></div>
+    <div class="hint">src:measured(直測)/ city-ref(城市參考)/ model(模型)。</div>
+    <div class="mgrid"><table class="dt" id="rttEdges"></table></div>
+    <div class="sec">City-pair matrix</div>
+    <div class="hint">對稱矩陣(城市×城市);改一格不會自動鏡射另一向,需自行維持對稱。</div>
+    <div class="mgrid"><table class="dt" id="rttMatrix"></table></div>
+  </div>
+
+  <footer class="status" id="status">
+    <span><span class="dot ok" id="connDot"></span><b id="stRouters">0</b> routers</span>
+    <span><b id="stEdges">0</b> edges</span>
+    <span><b id="stCountries">0</b> countries</span>
+    <span><b id="stPseudo">0</b> pseudo</span>
+    <span id="stMsg" style="color:var(--muted)"></span>
+    <div class="legend">
+      <span><i></i>p2p</span><span><i class="dash"></i>transit</span>
+      <span class="tag" style="border-color:var(--gold);color:var(--gold)">ASBR</span>
+    </div>
+  </footer>
+</div>
+
+<div class="modal" id="modal">
+  <div class="box">
+    <h3 id="modalTitle" style="margin:0 0 10px">匯入 topology.js</h3>
+    <div class="pad">
+      <input type="file" id="fileInput" accept=".js,.txt" style="margin-bottom:8px;color:var(--muted)">
+      <div id="ospfHint" style="display:none;font-size:11px;color:var(--muted);margin-bottom:6px;line-height:1.5">
+        貼上 <code>show ip ospf database router</code> 與 <code>show ip ospf database network</code> 的輸出（可一起貼）。
+        自動建出拓樸骨架，/30 transit 收斂為 p2p（Model B）。
+      </div>
+      <textarea id="modalText" spellcheck="false" placeholder="貼上 topology.js 內容,或上方選檔…"></textarea>
+      <div style="margin-top:4px;text-align:right">
+        <button class="btn" id="btnOspfExample" style="font-size:11px">填入範例</button>
+      </div>
+      <div id="ridMapWrap" style="display:none;margin-top:10px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">
+          選填：路由器名稱對照表（每行一台，格式 <code>設備名稱,RID</code>）— 套上站名與城市
+        </div>
+        <textarea id="ridMapText" spellcheck="false" placeholder="JP_7507_001,10.2.1.1&#10;LA_GSR12008_001,10.2.1.2 …" style="width:100%;height:110px"></textarea>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn" id="modalCancel">取消</button>
+      <button class="btn active" id="modalOk">套用</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+'use strict';
+// 演算法重用 engine.js(SoC:演算法單一來源,UI 不重寫 BFS)。需經 http server(ESM import)。
+import { buildAdjacency, connectedComponents } from './engine.js';
+import { baseGraphStyle } from './graph-style.js';
+import { parseOspfLsdb, OSPF_PLACEHOLDER_CAP } from './ospf-import.js';   // 共用 OSPF 解析(與 working/ospf_to_topology.mjs 同源)
+// ════════════════════════════════════════════════════════════════════════
+// BlastRadius Topology Editor — 自包含 Cytoscape 編輯器(zero-build)。
+// 依賴:cytoscape core + cxtmenu(右鍵)。建邊與 undo/redo 自寫,不用易碎外掛。
+// cy 為單一資料源;匯出依 schema 白名單序列化(與 working/gen.mjs 同格式)。
+// ════════════════════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// ── cxtmenu 偵測(唯一外掛;缺了只少右鍵選單,核心編輯不受影響)──────────────
+let HAS_CX = false, HAS_DAGRE = false;
+if (typeof window.cytoscapeCxtmenu === 'function'){ try{ cytoscape.use(window.cytoscapeCxtmenu); HAS_CX=true; }catch(e){} }
+// dagre 轉接需要全域 dagre;兩者都在才註冊(否則 runLayout 會退回 CoSE)
+if (typeof window.cytoscapeDagre === 'function' && typeof window.dagre !== 'undefined'){
+  try{ cytoscape.use(window.cytoscapeDagre); HAS_DAGRE=true; }catch(e){}
+}
+if (!HAS_CX){
+  const b=$('warnBanner'); b.classList.add('show');
+  b.textContent='⚠ 右鍵選單(cxtmenu)未載入 — 請改用工具列按鈕新增/刪除;其餘功能正常。';
+}
+
+// ── 配色 / 尺寸(顯示用,不匯出)─────────────────────────────────────────
+const COUNTRY_COLORS = {
+  TW:'#ef4444', JP:'#f97316', CN:'#eab308', HK:'#84cc16', SG:'#14b8a6',
+  US:'#3b82f6', UK:'#8b5cf6', DE:'#ec4899', AU:'#06b6d4', IN:'#f59e0b',
+};
+function colorFor(cc){
+  if (COUNTRY_COLORS[cc]) return COUNTRY_COLORS[cc];
+  let h=0; for (const c of (cc||'??')) h=(h*31+c.charCodeAt(0))>>>0;
+  return 'hsl('+(h%360)+',55%,55%)';
+}
+const NODE_SIZE=40, PN_W=48, PN_H=28;
+
+// ── Cytoscape ───────────────────────────────────────────────────────────
+const cy = cytoscape({
+  container: $('cy'), wheelSensitivity:0.25, minZoom:0.2, maxZoom:3,
+  style:[
+    // ── 節點/邊基礎樣式:繼承 index.html(白底藍框圓 router、琥珀菱形 pseudonode、slate bezier 邊)──
+    ...baseGraphStyle(),   // node 基礎樣式抽至共用 graph-style.js(router/pseudonode)
+    { selector:'node.router[?isASBR]', style:{ 'border-color':'#d97706','border-width':4 }},
+    { selector:'edge', style:{
+      'width':'mapData(capacity,300,1100,1.5,4)','line-color':'#94a3b8','curve-style':'bezier',
+      'control-point-step-size':28,'target-arrow-shape':'none',
+      // cost 顯示比照 index:對稱→置中只放 cost;非對稱→兩端 source/target-label 各放去/回 cost。
+      // cap 不混入 cost — 對稱邊放 cost 下方第二行,非對稱邊放中央(cost 已在兩端)。ghost 無 cost 不顯示。
+      'label':(e)=>{ const c=e.data('cost'); if(c==null) return ''; const cap=e.data('capacity'); const capT=(cap!=null)?(cap+'G'):'';
+        const r=e.data('costRev'); return (r!=null&&r!==c) ? capT : (capT ? (c+'\n'+capT) : (''+c)); },
+      'source-label':(e)=>{ const c=e.data('cost'),r=e.data('costRev'); return (c!=null&&r!=null&&r!==c)?(''+c):''; },
+      'target-label':(e)=>{ const c=e.data('cost'),r=e.data('costRev'); return (c!=null&&r!=null&&r!==c)?(''+r):''; },
+      'source-text-offset':24,'target-text-offset':24,'text-wrap':'wrap','text-justification':'center',
+      'font-size':'11px','color':'#475569','text-background-color':'#fff','text-background-opacity':0.85,'text-background-padding':'2px' }},
+    { selector:'edge[type="transit"]', style:{ 'line-style':'dashed','line-color':'#a855f7' }},
+    { selector:'edge[?_asym]', style:{ 'line-color':'#16a34a' }},
+    { selector:'node:selected', style:{ 'border-color':'#2563eb','border-width':5 }},
+    { selector:'edge:selected', style:{ 'line-color':'#2563eb','width':5,'opacity':1 }},
+    // ghost(連線模式拖曳預覽)
+    { selector:'node.ghost', style:{ 'width':1,'height':1,'opacity':0,'label':'','events':'no' }},
+    { selector:'edge.ghost', style:{ 'line-color':'#2563eb','line-style':'dashed','width':3,
+      'target-arrow-shape':'none','opacity':0.85,'events':'no','curve-style':'straight' }},
+  ],
+  layout:{ name:'preset' },
+});
+
+// ── 狀態 ───────────────────────────────────────────────────────────────
+let externals = [];
+let curSel = null;
+let connectMode = false;
+function nextId(prefix){ let i=1; while(cy.getElementById(prefix+i).nonempty()) i++; return prefix+i; }
+
+// ── 快照式 undo/redo(自寫,取代外掛)──────────────────────────────────────
+// 結構操作(增/刪/連線/改名/匯入/佈局)各推一個快照;欄位微調為即時、不入 undo。
+const history = (()=>{
+  const undoStack=[], redoStack=[], LIMIT=100;
+  // 全頁快照:cy 元素 + externals + demand/srlg/rtt 資料。demand 有 getter → 只存資料、還原時就地改 D(保留 getter)。
+  const snap = ()=>({
+    elements: cy.json().elements,
+    ext: JSON.parse(JSON.stringify(externals)),
+    d: { unit:D.unit, source:D.source, timestamp:D.timestamp, active:D.active, profiles: JSON.parse(JSON.stringify(D.profiles||{})) },
+    s: JSON.parse(JSON.stringify(S)),
+    r: JSON.parse(JSON.stringify(R)),
+  });
+  const restore = (snp)=>{
+    cy.elements().remove();
+    if (snp.elements) cy.add([ ...(snp.elements.nodes||[]), ...(snp.elements.edges||[]) ]);  // 攤平:node 先 edge 後
+    externals = JSON.parse(JSON.stringify(snp.ext||[]));
+    if (snp.d){ D.unit=snp.d.unit; D.source=snp.d.source; D.timestamp=snp.d.timestamp; D.active=snp.d.active; D.profiles=JSON.parse(JSON.stringify(snp.d.profiles||{})); }
+    if (snp.s) S = JSON.parse(JSON.stringify(snp.s));
+    if (snp.r) R = JSON.parse(JSON.stringify(snp.r));
+    select(null); refresh();
+    if (TAB==='demand'){ dmSel=null; renderDemand(); }
+    else if (TAB==='srlg') renderSrlg();
+    else if (TAB==='rtt') renderRtt();
+  };
+  const sync = ()=>{ $('btnUndo').disabled=!undoStack.length; $('btnRedo').disabled=!redoStack.length; };
+  const commit = (snp)=>{ undoStack.push(snp); if(undoStack.length>LIMIT) undoStack.shift(); redoStack.length=0; sync(); };
+  return {
+    snap, commit,
+    push(){ commit(snap()); },
+    undo(){ if(!undoStack.length) return; redoStack.push(snap()); restore(undoStack.pop()); sync(); toast('已復原'); },
+    redo(){ if(!redoStack.length) return; undoStack.push(snap()); restore(redoStack.pop()); sync(); toast('已重做'); },
+  };
+})();
+
+// ── 節點 / 邊 工廠 ───────────────────────────────────────────────────────
+function routerData(id, o={}){
+  return { id, type:'router', label:o.label ?? (id+'\n'+(o.city||id)),
+    country:o.country ?? 'TW', city:o.city ?? id, area:o.area ?? '0',
+    stubs:o.stubs ?? [], isASBR:!!o.isASBR, isABR:!!o.isABR, _color:colorFor(o.country ?? 'TW') };
+}
+function pnData(id, o={}){
+  return { id, type:'pseudonode', label:o.label ?? (id+'\n'+(o.subnet||'')), subnet:o.subnet ?? '192.168.0.0/24' };
+}
+function isPN(n){ return cy.getElementById(n).data('type')==='pseudonode'; }
+function edgeData(id, s, t, o={}){
+  const transit = isPN(s) || isPN(t);
+  const d = { id, source:s, target:t, type:o.type ?? (transit?'transit':'p2p'),
+    cost:o.cost ?? (transit?10:20), capacity:o.capacity ?? OSPF_PLACEHOLDER_CAP };   // 預設 1G(Gbps,同 ospf-import.js SSOT)
+  if (d.type!=='transit' && o.costRev!=null && o.costRev!==d.cost) d.costRev=o.costRev;
+  d._asym = d.costRev!=null && d.costRev!==d.cost;
+  return d;
+}
+// 低階(不碰 undo)— undo 由各「動作」邊界統一 push
+function addNodeRaw(data, pos){ const e=cy.add({group:'nodes', data, classes:data.type, position:pos||{x:Math.random()*400+150,y:Math.random()*300+120}}); refresh(); return e; }
+function addEdgeRaw(data){ const e=cy.add({group:'edges', data}); refresh(); return e; }
+function removeRaw(eles){ if(eles&&eles.length){ eles.remove(); refresh(); } }
+
+// ── 自寫「連線模式」建邊(取代 edgehandles)─────────────────────────────────
+// 開啟後:在節點上按下 → 拉出虛線 ghost 跟著游標 → 放在另一節點上 → 建邊。
+// autoungrabify 鎖住節點拖曳,避免誤移位;游標目標靠 mouseover/out 追蹤。
+let connSrc=null, ghostN=null, ghostE=null, hoverN=null;
+function clearGhost(){ if(ghostE){ghostE.remove();ghostE=null;} if(ghostN){ghostN.remove();ghostN=null;} }
+cy.on('mouseover','node', e=>{ if(e.target.id()!=='__ghost__') hoverN=e.target; });
+cy.on('mouseout','node', e=>{ if(hoverN===e.target) hoverN=null; });
+cy.on('mousedown','node', e=>{
+  if(!connectMode) return;
+  connSrc=e.target;
+  ghostN=cy.add({group:'nodes', data:{id:'__ghost__'}, position:{...e.position}, classes:'ghost'});
+  ghostE=cy.add({group:'edges', data:{id:'__ghostE__', source:connSrc.id(), target:'__ghost__'}, classes:'ghost'});
+});
+cy.on('mousemove', e=>{ if(connectMode && ghostN) ghostN.position(e.position); });
+cy.on('mouseup', ()=>{
+  if(!connectMode || !connSrc){ clearGhost(); connSrc=null; return; }
+  const tgt = (hoverN && hoverN.id()!=='__ghost__' && hoverN.id()!==connSrc.id()) ? hoverN : null;
+  const s=connSrc; clearGhost(); connSrc=null;
+  if(!tgt) return;
+  const sid=s.id(), tid=tgt.id();
+  if(isPN(sid) && isPN(tid)){ toast('兩端都是 pseudonode,無法連線'); return; }
+  const base = (isPN(sid)||isPN(tid))
+    ? ('e_'+(isPN(sid)?tid:sid)+'_'+(isPN(sid)?sid:tid)) : ('e_'+sid+'_'+tid);
+  const id = cy.getElementById(base).nonempty() ? base+'_'+Date.now().toString(36) : base;
+  history.push();
+  const e=addEdgeRaw(edgeData(id, sid, tid)); select(e);
+});
+function setConnect(on){
+  connectMode=on;
+  $('btnConnect').classList.toggle('active', on);
+  $('cy').classList.toggle('connect', on);
+  cy.autoungrabify(on);
+  if(!on){ clearGhost(); connSrc=null; }
+  setStatus(on?'warn':'ok', on?'連線模式:從節點拖到另一節點建邊(再按 E 關閉)':'');
+}
+
+// ── cxtmenu(右鍵)──────────────────────────────────────────────────────
+if (HAS_CX){
+  cy.cxtmenu({ selector:'node', menuRadius:80, commands:(ele)=>[
+    { content:'✎ 編輯', select:(n)=>select(n) },
+    { content:'⎘ 複製', select:(n)=>dupNode(n) },
+    { content:'🗑 刪除', select:(n)=>{ history.push(); removeRaw(n); select(null); } },
+    isPN(ele.id())
+      ? { content:'＋ 連 Router', select:()=>{ if(!connectMode) setConnect(true); toast('從 Router 拖到此 PN 建 transit'); } }
+      : { content: ele.data('isASBR')?'－ 取消 ASBR':'＋ 設為 ASBR',
+          select:(n)=>{ history.push(); n.data('isASBR',!n.data('isASBR')); if(curSel&&curSel.id()===n.id())select(n); refresh(); } },
+  ]});
+  cy.cxtmenu({ selector:'edge', menuRadius:70, commands:[
+    { content:'✎ 編輯', select:(e)=>select(e) },
+    { content:'⇄ 去/回對調', select:(e)=>{ const c=e.data('cost'),r=e.data('costRev');
+        if(r!=null){ history.push(); e.data('cost',r); e.data('costRev',c); e.data('_asym',r!==c); if(curSel&&curSel.id()===e.id())select(e); refresh(); } else toast('此邊對稱,無回程值'); }},
+    { content:'🗑 刪除', select:(e)=>{ history.push(); removeRaw(e); select(null); } },
+  ]});
+  cy.cxtmenu({ selector:'core', menuRadius:80, commands:()=>[
+    { content:'＋ Router', select:(x,e)=>addRouterAt(e.position) },
+    { content:'＋ Pseudonode', select:(x,e)=>addPNAt(e.position) },
+    { content:'⤢ 置中', select:()=>cy.fit(40) },
+  ]});
+}
+
+// ── 選取 ───────────────────────────────────────────────────────────────
+function select(ele){
+  curSel = ele && ele.nonempty && ele.nonempty() ? ele : null;
+  cy.elements().unselect(); if(curSel) curSel.select();
+  renderInspector();
+}
+cy.on('tap', (e)=>{ if(e.target===cy && !connectMode) select(null); });
+cy.on('tap','node,edge', (e)=>{ if(!connectMode) select(e.target); });
+
+// ── Inspector ──────────────────────────────────────────────────────────
+function field(label, value, attr, type, extra){
+  return `<div class="field"><label>${label}</label><input ${type?`type="${type}"`:''} ${extra||''} data-k="${attr}" value="${esc(value??'')}"></div>`;
+}
+function renderInspector(){
+  const body=$('inspBody'), kind=$('inspKind'), title=$('inspTitle');
+  if(!curSel){
+    kind.textContent='未選取'; title.textContent='Inspector';
+    body.innerHTML=`<div class="empty"><div class="big">⤢</div>選一個節點或鏈路來編輯<br>
+      右鍵畫布 = 新增 · 右鍵元件 = 選單<br><span style="font-size:11px">拖曳建邊請開「連線模式」(E)</span></div>`
+      + externalsPanel();
+    bindExternals(); return;
+  }
+  const d=curSel.data();
+  if(curSel.isNode() && d.type==='router'){
+    title.textContent=d.id; kind.textContent='Router';
+    body.innerHTML =
+      field('ID(節點代碼,唯讀)', d.id, 'id', null, 'disabled') +
+      `<div class="field"><label>Label(圖上顯示文字,可換行)</label><textarea data-k="label" rows="2">${esc(d.label||'')}</textarea></div>` +
+      cityCityRow(d.city, d.country) +
+      field('OSPF Area', d.area, 'area') +
+      stubsChipField(d.stubs||[]) +
+      `<label class="check"><input type="checkbox" data-k="isASBR" ${d.isASBR?'checked':''}> ASBR(注入 LSA5 預設路由)</label>` +
+      `<label class="check"><input type="checkbox" data-k="isABR" ${d.isABR?'checked':''}> ABR(區域邊界)</label>` +
+      `<div class="sub">危險操作</div><button class="btn danger" id="delSel">🗑 刪除此節點</button>` + externalsPanel();
+  } else if(curSel.isNode()){
+    title.textContent=d.id; kind.textContent='Pseudonode';
+    body.innerHTML =
+      field('ID(唯讀)', d.id, 'id', null, 'disabled') +
+      `<div class="field"><label>Label(圖上顯示文字)</label><textarea data-k="label" rows="2">${esc(d.label||'')}</textarea></div>` +
+      field('Subnet(transit LAN CIDR)', d.subnet, 'subnet') +
+      `<p style="color:var(--muted);font-size:12px">Pseudonode = 共享 LAN(LSA2)。Router 經 transit 邊連入,egress 固定 cost 0。</p>` +
+      `<div class="sub">危險操作</div><button class="btn danger" id="delSel">🗑 刪除此節點</button>` + externalsPanel();
+  } else {
+    title.textContent=d.id; kind.textContent = d.type==='transit'?'Transit edge':'p2p edge';
+    const sym = d.costRev==null;
+    body.innerHTML =
+      field('ID(唯讀)', d.id, 'id', null, 'disabled') +
+      `<div class="row2">
+        <div class="field"><label>Source</label><input value="${esc(d.source)}" disabled></div>
+        <div class="field"><label>Target</label><input value="${esc(d.target)}" disabled></div></div>` +
+      `<div class="field"><label>Type</label><select data-k="type">
+        <option value="p2p" ${d.type==='p2p'?'selected':''}>p2p</option>
+        <option value="transit" ${d.type==='transit'?'selected':''}>transit</option></select></div>` +
+      `<div class="row2">
+        ${field('Cost(去)', d.cost, 'cost', 'number', 'min="1" step="1"')}
+        ${field('Capacity Gbps', d.capacity, 'capacity', 'number', 'min="1" step="1"')}</div>` +
+      (d.type==='p2p'
+        ? `<label class="check"><input type="checkbox" data-k="_hasRev" ${!sym?'checked':''}> 不對稱(去≠回)</label>
+           <div class="field" id="revWrap" style="${sym?'display:none':''}"><label>Cost(回 / costRev)</label>
+             <input type="number" min="1" step="1" data-k="costRev" value="${esc(d.costRev ?? d.cost)}"></div>`
+        : `<p style="color:var(--muted);font-size:12px">Transit:Router→PN 走此 cost;PN→Router 固定 0(Type-2)。</p>`) +
+      `<div class="sub">危險操作</div><button class="btn danger" id="delSel">🗑 刪除此鏈路</button>`;
+  }
+  bindInspector(); bindExternals();
+}
+function bindInspector(){
+  $('inspBody').querySelectorAll('[data-k]').forEach(inp=>{
+    const k=inp.dataset.k;
+    const ev=(k==='id'||inp.type==='checkbox'||inp.tagName==='SELECT')?'change':'input';
+    inp.addEventListener(ev, ()=>applyField(k, inp));
+  });
+  $('inspBody').querySelectorAll('[data-k="subnet"]').forEach(markCIDR);
+  bindStubsChip($('inspBody'));
+  bindCityCountry($('inspBody'));
+  const del=$('delSel'); if(del) del.addEventListener('click', ()=>{ history.push(); removeRaw(curSel); select(null); });
+}
+function applyField(k, inp){
+  if(!curSel) return;
+  if(k==='id'){ renameEle(curSel, inp.value.trim()); return; }
+  if(k==='_hasRev'){
+    const wrap=$('revWrap'); wrap.style.display=inp.checked?'':'none';
+    if(!inp.checked){ curSel.removeData('costRev'); curSel.data('_asym',false); }
+    else { curSel.data('costRev', curSel.data('cost')); curSel.data('_asym',false); }
+    refresh(); return;
+  }
+  if(k==='stubs') return; // stubs 由 chip 直接寫回 node data,不走 applyField
+  if(k==='isASBR'||k==='isABR'){ curSel.data(k, inp.checked); refresh(); return; }
+  if(k==='cost'||k==='capacity'||k==='costRev'){
+    const v=parseInt(inp.value,10); if(isNaN(v)) return; curSel.data(k, v);
+    if(k!=='capacity'){ const c=curSel.data('cost'),r=curSel.data('costRev'); curSel.data('_asym', r!=null&&r!==c); }
+    refresh(); return;
+  }
+  if(k==='type'){
+    curSel.data('type', inp.value);
+    if(inp.value==='transit'){ curSel.removeData('costRev'); curSel.data('_asym',false); }
+    renderInspector(); refresh(); return;
+  }
+  if(k==='label'){ curSel.data('label', inp.value); refresh(); return; }   // label 獨立可編,不再被 city/country 覆寫
+  if(k==='country'){ curSel.data('country',inp.value); curSel.data('_color',colorFor(inp.value)); refresh(); return; }
+  if(k==='city'){ curSel.data('city',inp.value); return; }
+  if(k==='subnet'){ curSel.data('subnet',inp.value); markCIDR(inp); return; }
+  curSel.data(k, inp.value);
+}
+// id 改名:cy id 不可變 → remove+add(node 須搬連邊)。整個動作一個 undo 快照。
+function renameEle(ele, newId){
+  if(!newId || newId===ele.id()) return;
+  if(cy.getElementById(newId).nonempty()){ toast('ID「'+newId+'」已存在'); return; }
+  history.push();
+  if(ele.isEdge()){
+    const d={...ele.data(), id:newId}; removeRaw(ele); const e=addEdgeRaw(d); select(e); return;
+  }
+  const oldId=ele.id(), d={...ele.data(), id:newId}, pos={...ele.position()};
+  const conn=ele.connectedEdges().map(e=>({...e.data()}));
+  cy.batch(()=>{
+    ele.connectedEdges().remove(); ele.remove();
+    cy.add({group:'nodes', data:d, classes:d.type, position:pos});
+    conn.forEach(ed=>{ ed.source=ed.source===oldId?newId:ed.source; ed.target=ed.target===oldId?newId:ed.target;
+      cy.add({group:'edges', data:ed}); });
+  });
+  externals.forEach(x=>{ if(x.advertising_router===oldId) x.advertising_router=newId; });
+  select(cy.getElementById(newId)); refresh();
+}
+
+// ── externals(LSA5)──────────────────────────────────────────────────────
+function externalsPanel(){
+  const routers=cy.nodes('[type="router"]').map(n=>n.id()).sort();
+  const opts=(sel)=>routers.map(r=>`<option ${r===sel?'selected':''}>${r}</option>`).join('');
+  const rows=externals.map((x,i)=>`<div class="ext-row" data-i="${i}">
+    <select data-ek="advertising_router">${opts(x.advertising_router)}</select>
+    <input data-ek="subnet" value="${esc(x.subnet)}">
+    <span class="x" data-del="${i}">✕</span></div>`).join('');
+  return `<div class="sub">Externals (LSA5)</div>${rows||'<div style="color:var(--muted);font-size:12px;margin-bottom:6px">無</div>'}
+    <button class="btn" id="addExt" style="width:100%">＋ 新增 external</button>`;
+}
+function bindExternals(){
+  const add=$('addExt');
+  if(add) add.addEventListener('click', ()=>{
+    const r0=cy.nodes('[type="router"]').map(n=>n.id())[0]||'';
+    history.push(); externals.push({ advertising_router:r0, subnet:'0.0.0.0/0', metric:1, metric_type:'E2' }); renderInspector();
+  });
+  document.querySelectorAll('[data-del]').forEach(x=>x.addEventListener('click',()=>{ history.push(); externals.splice(+x.dataset.del,1); renderInspector(); }));
+  document.querySelectorAll('.ext-row [data-ek]').forEach(inp=>{
+    if(inp.dataset.ek==='subnet') markCIDR(inp);
+    inp.addEventListener('input',()=>{
+      const i=+inp.closest('.ext-row').dataset.i; externals[i][inp.dataset.ek]=inp.value;
+      if(inp.dataset.ek==='subnet') markCIDR(inp); });
+  });
+}
+
+// ── 動作 ───────────────────────────────────────────────────────────────
+function addRouterAt(pos){ history.push(); const id=nextId('R'); select(addNodeRaw(routerData(id,{city:id}), pos)); }
+function addPNAt(pos){ history.push(); const id=nextId('PN_'); select(addNodeRaw(pnData(id), pos)); }
+function dupNode(n){
+  history.push();
+  const d=n.data(), id=nextId(d.type==='pseudonode'?'PN_':(String(d.id).replace(/\d+$/,'')||'R'));
+  const nd={...d, id, label:id+'\n'+(d.city||d.subnet||id)}; const p=n.position();
+  select(addNodeRaw(nd, {x:p.x+50,y:p.y+50}));
+}
+$('btnAddRouter').onclick=()=>addRouterAt();
+$('btnAddPN').onclick=()=>addPNAt();
+$('btnConnect').onclick=()=>setConnect(!connectMode);
+$('btnDelete').onclick=()=>{ const s=cy.$(':selected'); if(s.nonempty()){ history.push(); removeRaw(s); select(null); } };
+$('btnUndo').onclick=()=>history.undo();
+$('btnRedo').onclick=()=>history.redo();
+$('btnFit').onclick=()=>cy.fit(40);
+// ── RTT 群聚炸開(cluster-then-explode,真兩尺度)──────────────────────────
+// MDS 全域擬合會把跨洋明顯度封在 ~2.4×。本佈局解耦兩尺度:群內緊湊可讀、群間間距 = K×群半徑和,
+// 洋要多誇張調 K 即可(單調無上限)。分群 = RTT<T 的連通分量(各洲自成一群)。確定性。
+function mdsXY(cities, dfn){            // 對城市清單跑 raw-RTT MDS,回置中相對座標
+  const m=cities.length; if(m<=1) return cities.map(()=>({x:0,y:0}));
+  let sum=0,cnt=0; for(let i=0;i<m;i++)for(let j=i+1;j<m;j++){ const v=dfn(cities[i],cities[j]); if(v!=null){sum+=v;cnt++;} }
+  const avg=cnt?sum/cnt:1;
+  const D2=[]; for(let i=0;i<m;i++){ D2[i]=[]; for(let j=0;j<m;j++){ const v=i===j?0:(dfn(cities[i],cities[j]) ?? avg); D2[i][j]=v*v; } }
+  const rm=D2.map(r=>r.reduce((a,b)=>a+b,0)/m), gm=rm.reduce((a,b)=>a+b,0)/m;
+  const B=[]; for(let i=0;i<m;i++){ B[i]=[]; for(let j=0;j<m;j++) B[i][j]=-0.5*(D2[i][j]-rm[i]-rm[j]+gm); }
+  const [e1,e2]=mdsTopEigs(B,m,250);
+  const s1=Math.sqrt(Math.max(e1.lam,0)), s2=Math.sqrt(Math.max(e2.lam,0));
+  const P=cities.map((_,i)=>({ x:e1.v[i]*s1, y:e2.v[i]*s2 }));
+  const cx=P.reduce((a,p)=>a+p.x,0)/m, cyy=P.reduce((a,p)=>a+p.y,0)/m;
+  return P.map(p=>({ x:p.x-cx, y:p.y-cyy }));
+}
+function dedupXY(items, gap){           // items:[{x,y,r}] 就地依半徑推開,確定性
+  for(let pass=0; pass<120; pass++){
+    let moved=false;
+    for(let i=0;i<items.length;i++) for(let j=i+1;j<items.length;j++){
+      const a=items[i], b=items[j]; const dx=b.x-a.x, dy=b.y-a.y, dd=Math.hypot(dx,dy)||0.01; const mi=a.r+b.r+gap;
+      if(dd<mi){ const k=(mi-dd)/2/dd; a.x-=dx*k; a.y-=dy*k; b.x+=dx*k; b.y+=dy*k; moved=true; }
+    }
+    if(!moved) break;
+  }
+}
+// 佈局調參數單一來源 — 對齊 index.html 的 THRESHOLDS / LIMITS 慣例(No Magic Numbers)。
+// ★ 標記的是使用者最常需要調的感覺旋鈕;其餘是結構常數。
+const LAYOUT_PARAMS = {
+  // layoutClusterRTT
+  cluster: {
+    oceanMs:  65,    // ★ > 此值視為跨洋(ms),據此切群
+    spread:    4,    // ★ 群間炸開倍數(值越大跨洋群間距越誇張)
+    gap:      14,    // 節點間隙(px),與 MDS 共用
+  },
+  // layoutLatencyMap
+  latency: {
+    pxPerMs:  12,    // 座標量級;MDS 保比例,fit 做整體 zoom
+  },
+  // layoutGeoMap
+  geo: {
+    targetPx: 80,    // 最密「跨城」對的目標螢幕間距(px)
+    outlierPct: 0.15, // MAD 計算時取的百分位(15th percentile)
+    madMult:   3,    // MAD 離群判斷倍數
+    goldenAngle: Math.PI * (3 - Math.sqrt(5)), // 黃金角(rad),phyllotaxis fan-out
+  },
+  // layoutMDS
+  mds: {
+    rttPow:  1,      // ★ RTT 壓縮指數:1=原始/跨洋最誇張、0.5=sqrt 較溫和、越小越均勻
+    canvasW: 640,    // MDS 初始座標框寬(px),fit 後會縮放
+    canvasH: 460,    //   高
+    originX: 120,    //   左偏移
+    originY: 110,    //   上偏移
+    maxIter: 80,     // 去重疊迭代上限
+    gap:     14,     // 節點間隙(px),與 cluster 共用
+  },
+};
+
+function layoutClusterRTT(){
+  const M=(R&&R.matrix)||{};
+  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  const geo=[], nogeo=[]; all.forEach(n=>{ const c=n.data('city'); (c&&M[c])?geo.push(n):nogeo.push(n); });
+  if(geo.length<3){ toast('RTT 城市不足(<3),無法群聚佈局'); return; }
+  const {oceanMs:T, spread:K, gap:GAP} = LAYOUT_PARAMS.cluster;
+  const dd2=(ca,cb)=>{ const a=M[ca]||{}, b=M[cb]||{}; return (a[cb]!=null&&b[ca]!=null)?(a[cb]+b[ca])/2:(a[cb] ?? b[ca]); };
+  const g=geo.length, cityOf=geo.map(n=>n.data('city'));
+  const rad=geo.map(n=>{ const bb=n.boundingBox({includeLabels:true}); return Math.max(bb.w,bb.h)/2; });
+  // 分群:RTT<T 的連通分量
+  const cid=new Array(g).fill(-1); let kc=0;
+  for(let i=0;i<g;i++){ if(cid[i]>=0) continue; cid[i]=kc; const q=[i];
+    while(q.length){ const u=q.pop(); for(let v=0;v<g;v++){ if(cid[v]<0&&u!==v){ const w=dd2(cityOf[u],cityOf[v]); if(w!=null&&w<T){ cid[v]=kc; q.push(v); } } } } kc++; }
+  // 群內:子 MDS + 群內去重疊 → 相對座標 + 群半徑
+  const localPos=new Array(g), groupR=new Array(kc).fill(40);
+  for(let c=0;c<kc;c++){
+    const idx=[]; for(let i=0;i<g;i++) if(cid[i]===c) idx.push(i);
+    const P=mdsXY(idx.map(i=>cityOf[i]), dd2).map((p,k2)=>({ x:p.x, y:p.y, r:rad[idx[k2]] }));
+    dedupXY(P, GAP);
+    const cx=P.reduce((a,p)=>a+p.x,0)/P.length, cyy=P.reduce((a,p)=>a+p.y,0)/P.length;
+    let Rr=40; idx.forEach((gi,k2)=>{ const lp={ x:P[k2].x-cx, y:P[k2].y-cyy }; localPos[gi]=lp; Rr=Math.max(Rr, Math.hypot(lp.x,lp.y)+rad[gi]); });
+    groupR[c]=Rr;
+  }
+  // 群心:全 geo MDS 形心。用「中位數」群間距定尺度(不取最近對,避免單一近群對讓尺度爆掉),
+  // 加上限 clamp 防爆,再把每個群當圓盤 dedup 推開避免重疊 → 群再多再近都不會壞。
+  const full=mdsXY(cityOf, dd2);
+  const cen=Array.from({length:kc},()=>({ x:0, y:0, n:0 }));
+  full.forEach((p,i)=>{ const c=cid[i]; cen[c].x+=p.x; cen[c].y+=p.y; cen[c].n++; });
+  cen.forEach(c=>{ c.x/=c.n; c.y/=c.n; });
+  const median=arr=>{ if(!arr.length) return 1; const s=arr.slice().sort((x,y)=>x-y); return s[Math.floor(s.length/2)]||1; };
+  const gaps=[]; for(let a=0;a<kc;a++) for(let b=a+1;b<kc;b++) gaps.push(Math.hypot(cen[a].x-cen[b].x,cen[a].y-cen[b].y));
+  const scale = kc>1 ? Math.min(50, K*2*median(groupR)/median(gaps)) : 1;
+  const disc=Array.from({length:kc},(_,c)=>({ x:cen[c].x*scale, y:cen[c].y*scale, r:groupR[c] }));
+  dedupXY(disc, 30);                  // 群層級去重疊:每群當圓盤推開,保證群間不疊
+  const pos={};
+  geo.forEach((n,i)=>{ const c=cid[i]; pos[n.id()]={ x:disc[c].x+localPos[i].x, y:disc[c].y+localPos[i].y }; });
+  for(let pass=0; pass<2; pass++) nogeo.forEach(nd=>{ const nb=nd.neighborhood().nodes().filter(x=>pos[x.id()]);
+    if(nb.length){ let sx=0,sy=0; nb.forEach(x=>{ sx+=pos[x.id()].x; sy+=pos[x.id()].y; }); pos[nd.id()]={ x:sx/nb.length+30, y:sy/nb.length+30 }; } });
+  all.forEach(nd=>{ if(!pos[nd.id()]) pos[nd.id()]={...nd.position()}; });
+  cy.layout({ name:'preset', positions:(node)=>pos[node.id()], fit:true, padding:40, animate:true, animationDuration:350 }).run();
+  toast('RTT 群聚炸開:'+kc+' 群、K='+K+'(門檻 '+T+'ms)');
+}
+// 用國碼把 MDS 結果旋轉到北半球讀法:美洲朝右(+x)、歐洲朝左。MDS 確定性 → 定方位後不再轉向飄移。
+function orientByContinent(P, nodes){
+  const AMER=new Set(['US','CA','MX','BR','AR','CL','CO','PE','VE','EC','UY','PY','BO','CR','PA','DO','GT']);
+  const EURO=new Set(['GB','UK','IE','FR','DE','NL','ES','IT','SE','CH','NO','FI','DK','PL','AT','BE','PT','CZ','GR','HU','RO','RU','UA','TR']);
+  let a={x:0,y:0,n:0}, e={x:0,y:0,n:0};
+  nodes.forEach((nd,i)=>{ const c=(nd.data('country')||'').toUpperCase();
+    if(AMER.has(c)){ a.x+=P[i].x; a.y+=P[i].y; a.n++; } else if(EURO.has(c)){ e.x+=P[i].x; e.y+=P[i].y; e.n++; } });
+  if(!a.n || !e.n) return;            // 缺一洲 → 維持 MDS 主軸(已水平),不轉
+  a.x/=a.n; a.y/=a.n; e.x/=e.n; e.y/=e.n;
+  const ang=-Math.atan2(a.y-e.y, a.x-e.x), cos=Math.cos(ang), sin=Math.sin(ang);  // 讓「歐→美」向量轉到 +x
+  for(const p of P){ const nx=p.x*cos-p.y*sin, ny=p.x*sin+p.y*cos; p.x=nx; p.y=ny; }
+}
+// ── RTT 真比例圖(faithful latency map)──────────────────────────────────────
+// raw-RTT 的 classical MDS = 網路座標(Vivaldi 同源):螢幕歐式距離 ∝ 實測 RTT,等比、無壓縮、無去重疊。
+// 洋自然大(因物理上真的大)、metro 自然擠(因真的近)→ 靠 zoom 看細節。fiberRttPerKm 用來把距離回報成 km。
+function layoutLatencyMap(){
+  const M=(R&&R.matrix)||{};
+  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  const geo=[], nogeo=[]; all.forEach(n=>{ const c=n.data('city'); (c&&M[c])?geo.push(n):nogeo.push(n); });
+  if(geo.length<3){ toast('RTT 城市不足(<3),無法畫真比例圖'); return; }
+  const cityOf=geo.map(n=>n.data('city'));
+  const d=(ca,cb)=>{ const a=M[ca]||{}, b=M[cb]||{}; return (a[cb]!=null&&b[ca]!=null)?(a[cb]+b[ca])/2:(a[cb] ?? b[ca]); };
+  const P=mdsXY(cityOf, d);            // 等比、無壓縮:pairwise ≈ RTT(ms)
+  orientByContinent(P, geo);           // 國碼定方位:美洲右、歐洲左(旋轉不改比例)
+  const PX_PER_MS = LAYOUT_PARAMS.latency.pxPerMs;
+  const pos={};
+  geo.forEach((n,i)=>{ pos[n.id()]={ x:P[i].x*PX_PER_MS, y:P[i].y*PX_PER_MS }; });
+  for(let pass=0; pass<2; pass++) nogeo.forEach(nd=>{ const nb=nd.neighborhood().nodes().filter(x=>pos[x.id()]);
+    if(nb.length){ let sx=0,sy=0; nb.forEach(x=>{ sx+=pos[x.id()].x; sy+=pos[x.id()].y; }); pos[nd.id()]={ x:sx/nb.length, y:sy/nb.length }; } });
+  all.forEach(nd=>{ if(!pos[nd.id()]) pos[nd.id()]={...nd.position()}; });
+  cy.layout({ name:'preset', positions:(node)=>pos[node.id()], fit:true, padding:40, animate:true, animationDuration:350 }).run();
+  const fpk=(R&&R.fiberRttPerKm)||0.01014;
+  let mx=0,pr=''; for(let i=0;i<geo.length;i++)for(let j=i+1;j<geo.length;j++){ const v=d(cityOf[i],cityOf[j]); if(v!=null&&v>mx){ mx=v; pr=cityOf[i]+'–'+cityOf[j]; } }
+  toast('真比例延遲圖:螢幕距離 ∝ RTT(無壓縮/炸開)。最長 '+pr+' ≈ '+Math.round(mx/fpk).toLocaleString()+' km;metro 太近請放大看。');
+}
+// ── 地圖真實比例(Equal Earth 等積投影,中央經線 λ0=140°E)── 兩級座標:city 查不到→退國家中心點→再退鄰居平均。
+// 北朝上、東朝右;Equal Earth 等積 → 面積比例忠實(優於裸 equirectangular 高緯東西向過寬)。不去重疊(近城市自然相疊,設計上交給人手動拖開)。
+// GEO_CITY 來源 = working/gen.mjs 的 GEO(已驗證)+ rtt.js cityRef 出現的真實城市,皆 [lat, lon]。
+const GEO_CITY = {
+  // gen.mjs GEO(PoP 級,含合成 PoP 變體)
+  TPE:[25.0,121.5], KHH:[22.6,120.3], TYO:[35.7,139.7], OSA:[34.7,135.5],
+  SHA:[31.2,121.5], HKG:[22.3,114.2], SIN:[1.35,103.8],
+  TPE2:[25.1,121.6], TYN:[25.0,121.2], TCH:[24.1,120.7], HSZ:[24.8,121.0],
+  TYO2:[35.6,139.8], NGO:[35.2,136.9], FUK:[33.6,130.4],
+  PEK:[39.9,116.4], CAN:[23.1,113.3], SZX:[22.5,114.1], CTU:[30.6,104.1],
+  WUH:[30.6,114.3], HKG2:[22.3,114.1], HKG3:[22.4,114.2],
+  SIN2:[1.30,103.9], SIN3:[1.40,103.7],
+  LAX:[34.0,-118.2], SJC:[37.3,-121.9], SEA:[47.6,-122.3], JFK:[40.6,-73.8],
+  IAD:[38.95,-77.45], ORD:[41.98,-87.9], DAL:[32.8,-96.8], ATL:[33.7,-84.4],
+  LHR:[51.47,-0.45], LHR2:[51.5,-0.1], MAN:[53.4,-2.2],
+  FRA:[50.0,8.6], FRA2:[50.1,8.7], MUC:[48.1,11.6],
+  SYD:[-33.9,151.2], MEL:[-37.8,144.9], PER:[-31.95,115.9], BNE:[-27.5,153.0],
+  BOM:[19.1,72.9], DEL:[28.6,77.1], MAA:[13.1,80.3], BLR:[13.0,77.6],
+  // 都會別名(gen.mjs CITY 映射:JFK→NYC、ORD→CHI、DAL→DFW、LHR→LON、IAD→WAS、PEK→BJS、TCH→TXG)
+  NYC:[40.71,-74.0], CHI:[41.88,-87.63], DFW:[32.78,-96.8], LON:[51.5,-0.13],
+  WAS:[38.9,-77.04], BJS:[39.9,116.4], TXG:[24.15,120.67],
+  // rtt.js cityRef 出現、上面未含的真實城市
+  AMS:[52.37,4.9], ATH:[37.98,23.73], BER:[52.52,13.4], BKK:[13.75,100.5],
+  BRU:[50.85,4.35], CPH:[55.68,12.57], DUB:[53.35,-6.26], HAN:[21.03,105.85],
+  HEL:[60.17,24.94], IST:[41.0,28.98], DXB:[25.2,55.27], MAD:[40.42,-3.7],
+  MIL:[45.46,9.19], OSL:[59.91,10.75], PAR:[48.85,2.35], SEL:[37.57,126.98],
+  SGN:[10.82,106.63], JKT:[-6.2,106.85], KUL:[3.14,101.69], MNL:[14.6,120.98],
+  // 匯入 OSPF 對應表新增城市(VCV→溫哥華、TRT→多倫多、CB→金邊、PA→Palo Alto)
+  YVR:[49.28,-123.12], YYZ:[43.65,-79.38], PNH:[11.56,104.92], PAO:[37.44,-122.14],
+};
+// City → Country 對照(SSOT:從 ospf-import.js 的 OSPF_CITY 反推,不重複維護)。
+// Inspector 選城市後自動帶入 Country;仍可手動覆蓋(新城市 / 特殊情況)。
+const CITY_COUNTRY = {};
+(()=>{ const M={TPE:'TW',TXG:'TW',KHH:'TW',HSZ:'TW',HKG:'HK',SIN:'SG',TYO:'JP',OSA:'JP',
+  SEL:'KR',BKK:'TH',MNL:'PH',SYD:'AU',HAN:'VN',PNH:'KH',SHA:'CN',SZX:'CN',
+  LAX:'US',CHI:'US',NYC:'US',PAO:'US',LON:'GB',FRA:'DE',AMS:'NL',YVR:'CA',YYZ:'CA',
+  // 延伸城市
+  LHR:'GB',MAN:'GB',MUC:'DE',ATH:'GR',BER:'DE',BRU:'BE',CPH:'DK',DUB:'IE',HEL:'FI',
+  IST:'TR',DXB:'AE',MAD:'ES',MIL:'IT',OSL:'NO',PAR:'FR',SEL:'KR',SGN:'VN',
+  JKT:'ID',KUL:'MY',BOM:'IN',DEL:'IN',MAA:'IN',BLR:'IN',
+  MEL:'AU',PER:'AU',BNE:'AU',JFK:'US',IAD:'US',ORD:'US',DAL:'US',SEA:'US',ATL:'US',SJC:'US',
+  PEK:'CN',CAN:'CN',CTU:'CN',WUH:'CN',BJS:'CN',FUK:'JP',NGO:'JP',TYN:'TW',TCH:'TW',TPE2:'TW',TYO2:'JP',
+  };
+  Object.assign(CITY_COUNTRY, M);
+})();
+
+// 國家中心點(ISO-3166-1 alpha-2),供 city 查不到時 fallback。皆 [lat, lon]。
+const GEO_COUNTRY = {
+  TW:[23.7,121.0], JP:[36.2,138.3], CN:[35.9,104.2], HK:[22.3,114.2], SG:[1.35,103.8],
+  US:[39.8,-98.6], GB:[54.0,-2.0], UK:[54.0,-2.0], DE:[51.2,10.4], FR:[46.6,2.4],
+  NL:[52.1,5.3], AU:[-25.3,133.8], IN:[22.0,79.0], KR:[36.5,127.8], TH:[15.0,101.0],
+  VN:[16.0,107.8], ID:[-2.5,118.0], MY:[4.2,101.9], PH:[12.9,121.8], AE:[24.0,54.0],
+  GR:[39.0,22.0], ES:[40.0,-4.0], IT:[42.8,12.8], BE:[50.6,4.6], TR:[39.0,35.0],
+  KH:[12.57,104.99], CA:[56.13,-106.35],
+};
+// Equal Earth 前向投影(Šavrič, Patterson & Jenny 2018)。輸入 lat/lon(度),λ 相對中央經線 λ0;
+// 回傳無因次 x/y(地球半徑=1),等積。除以 EE_DEG 換算成「赤道每經度≈1 單位」尺度,讓下游
+// 比例尺 / 同城門檻沿用原 equirectangular 的度量常數(0.3°、TARGET_PX、clamp)免重新校準。
+const EE_A = [1.340264, -0.081106, 0.000893, 0.003796];   // A1..A4
+const EE_DEG = 0.015037;                                   // 赤道每經度的 Equal Earth 跨距 = 2√3·(π/180)/(3·A1)
+function equalEarth(lat, lon, lon0){
+  const R=Math.PI/180;
+  let dl=lon-lon0; while(dl>180) dl-=360; while(dl<-180) dl+=360;       // 經度差包到 (-180,180]
+  const phi=lat*R, lam=dl*R, [A1,A2,A3,A4]=EE_A;
+  const th=Math.asin(Math.sqrt(3)/2*Math.sin(phi)), t2=th*th;
+  const x=(2*Math.sqrt(3)*lam*Math.cos(th)) / (3*(9*A4*t2*t2*t2*t2 + 7*A3*t2*t2*t2 + 3*A2*t2 + A1));
+  const y=A4*t2*t2*t2*t2*th + A3*t2*t2*t2*th + A2*t2*th + A1*th;        // A4θ⁹+A3θ⁷+A2θ³+A1θ
+  return { x, y };
+}
+function layoutGeoMap(){
+  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  const ll={}, placed=[], unplaced=[];
+  all.forEach(n=>{
+    const c=n.data('city'), co=(n.data('country')||'').toUpperCase();
+    const p=(c&&GEO_CITY[c]) || (co&&GEO_COUNTRY[co]) || null;   // 兩級:城市 → 國家
+    if(p){ ll[n.id()]=p; placed.push(n); } else unplaced.push(n);
+  });
+  if(!placed.length){ toast('無 city/country 座標可用,無法畫地圖'); return; }
+  // 投影:Equal Earth 等積(中央經線 λ0=140°E,太平洋置中 → 美洲落在亞洲右側,經度包繞處理)。
+  // 除以 EE_DEG → u/v 回到「赤道每經度≈1」度量,沿用下游比例尺/門檻常數;螢幕 y 向下故 v 取負(北朝上)。
+  const LON0=140;
+  const proj={}; placed.forEach(n=>{ const [lat,lon]=ll[n.id()]; const e=equalEarth(lat,lon,LON0);
+    proj[n.id()]={ u:e.x/EE_DEG, v:-e.y/EE_DEG }; });
+  // 自動比例尺(等同 d3 fitSize 思路,但鎖定「最密城市群」而非整體外框):
+  // 取各節點最近鄰距離的中位數,縮放到 TARGET_PX → 密集區永遠有可拖空間,洋距大則自然甩遠(平移看),不用手調。
+  const {targetPx:TARGET_PX, outlierPct, madMult, goldenAngle} = LAYOUT_PARAMS.geo;
+  // 各節點的最近鄰距離,但排除 <0.3°(同城多 PoP 雙生:物理同點,任何比例都疊,納入會把全圖拉爆)。
+  const nn=[]; placed.forEach(a=>{ let m=Infinity; placed.forEach(b=>{ if(a===b) return;
+    const d=Math.hypot(proj[a.id()].u-proj[b.id()].u, proj[a.id()].v-proj[b.id()].v); if(d>0.3&&d<m) m=d; });
+    if(m<Infinity) nn.push(m); });
+  nn.sort((x,y)=>x-y);
+  const dense=nn.length?(nn[Math.floor(nn.length*outlierPct)]||nn[0]):1;
+  const PX_PER_DEG=Math.min(160, Math.max(6, TARGET_PX/dense));     // 由資料自動導出,clamp 防爆/防擠
+  const pos={};
+  placed.forEach(n=>{ pos[n.id()]={ x:proj[n.id()].u*PX_PER_DEG, y:proj[n.id()].v*PX_PER_DEG }; });
+  // 同城扇形展開:同座標多節點(如台北 13 台)用 Vogel/向日葵螺旋散開。
+  // 間距 c = 節點直徑+gap → 螺旋相鄰距離 ≈ c ≥ 直徑 → 城內保證不重疊;c 取最小 → footprint 最小、城間碰撞最小。
+  // i=0 落中心;確定性(id 排序)。城間若仍重疊屬「超密又超近」的幾何極限,靠鎖主群放大 + 手動拖曳收尾。
+  const NODE_D = ((placed[0] && placed[0].width && placed[0].width()) || 36) + 8;
+  const cityGroups={}; placed.forEach(n=>{ (cityGroups[ll[n.id()].join(',')] ??= []).push(n.id()); });
+  for(const key in cityGroups){
+    const ids=cityGroups[key].slice().sort(); if(ids.length<2) continue;
+    const ctr={ x:pos[ids[0]].x, y:pos[ids[0]].y };
+    ids.forEach((id,i)=>{ const r=NODE_D*Math.sqrt(i), a=i*goldenAngle;
+      pos[id]={ x:ctr.x + r*Math.cos(a), y:ctr.y + r*Math.sin(a) }; });
+  }
+  for(let pass=0; pass<2; pass++) unplaced.forEach(nd=>{ const nb=nd.neighborhood().nodes().filter(x=>pos[x.id()]);
+    if(nb.length){ let sx=0,sy=0; nb.forEach(x=>{ sx+=pos[x.id()].x; sy+=pos[x.id()].y; }); pos[nd.id()]={ x:sx/nb.length, y:sy/nb.length }; } });
+  all.forEach(nd=>{ if(!pos[nd.id()]) pos[nd.id()]={...nd.position()}; });
+  // 真比例擺好後,鎖定「主城市群」放大置中(非 fit 全圖 — 否則被跨太平洋 LAX 主導、亞洲群縮成一團)。
+  // MAD 抗離群:離主群中位數 >3×MAD 的點(如 LAX / PN_US 跨洋遠點)排除在 fit 之外,仍留原位可拖曳查看。
+  cy.layout({ name:'preset', positions:(node)=>pos[node.id()], fit:false, animate:false }).run();
+  const ids=all.map(n=>n.id());
+  const med=a=>{ const s=a.slice().sort((p,q)=>p-q), m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; };
+  const mx=med(ids.map(id=>pos[id].x)), my=med(ids.map(id=>pos[id].y));
+  const dist=id=>Math.hypot(pos[id].x-mx, pos[id].y-my);
+  const mad=med(ids.map(dist))||1, thr=mad*madMult;
+  let core=all.filter(n=>dist(n.id())<=thr);
+  if(core.length<2) core=all;                                          // 全離群/太少 → 退回全圖置中
+  const outliers=all.length-core.length;
+  cy.animate({ fit:{ eles:core, padding:60 }, duration:350 });
+  const byCity=placed.filter(n=>{ const c=n.data('city'); return c&&GEO_CITY[c]; }).length;
+  toast('Equal Earth(λ0=140°E)鎖定主城市群:'+byCity+' 城市座標、'+(placed.length-byCity)+' 國家中心、'+unplaced.length+' 沿鄰居'+(outliers?';'+outliers+' 跨洋遠點在畫布外(拖曳/滾輪查看)':'')+';重疊請手動拖開。');
+}
+// cose 用:每條邊的理想長度 = 城市對 RTT(ms→px)。無 RTT(pseudonode transit 邊)用短邊,讓 PN 靠攏所屬 router。
+function rttEdgeLen(edge){
+  const M=(R&&R.matrix)||{};
+  const a=edge.source().data('city'), b=edge.target().data('city');
+  const r=(a&&b) ? (M[a]?.[b] ?? M[b]?.[a]) : null;
+  return r==null ? 55 : 40 + r*2.6;      // 3ms≈48 / 33ms≈126 / 118ms≈347
+}
+// dagre 自適應用:RTT→rank 跨距、同 area 內聚。
+function dagreMinLen(edge){
+  const M=(R&&R.matrix)||{};
+  const a=edge.source().data('city'), b=edge.target().data('city');
+  const r=(a&&b) ? (M[a]?.[b] ?? M[b]?.[a]) : null;
+  return r==null ? 1 : Math.max(1, Math.min(6, Math.round(r/25)));  // 3ms→1 … 89ms→4 … 143ms→6
+}
+function dagreEdgeWeight(edge){
+  const sa=edge.source().data('area'), ta=edge.target().data('area');
+  return (sa!=null && sa===ta) ? 2 : 1;                            // 同 area 內聚(多 area 才有感)
+}
+// dagre 跑完後,同 rank(LR→近似同 x)內按 country→id 重排既有 y 槽位。確定性。
+function layoutDagreAdaptive(){
+  if(!HAS_DAGRE){ toast('需要 Dagre(CDN 被擋?)— 無法套用'); return; }
+  const opts={ name:'dagre', rankDir:'LR', ranker:'network-simplex', nodeSep:45, rankSep:110, edgeSep:12,
+    minLen:dagreMinLen, edgeWeight:dagreEdgeWeight, fit:true, padding:40, nodeDimensionsIncludeLabels:true, animate:false };
+  try{ cy.layout(opts).run(); }catch(e){ toast('Dagre 佈局失敗:'+e.message); return; }
+  const ns=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  const arr=ns.map(n=>({ id:n.id(), x:n.position('x'), y:n.position('y'), c:(n.data('country')||'~~') }));
+  arr.sort((p,q)=>p.x-q.x);
+  const buckets=[]; let cur=null;                                  // 依 x 間隙切 rank 桶
+  for(const it of arr){ if(!cur || it.x-cur.x>55){ cur={x:it.x, items:[]}; buckets.push(cur); } cur.items.push(it); cur.x=it.x; }
+  const pos={};
+  for(const b of buckets){
+    const slots=b.items.map(it=>it.y).sort((a,b)=>a-b);            // 保留該 rank 既有 y 槽位
+    const ordered=b.items.slice().sort((p,q)=> p.c<q.c?-1 : p.c>q.c?1 : (p.id<q.id?-1:1));
+    ordered.forEach((it,k)=>{ pos[it.id]={ x:it.x, y:slots[k] }; });
+  }
+  cy.layout({ name:'preset', positions:(node)=>pos[node.id()], fit:true, padding:40, animate:true, animationDuration:350 }).run();
+  const areas=new Set(ns.map(n=>n.data('area')).filter(a=>a!=null));
+  toast('Dagre 自適應:RTT 撐開 rank、country 排序'+(areas.size>1?(',跨 '+areas.size+' area'):'(目前單一 area)'));
+}
+// breadthfirst 自適應:root 用資料挑(ASBR > 最高 demand 列總和 > 最高 degree);子節點 depthSort 按 degree→id。
+function pickRoots(){
+  const ns=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  const asbr=ns.filter(n=>n.data('isASBR')===true);
+  if(asbr.length) return { sel:asbr, by:'ASBR' };
+  const prof=(D&&D.profiles&&(D.profiles[D.active]||D.profiles[Object.keys(D.profiles)[0]]))||null;
+  const mat=prof&&prof.matrix;
+  if(mat){
+    let best=null, bv=-1;
+    ns.forEach(n=>{ const row=mat[n.id()]; if(!row) return;
+      const s=Object.values(row).reduce((a,b)=>a+(+b||0),0); if(s>bv){ bv=s; best=n; } });
+    if(best) return { sel:best, by:'最高 demand' };
+  }
+  let best=null, bv=-1; ns.forEach(n=>{ const d=n.degree(); if(d>bv){ bv=d; best=n; } });
+  return { sel:best, by:'最高 degree' };
+}
+function layoutBreadthfirstAdaptive(){
+  const { sel, by }=pickRoots();
+  if(!sel || sel.length===0){ toast('找不到可用的 root'); return; }
+  const opts={ name:'breadthfirst', roots:sel, directed:false, spacingFactor:1.3, avoidOverlap:true,
+    depthSort:(a,b)=> (b.degree()-a.degree()) || (a.id()<b.id()?-1:1),   // 子節點:hub 先、id 次
+    fit:true, padding:40, nodeDimensionsIncludeLabels:true, animate:true, animationDuration:350 };
+  try{ cy.layout(opts).run(); }catch(e){ toast('Breadthfirst 佈局失敗:'+e.message); return; }
+  toast('Breadthfirst 自適應:root = '+sel.map(n=>n.id()).join(',')+'('+by+')');
+}
+// circle/grid 用:按 country→id 排序(同國相鄰)。
+function countrySort(a,b){
+  const ca=a.data('country')||'~~', cb=b.data('country')||'~~';
+  return ca<cb?-1 : ca>cb?1 : (a.id()<b.id()?-1:1);
+}
+// concentric 用:指標 = demand 吞吐(列總和);無 demand 則 betweenness centrality。高值置中。
+function concentricMetric(){
+  const prof=(D&&D.profiles&&(D.profiles[D.active]||D.profiles[Object.keys(D.profiles)[0]]))||null;
+  const mat=prof&&prof.matrix;
+  if(mat) return { fn:(n)=>{ const row=mat[n.id()]; return row?Object.values(row).reduce((a,b)=>a+(+b||0),0):0; }, by:'demand 吞吐' };
+  const bc=cy.elements().betweennessCentrality({ directed:false });
+  return { fn:(n)=>bc.betweenness(n), by:'betweenness centrality' };
+}
+function layoutConcentricAdaptive(){
+  const ns=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  if(!ns.length){ toast('沒有節點'); return; }
+  const { fn, by }=concentricMetric();
+  let mn=Infinity, mx=-Infinity; ns.forEach(n=>{ const v=fn(n); if(v<mn)mn=v; if(v>mx)mx=v; });
+  const lw=Math.max((mx-mn)/4, 1e-6);                                 // 約 4 圈
+  const opts={ name:'concentric', concentric:(n)=>fn(n), levelWidth:()=>lw, minNodeSpacing:40,
+    fit:true, padding:40, nodeDimensionsIncludeLabels:true, animate:true, animationDuration:350 };
+  try{ cy.layout(opts).run(); }catch(e){ toast('Concentric 佈局失敗:'+e.message); return; }
+  toast('Concentric 自適應:指標 = '+by+'(高值置中)');
+}
+function runLayout(name){
+  history.push();
+  if(name==='mds') return layoutMDS();           // 自訂:非 cytoscape plugin,用 rtt.matrix 跑 MDS
+  if(name==='cluster-rtt') return layoutClusterRTT();  // 自訂:RTT 分群 + 群間炸開(兩尺度)
+  if(name==='latency-map') return layoutLatencyMap();  // 自訂:raw-RTT MDS 真比例圖(忠實物理,無壓縮)
+  if(name==='geo-map') return layoutGeoMap();          // 自訂:Equal Earth 等積投影(λ0=140°E),city→country 兩級 fallback,北朝上
+  if(name==='dagre-rtt') return layoutDagreAdaptive();  // 自訂:dagre + RTT/area/country 後處理
+  if(name==='breadthfirst-adaptive') return layoutBreadthfirstAdaptive();  // 自訂:資料挑 root + depthSort
+  if(name==='concentric-adaptive') return layoutConcentricAdaptive();  // 自訂:demand/centrality 指標
+  // 共同:含標籤算尺寸(避免重疊)、動畫、邊距、置中
+  const base={ animate:true, animationDuration:350, padding:40, fit:true, nodeDimensionsIncludeLabels:true };
+  const cose={ name:'cose', ...base, nodeRepulsion:9000, idealEdgeLength:90, nodeOverlap:20, componentSpacing:80, gravity:0.3 };
+  const P={
+    dagre:        { name:'dagre', ...base, rankDir:'LR', nodeSep:45, rankSep:95, edgeSep:12 }, // 左→右階層
+    cose:         cose,                                                                        // 力導向,解纏繞
+    'cose-rtt':   { ...cose, idealEdgeLength:rttEdgeLen },                                      // 邊長=RTT,延遲力導向
+    breadthfirst: { name:'breadthfirst', ...base, spacingFactor:1.3, avoidOverlap:true },      // 層序樹狀
+    concentric:   { name:'concentric', ...base, minNodeSpacing:40, concentric:(n)=>n.degree(), levelWidth:()=>2 }, // 高 degree 置中(樞紐在內圈)
+    circle:       { name:'circle', ...base, spacingFactor:1.2, avoidOverlap:true },
+    'circle-country': { name:'circle', ...base, spacingFactor:1.2, avoidOverlap:true, sort:countrySort }, // 環上按 country
+    grid:         { name:'grid', ...base, avoidOverlap:true, spacingFactor:1.1 },
+    'grid-country':   { name:'grid', ...base, avoidOverlap:true, spacingFactor:1.1, sort:countrySort },   // 格子按 country
+  };
+  const opts = P[name] || { name, ...base };
+  try{
+    if(name==='dagre' && !HAS_DAGRE) throw new Error('dagre 未載入');
+    cy.layout(opts).run();
+  }catch(e){
+    if(name==='dagre'){ toast('Dagre 未載入(CDN 被擋?)— 改用 CoSE'); cy.layout(cose).run(); }
+    else toast('佈局失敗:'+e.message);
+  }
+}
+
+// ── RTT 自適應佈局(classical MDS over rtt.matrix)──────────────────────────
+// 城市對 RTT 經 d^RTT_POW 壓縮 → 雙中心化 + 冪迭代取前兩主軸 → 延遲地圖。
+//   RTT_POW=1=原始(跨洋最誇張、群內會擠靠去重疊撐);0.5=sqrt(跨洋仍明顯、不塌一維);越小越均勻(log 那端會壓掉洋的差異)。
+// 確定性(固定種子向量、無亂數),結果走 preset、可匯出進 positions 不會 churn。
+// 無 RTT 的節點(pseudonode / 城市不在矩陣)錨到相鄰節點形心。佈局為 UI 層,engine 不參與。
+function mdsTopEigs(B, n, iters){
+  const mul=(M,v)=>{ const w=new Array(n).fill(0);
+    for(let i=0;i<n;i++){ let s=0; for(let j=0;j<n;j++) s+=M[i][j]*v[j]; w[i]=s; } return w; };
+  const power=(M)=>{
+    const v=new Array(n); for(let i=0;i<n;i++) v[i]=Math.cos(i*0.97)+0.13*((i%3)-1); // 固定種子、非全一
+    for(let it=0; it<iters; it++){
+      let m=0; for(let i=0;i<n;i++) m+=v[i]; m/=n; for(let i=0;i<n;i++) v[i]-=m;      // ⟂ ones(B 已中心化)
+      const w=mul(M,v); let nr=0; for(let i=0;i<n;i++) nr+=w[i]*w[i]; nr=Math.sqrt(nr)||1;
+      for(let i=0;i<n;i++) v[i]=w[i]/nr;
+    }
+    const w=mul(M,v); let lam=0; for(let i=0;i<n;i++) lam+=v[i]*w[i];
+    return { v, lam };
+  };
+  const e1=power(B);
+  const B2=B.map((row,i)=>row.map((x,j)=>x - e1.lam*e1.v[i]*e1.v[j]));               // deflation
+  const e2=power(B2);
+  return [e1, e2];
+}
+function layoutMDS(){
+  const M=(R&&R.matrix)||{};
+  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  const geo=[], nogeo=[];
+  all.forEach(n=>{ const c=n.data('city'); (c && M[c]) ? geo.push(n) : nogeo.push(n); });
+  if(geo.length<3){ toast('RTT 城市不足(<3),無法自適應佈局'); return; }
+  const city=geo.map(n=>n.data('city')), n=geo.length;
+  const d=(i,j)=>{ const a=M[city[i]]||{}, b=M[city[j]]||{};
+    return (a[city[j]]!=null && b[city[i]]!=null) ? (a[city[j]]+b[city[i]])/2 : (a[city[j]] ?? b[city[i]]); };
+  let sum=0, cnt=0; for(let i=0;i<n;i++) for(let j=i+1;j<n;j++){ const v=d(i,j); if(v!=null){ sum+=v; cnt++; } }
+  const avg=cnt?sum/cnt:1;                                                            // 缺值補可用平均
+  const {rttPow:RTT_POW, canvasW:W0, canvasH:H0, originX:OX0, originY:OY0, maxIter:MDS_ITER, gap:MDS_GAP} = LAYOUT_PARAMS.mds;
+  const D2=[]; for(let i=0;i<n;i++){ D2[i]=[]; for(let j=0;j<n;j++){ const v=i===j?0:Math.pow(d(i,j) ?? avg, RTT_POW); D2[i][j]=v*v; } }
+  const rowm=D2.map(r=>r.reduce((a,b)=>a+b,0)/n), gm=rowm.reduce((a,b)=>a+b,0)/n;
+  const B=[]; for(let i=0;i<n;i++){ B[i]=[]; for(let j=0;j<n;j++) B[i][j]=-0.5*(D2[i][j]-rowm[i]-rowm[j]+gm); }
+  const [e1,e2]=mdsTopEigs(B,n,250);
+  const s1=Math.sqrt(Math.max(e1.lam,0)), s2=Math.sqrt(Math.max(e2.lam,0));
+  const X=geo.map((_,i)=>e1.v[i]*s1), Y=geo.map((_,i)=>e2.v[i]*s2);
+  const span=a=>{ const mn=Math.min(...a); return [mn,(Math.max(...a)-mn)||1]; };
+  const [xm,xs]=span(X), [ym,ys]=span(Y), W=W0, H=H0, OX=OX0, OY=OY0;
+  const sc=Math.min(W/xs, H/ys);                         // 等比縮放(保真;log1p 後已夠 2D,不再用獨立拉伸)
+  const cx=OX+(W-xs*sc)/2, cy0=OY+(H-ys*sc)/2;          // 置中
+  const pos={};
+  geo.forEach((nd,i)=>{ pos[nd.id()]={ x:cx+(X[i]-xm)*sc, y:cy0+(Y[i]-ym)*sc }; });
+  for(let pass=0; pass<2; pass++) nogeo.forEach(nd=>{                                 // 兩輪:處理 PN→PN 鏈
+    const nb=nd.neighborhood().nodes().filter(x=>pos[x.id()]);
+    if(nb.length){ let sx=0, sy=0; nb.forEach(x=>{ sx+=pos[x.id()].x; sy+=pos[x.id()].y; });
+      pos[nd.id()]={ x:sx/nb.length+30, y:sy/nb.length+30 }; }
+  });
+  all.forEach(nd=>{ if(!pos[nd.id()]) pos[nd.id()]={...nd.position()}; });             // 孤立節點保留原位
+  // 去重疊:真實很近的對(如 TYO-OSA 4ms)MDS 後會疊 → 依各 node 實際半徑把過近的對推開。確定性(固定順序)。
+  // 半徑取 boundingBox(含標籤):router 圈 50→r25;pseudonode 菱形 36 + 下方標籤→較大。圓心距 ≥ r_i+r_j+間隙。
+  const ids=Object.keys(pos), GAP=MDS_GAP;
+  const rad={}; ids.forEach(id=>{ const nd=cy.getElementById(id);
+    const bb=(nd&&nd.length)?nd.boundingBox({includeLabels:true}):null; rad[id]=bb?Math.max(bb.w,bb.h)/2:25; });
+  for(let pass=0; pass<MDS_ITER; pass++){
+    let moved=false;
+    for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++){
+      const a=pos[ids[i]], b=pos[ids[j]]; const dx=b.x-a.x, dy=b.y-a.y, dd=Math.hypot(dx,dy)||0.01;
+      const min=rad[ids[i]]+rad[ids[j]]+GAP;
+      if(dd<min){ const k=(min-dd)/2/dd; a.x-=dx*k; a.y-=dy*k; b.x+=dx*k; b.y+=dy*k; moved=true; }
+    }
+    if(!moved) break;
+  }
+  cy.layout({ name:'preset', positions:(node)=>pos[node.id()], fit:true, padding:40, animate:true, animationDuration:350 }).run();
+  toast('RTT 自適應:'+n+' 城市以延遲定位'+(nogeo.length?(',+'+nogeo.length+' 個無 RTT 節點錨鄰居'):''));
+}
+$('btnLayout').onclick=()=>runLayout($('layoutSel').value);
+$('layoutSel').onchange=()=>runLayout($('layoutSel').value);
+$('btnValidate').onclick=validate;
+
+document.addEventListener('keydown',(e)=>{
+  if(e.target.matches('input,textarea,select')) return;
+  const k=e.key.toLowerCase();
+  if(e.key==='Delete'||e.key==='Backspace'){ const s=cy.$(':selected'); if(s.nonempty()){ e.preventDefault(); history.push(); removeRaw(s); select(null); } }
+  else if(k==='e'){ setConnect(!connectMode); }
+  else if((e.ctrlKey||e.metaKey)&&k==='z'){ e.preventDefault(); e.shiftKey?history.redo():history.undo(); }
+  else if((e.ctrlKey||e.metaKey)&&k==='y'){ e.preventDefault(); history.redo(); }
+  else if(e.key==='Escape'&&connectMode){ setConnect(false); }
+});
+
+// 全頁 undo — 值編輯走 focus/commit:focusin 先拍編輯前快照,change(失焦/Enter)有變更才提交一步。
+let _pendingSnap=null;
+const _isDataField=(el)=>{
+  if(!el || !/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return false;
+  if(!el.closest('.inspector, #panel-demand, #panel-srlg, #panel-rtt')) return false;
+  if(el.dataset.k==='id' && el.closest('.inspector')) return false;  // 節點改名自走 renameEle 的 push
+  return true;
+};
+document.addEventListener('focusin', (e)=>{ if(_isDataField(e.target)) _pendingSnap=history.snap(); });
+document.addEventListener('change', (e)=>{ if(_isDataField(e.target) && _pendingSnap){ history.commit(_pendingSnap); _pendingSnap=null; } });
+
+// 拖曳移動節點也可 undo:grab 抓起拍快照、free 放下若有位移才提交一步(連線模式 autoungrabify 不觸發)
+let _dragSnap=null, _grabPos=null;
+cy.on('grab','node',(e)=>{ _dragSnap=history.snap(); _grabPos={...e.target.position()}; });
+cy.on('free','node',(e)=>{
+  if(_dragSnap && _grabPos){ const q=e.target.position();
+    if(Math.abs(q.x-_grabPos.x)>0.5 || Math.abs(q.y-_grabPos.y)>0.5) history.commit(_dragSnap); }
+  _dragSnap=null; _grabPos=null;
+});
+
+// ── 驗證(連通性 + degree<2)──────────────────────────────────────────────
+// ── CIDR 驗證 ───────────────────────────────────────────────────────────
+// ── City / Country 聯動欄位 ─────────────────────────────────────────────────
+// City 在左:datalist 建議(GEO_CITY 的所有城市碼);選完後查 CITY_COUNTRY 自動帶入 Country。
+// Country 在右:仍可手動覆蓋(新城市 / 特殊情況)。
+function cityCityRow(city, country){
+  const cityOpts=Object.keys(GEO_CITY).sort().map(c=>`<option value="${esc(c)}">`).join('');
+  return `<datalist id="dl_city_codes">${cityOpts}</datalist>
+    <div class="row2">
+      <div class="field"><label>City</label>
+        <input data-k="city" list="dl_city_codes" value="${esc(city||'')}" placeholder="如 TPE">
+      </div>
+      <div class="field"><label>Country <span style="font-size:10px;color:var(--muted)">(ISO 兩碼)</span></label>
+        <input data-k="country" id="inspCountry" value="${esc(country||'')}" placeholder="如 TW" pattern="[A-Za-z]{2}" title="ISO 兩碼,如 TW">
+      </div>
+    </div>`;
+}
+function bindCityCountry(container){
+  const cityInp=container.querySelector('[data-k="city"]');
+  const ctryInp=container.querySelector('#inspCountry');
+  if(!cityInp||!ctryInp) return;
+  cityInp.addEventListener('input', ()=>{
+    const c=cityInp.value.trim();
+    const auto=CITY_COUNTRY[c];
+    if(auto){ ctryInp.value=auto; if(curSel) curSel.data('country', auto); }
+  });
+}
+
+// ── Stubs chip UI — 每個 CIDR 一個 chip,加入時驗格式,不合法擋下。
+// stubsChipField(stubs) → HTML 字串(注入 inspector)
+// bindStubsChip(container) → 綁定事件(在 inspector 重建後呼叫)
+function stubsChipField(stubs){
+  const chips=stubs.map(c=>`<span class="chip">${esc(c)}<span class="chip-x" data-rm="${esc(c)}">×</span></span>`).join('');
+  return `<div class="field"><label>Stubs (CIDR)</label>
+    <div class="affects-cell" id="stubsCell">${chips}<input class="chip-add" id="stubsAdd" placeholder="＋ 加入 CIDR"></div>
+    <div class="cidr-err" id="stubsErr"></div></div>`;
+}
+function bindStubsChip(container){
+  const cell=container.querySelector('#stubsCell'); if(!cell||!curSel) return;
+  const inp=container.querySelector('#stubsAdd');
+  const err=container.querySelector('#stubsErr');
+  const save=()=>{ curSel.data('stubs',[...cell.querySelectorAll('.chip')].map(c=>c.firstChild.textContent.trim())); };
+  const add=()=>{ const v=(inp.value||'').trim(); if(!v) return;
+    if(!isCIDR(v)){ err.textContent='格式不對,請輸入合法 CIDR(如 10.0.0.0/8)'; inp.classList.add('invalid'); return; }
+    // 去重
+    const exists=[...cell.querySelectorAll('.chip')].some(c=>c.firstChild.textContent.trim()===v);
+    if(exists){ inp.value=''; return; }
+    const chip=document.createElement('span'); chip.className='chip';
+    chip.innerHTML=`${esc(v)}<span class="chip-x" data-rm="${esc(v)}">×</span>`;
+    cell.insertBefore(chip, inp); inp.value=''; err.textContent=''; inp.classList.remove('invalid');
+    chip.querySelector('.chip-x').addEventListener('click', ()=>{ history.push(); chip.remove(); save(); });
+    history.push(); save(); };
+  cell.querySelectorAll('.chip-x').forEach(x=>x.addEventListener('click', ()=>{ history.push(); x.closest('.chip').remove(); save(); }));
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); add(); } });
+  inp.addEventListener('change', add);
+  inp.addEventListener('input', ()=>{ err.textContent=''; inp.classList.remove('invalid'); });
+}
+
+function isCIDR(s){
+  const m=/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/.exec((s||'').trim());
+  if(!m) return false;
+  for(let i=1;i<=4;i++){ if(+m[i]>255) return false; }
+  return +m[5]<=32;
+}
+function markCIDR(inp){ const v=(inp.value||'').trim(); inp.classList.toggle('invalid', v!=='' && !isCIDR(v)); }
+// markStubs 已由 stubsChipField/bindStubsChip 取代,移除
+function validate(){
+  const routers=cy.nodes('[type="router"]');
+  if(routers.length===0){ setStatus('warn','無節點'); return; }
+  const badCidr=[], badNodes=new Set();
+  routers.forEach(n=>(n.data('stubs')||[]).forEach(c=>{ if(!isCIDR(c)){ badCidr.push(n.id()+':'+c); badNodes.add(n.id()); } }));
+  cy.nodes('[type="pseudonode"]').forEach(n=>{ const sn=n.data('subnet'); if(sn&&!isCIDR(sn)){ badCidr.push(n.id()+':'+sn); badNodes.add(n.id()); } });
+  externals.forEach(x=>{ if(x.subnet&&!isCIDR(x.subnet)) badCidr.push('ext:'+x.subnet); });
+  const allIds=new Set([...cy.nodes().map(n=>n.id()), ...cy.edges().filter(e=>e.id()!=='__ghostE__').map(e=>e.id())]);
+  const badSrlg=[];
+  S.forEach(g=>(g.affects||[]).forEach(a=>{ if(!allIds.has(a)) badSrlg.push((g.id||'?')+'→'+a); }));
+  // 連通性與 degree 重用 engine.js(取代原手寫 adj+BFS+PN mesh)
+  const eadj=buildAdjacency(cy.edges().filter(e=>e.id()!=='__ghostE__').map(e=>e.data()));
+  const ids=routers.map(n=>n.id());
+  const comps=connectedComponents(eadj, ids);
+  const main=new Set(comps.find(c=>c.includes(ids[0])) || comps[0] || []);
+  const iso=ids.filter(i=>!main.has(i));
+  const deg1=ids.filter(i=> new Set((eadj[i]||[]).map(x=>x[0])).size < 2);
+  if(badCidr.length) flash([...badNodes],'#dc2626');
+  const di=[];
+  if(badCidr.length) di.push('無效 CIDR ×'+badCidr.length+'('+badCidr.slice(0,3).join(' ')+(badCidr.length>3?'…':'')+')');
+  if(badSrlg.length) di.push('SRLG 參照不存在 ×'+badSrlg.length+'('+badSrlg.slice(0,3).join(' ')+(badSrlg.length>3?'…':'')+')');
+  if(iso.length){ setStatus('bad','不連通,孤立:'+iso.join(',')+(di.length?'  ·  '+di.join(' · '):'')); flash(iso,'#ef4444'); }
+  else if(di.length){ setStatus('bad','資料檢查:'+di.join(' · ')); }
+  else if(deg1.length){ setStatus('warn','degree<2(無備援):'+deg1.join(',')); flash(deg1,'#f59e0b'); }
+  else setStatus('ok','✔ 連通、degree≥2、資料合法');
+}
+function flash(ids,color){
+  ids.forEach(id=>{ const n=cy.getElementById(id);
+    n.animate({style:{'border-color':color,'border-width':6}},{duration:300})
+     .animate({style:{'border-color':'#111827','border-width':2}},{duration:600,delay:600}); });
+}
+
+// ── 狀態列 ──────────────────────────────────────────────────────────────
+function refresh(){
+  const routers=cy.nodes('[type="router"]'), pns=cy.nodes('[type="pseudonode"]');
+  $('stRouters').textContent=routers.length;
+  $('stEdges').textContent=cy.edges().filter(e=>e.id()!=='__ghostE__').length;
+  $('stPseudo').textContent=pns.length;
+  $('stCountries').textContent=new Set(routers.map(n=>n.data('country'))).size;
+}
+let stTimer=null;
+function setStatus(kind,msg){
+  $('connDot').className='dot '+(kind==='ok'?'ok':kind==='warn'?'warn':'bad');
+  const m=$('stMsg'); m.textContent=msg; m.style.color=kind==='bad'?'#991b1b':kind==='warn'?'#854d0e':'#166534';
+  clearTimeout(stTimer); if(msg) stTimer=setTimeout(()=>{ m.textContent=''; },6000);
+}
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+
+// ── 匯入 / 匯出 ─────────────────────────────────────────────────────────
+const modal=$('modal');
+let importMode='topology';   // 'topology' = 貼 topology.js ; 'ospf' = 貼 Cisco OSPF LSDB
+function openImport(mode){
+  importMode=mode;
+  const isOspf = mode==='ospf';
+  $('modalTitle').textContent = isOspf ? '匯入 OSPF LSDB' : '匯入 topology.js';
+  $('modalText').placeholder = isOspf
+    ? '貼上 show ip ospf database router / network 的輸出…'
+    : '貼上 topology.js 內容,或上方選檔…';
+  $('ospfHint').style.display   = isOspf ? 'block' : 'none';
+  $('ridMapWrap').style.display = isOspf ? 'block' : 'none';
+  modal.classList.add('open'); $('modalText').value=''; $('fileInput').value=''; $('modalText').focus();
+}
+$('btnImport').onclick=()=>openImport('topology');
+$('btnImportOspf').onclick=()=>openImport('ospf');
+
+// ── OSPF 假資料範例 ────────────────────────────────────────────────────────
+const OSPF_EXAMPLE_LSDB = `OSPF Router with ID (10.2.1.1) (Process ID 1)
+
+                Router Link States (Area 0)
+
+  LS age: 487
+  Options: (No TOS-capability, DC)
+  LS Type: Router Links
+  Link State ID: 10.2.1.1
+  Advertising Router: 10.2.1.1
+  LS Seq Number: 80000007
+  Checksum: 0x3C8A
+  Length: 72
+  AS Boundary Router
+  Number of Links: 3
+
+    Link connected to: another Router (point-to-point)
+     (Link ID) Neighboring Router ID: 10.2.1.2
+     (Link Data) Router Interface address: 10.20.1.1
+      Number of TOS metrics: 0
+       TOS 0 Metrics: 89
+
+    Link connected to: a Transit Network
+     (Link ID) Designated Router address: 10.20.2.1
+     (Link Data) Router Interface address: 10.20.2.2
+      Number of TOS metrics: 0
+       TOS 0 Metrics: 10
+
+    Link connected to: a Stub Network
+     (Link ID) Network/subnet number: 10.2.1.1
+     (Link Data) Network Mask: 255.255.255.255
+      Number of TOS metrics: 0
+       TOS 0 Metrics: 1
+
+  LS age: 203
+  Options: (No TOS-capability, DC)
+  LS Type: Router Links
+  Link State ID: 10.2.1.2
+  Advertising Router: 10.2.1.2
+  LS Seq Number: 80000004
+  Checksum: 0x7E21
+  Length: 60
+  AS Boundary Router
+  Number of Links: 2
+
+    Link connected to: another Router (point-to-point)
+     (Link ID) Neighboring Router ID: 10.2.1.1
+     (Link Data) Router Interface address: 10.20.1.2
+      Number of TOS metrics: 0
+       TOS 0 Metrics: 89
+
+    Link connected to: a Stub Network
+     (Link ID) Network/subnet number: 10.2.1.2
+     (Link Data) Network Mask: 255.255.255.255
+      Number of TOS metrics: 0
+       TOS 0 Metrics: 1
+
+  LS age: 156
+  Options: (No TOS-capability, DC)
+  LS Type: Router Links
+  Link State ID: 10.2.1.3
+  Advertising Router: 10.2.1.3
+  LS Seq Number: 80000003
+  Checksum: 0x9D45
+  Length: 48
+  Number of Links: 1
+
+    Link connected to: a Transit Network
+     (Link ID) Designated Router address: 10.20.2.1
+     (Link Data) Router Interface address: 10.20.2.3
+      Number of TOS metrics: 0
+       TOS 0 Metrics: 10
+
+                Net Link States (Area 0)
+
+  LS age: 312
+  Options: (No TOS-capability, DC)
+  LS Type: Network Links
+  Link State ID: 10.20.2.1
+  Advertising Router: 10.2.1.1
+  LS Seq Number: 80000002
+  Checksum: 0xB2F3
+  Length: 32
+  Network Mask: /30
+     Attached Router: 10.2.1.1
+     Attached Router: 10.2.1.3`;
+
+const OSPF_EXAMPLE_RIDMAP = `JP_7507_001,10.2.1.1
+LA_GSR12008_001,10.2.1.2
+JP_7206VXR_001,10.2.1.3`;
+
+$('btnOspfExample').onclick=()=>{
+  $('modalText').value = OSPF_EXAMPLE_LSDB;
+  $('ridMapText').value = OSPF_EXAMPLE_RIDMAP;
+};
+$('modalCancel').onclick=()=>modal.classList.remove('open');
+$('fileInput').addEventListener('change',(e)=>{ const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader(); r.onload=()=>$('modalText').value=r.result; r.readAsText(f); });
+$('modalOk').onclick=()=>{ try{ history.push();
+    const text=$('modalText').value;
+    // 內容自動偵測:看起來是 OSPF LSDB 就走 OSPF parser,不管按了哪顆匯入鈕(避免貼錯路徑 eval 成 JS)。
+    const looksOspf=/LS age:|LS Type:|OSPF Router with ID|Link connected to:|Advertising Router:/.test(text);
+    if(importMode==='ospf' || looksOspf) loadFromOspf(text, $('ridMapText').value);
+    else loadTopologyText(text);
+    modal.classList.remove('open'); }
+  catch(err){ toast('解析失敗:'+err.message); } };
+$('btnLoadLocal').onclick=()=>{
+  fetch('topology.js').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); })
+    .then(txt=>{ history.push(); loadTopologyText(txt); toast('已載入同目錄 topology.js'); })
+    .catch(e=>toast('載入失敗('+e.message+')— 改用「匯入」貼上'));
+};
+function loadTopologyText(src){
+  let topo;
+  try { topo=Function('"use strict";'+src+';return topology;')(); }
+  catch(e){ return loadFromOspf(src, $('ridMapText').value); }   // 不是有效 JS → 自動改試 OSPF parser(真的不是 OSPF 時由它回報明確原因)
+  if(!topo || !Array.isArray(topo.nodes)) throw new Error('找不到 topology.nodes');
+  cy.elements().remove(); externals=[];
+  const pos=topo.positions||{}, eles=[];
+  for(const n of topo.nodes){
+    const data = n.type==='pseudonode' ? pnData(n.id,n) : routerData(n.id,n);
+    eles.push({ group:'nodes', data, classes:data.type, position: pos[n.id]?{...pos[n.id]}:undefined });
+  }
+  for(const e of topo.edges||[]) eles.push({ group:'edges', data:edgeData(e.id,e.source,e.target,e) });
+  cy.add(eles);
+  externals=(topo.externals||[]).map(x=>({ advertising_router:x.advertising_router, subnet:x.subnet,
+    metric:x.metric??1, metric_type:x.metric_type??'E2' }));
+  // 套用檔內座標:preset = 純放置(非力導向,不跑版)。回報帶到座標的節點數,方便確認 positions 是否進 cy。
+  const posCount = topo.nodes.filter(n=>pos[n.id]).length;
+  if(posCount) cy.layout({ name:'preset', positions:(n)=>pos[n.id()], fit:true, padding:40, animate:false }).run();
+  else cy.fit(40);
+  select(null); refresh();
+  setStatus('ok', `已載入 ${cy.nodes().length} 節點(${posCount} 帶座標)`);
+}
+
+// OSPF 匯入解析見共用模組 ./ospf-import.js(parseOspfLsdb);loadFromOspf 只負責把結果建進 cy。
+function loadFromOspf(text, ridMapText){
+  const { nodes, edges, pnNodes, stats } = parseOspfLsdb(text, ridMapText);
+  cy.elements().remove(); externals=[];
+  // OSPF 不帶座標 → 給確定性格狀起點(純座標,匯入不跑布局演算法,避免跑版);要好看再用上方布局選單。
+  const allN=[...nodes, ...pnNodes];
+  const cols=Math.max(1,Math.ceil(Math.sqrt(allN.length))), GX=150, GY=120, gpos={};
+  allN.forEach((n,i)=>{ gpos[n.id]={ x:120+(i%cols)*GX, y:100+Math.floor(i/cols)*GY }; });
+  const eles=[];
+  for(const n of nodes)   eles.push({ group:'nodes', data:routerData(n.id,n), classes:'router', position:gpos[n.id] });
+  for(const p of pnNodes) eles.push({ group:'nodes', data:pnData(p.id,p), classes:'pseudonode', position:gpos[p.id] });
+  for(const e of edges)   eles.push({ group:'edges', data:edgeData(e.id,e.source,e.target,e) });
+  cy.add(eles);
+  cy.fit(40); select(null); refresh();
+  // 對應落差 → 警告橫幅明確列出(哪些 RID 沒 hostname、哪些表項沒對到 LSDB)。
+  const w=$('warnBanner'), U=stats.unmappedRids||[], X=stats.unusedMapEntries||[];
+  if(U.length || X.length){
+    const cap=(arr,n)=>arr.slice(0,n).join('、')+(arr.length>n?` …(共 ${arr.length})`:'');
+    const parts=[];
+    if(U.length) parts.push(`${U.length} 個 RID 無對應 hostname(用 RID 當 id、無城市):${cap(U,6)}`);
+    if(X.length) parts.push(`${X.length} 筆對應表未用到(RID 不在此 LSDB):${cap(X.map(e=>`${e.hostname}=${e.rid}`),6)}`);
+    w.textContent='⚠ OSPF 匯入對應落差 — '+parts.join('  |  ');
+    w.classList.add('show');
+  } else { w.classList.remove('show'); }
+  setStatus('ok', `匯入 OSPF:${stats.routers} router / ${stats.edges} 邊`);
+  toast(`OSPF Area 0 匯入:${stats.routers} router、${stats.edges} 邊（${stats.collapsed} 由 /30 收斂、${stats.trueP2P} 真 p2p`
+    +`${stats.multiAccess?`、${stats.multiAccess} 多重存取保留 pseudonode`:''}）、${stats.asbr} ASBR;`
+    +`${stats.cityMapped}/${stats.routers} 套到 hostname/城市${(U.length||X.length)?`(${U.length} RID 未對應、${X.length} 表項未用,詳見上方橫幅)`:''}。已置於格狀起點。`);
+}
+// 序列化 — 與 gen.mjs jsObj/jsVal 對齊(字串 JSON-escape、數字不引號、{ k: v } 間距)
+const jval=v=>JSON.stringify(v);
+const jobj=pairs=>'{ '+pairs.map(([k,v])=>k+': '+jval(v)).join(', ')+' }';
+function nodeRecord(n){
+  const d=n.data();
+  if(d.type==='pseudonode') return jobj([['id',d.id],['label',d.id+'\n'+(d.subnet||'')],['type','pseudonode'],['subnet',d.subnet]]);
+  return jobj([['id',d.id],['label',d.label||(d.country?d.id+'\n'+d.country:d.id)],['country',d.country],['city',d.city],
+    ['type','router'],['area',d.area||'0'],['stubs',d.stubs||[]],['isASBR',!!d.isASBR],['isABR',!!d.isABR]]);
+}
+function edgeRecord(e){
+  const d=e.data(), p=[['id',d.id],['source',d.source],['target',d.target],['cost',+d.cost]];
+  if(d.type!=='transit' && d.costRev!=null && d.costRev!==d.cost) p.push(['costRev',+d.costRev]);
+  p.push(['capacity',+d.capacity]); p.push(['type',d.type]);
+  return jobj(p);
+}
+function exportText(){
+  const nodes=cy.nodes().filter(n=>n.id()!=='__ghost__').map(nodeRecord);
+  const edges=cy.edges().filter(e=>e.id()!=='__ghostE__').map(edgeRecord);
+  const exts=externals.map(x=>jobj([['advertising_router',x.advertising_router],['subnet',x.subnet],['metric',+x.metric||1],['metric_type',x.metric_type||'E2']]));
+  const pos=cy.nodes().filter(n=>n.id()!=='__ghost__').map(n=>{ const p=n.position(); return '    '+jval(n.id())+': '+jobj([['x',Math.round(p.x)],['y',Math.round(p.y)]]); }).join(',\n');
+  return `// Generated by edit.html — BlastRadius topology editor.
+const topology = {
+  nodes: [
+${nodes.map(s=>'    '+s).join(',\n')}
+  ],
+  edges: [
+${edges.map(s=>'    '+s).join(',\n')}
+  ],
+  externals: [
+${exts.map(s=>'    '+s).join(',\n')}
+  ],
+  positions: {
+${pos}
+  },
+};
+`;
+}
+$('btnExport').onclick=()=>{
+  const txt=exportText(), blob=new Blob([txt],{type:'text/javascript'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='topology.js';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('已匯出 topology.js（'+cy.nodes().filter(n=>n.id()!=='__ghost__').length+' 節點 / '+cy.edges().filter(e=>e.id()!=='__ghostE__').length+' 邊）');
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// 多檔資料模型(demand / srlg / rtt)+ 分頁編輯器 + 序列化器
+// ════════════════════════════════════════════════════════════════════════
+let D = { unit:'Gbps', source:'synthetic', timestamp:'', active:'', profiles:{} };
+let S = [];
+let R = { unit:'ms', note:'', fiberRttPerKm:0.01014, timestamp:'', matrix:{}, cityRef:[], edges:[] };  // cityRef 唯讀保留(匯入時存在但不提供 UI 編輯)
+let TAB = 'topo', dmSel = null;
+const parseGlobal = (src,name)=>Function('"use strict";'+src+';return '+name+';')();
+const dl = (name,text)=>{ const b=new Blob([text],{type:'text/javascript'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); a.remove(); };
+
+// ── 工具列可見群組對應(SSOT)— 每個 tab 顯示哪些 data-g 群組;改這裡即生效
+// ── 分頁切換 ─────────────────────────────────────────────────────────────
+function switchTab(t){
+  TAB=t;
+  document.querySelectorAll('.tab').forEach(el=>el.classList.toggle('active', el.dataset.tab===t));
+  document.querySelectorAll('.panel').forEach(el=>el.classList.toggle('active', el.id==='panel-'+t));
+  // 動態顯示/隱藏工具列群組
+  const visible = TAB_BTNS[t] || TAB_BTNS.topo;
+  document.querySelectorAll('header [data-g]').forEach(el=>{
+    el.style.display = visible.has(el.dataset.g) ? '' : 'none';
+  });
+  // 更新 cur 群組按鈕的 title(讓使用者知道目前操作哪個檔)
+  const fname = (FILEMAP[t]||FILEMAP.topo)[0];
+  const bl=$('btnLoadLocal'); if(bl) bl.title=`從同目錄 fetch ${fname} 載入`;
+  const be=$('btnExport');    if(be) be.title=`將目前資料下載為 ${fname}`;
+  if(t==='topo'){ cy.resize(); }
+  else if(t==='demand') renderDemand();
+  else if(t==='srlg') renderSrlg();
+  else if(t==='rtt') renderRtt();
+}
+document.querySelectorAll('.tab').forEach(el=>el.addEventListener('click', ()=>switchTab(el.dataset.tab)));
+
+// ── Demand 編輯器 ────────────────────────────────────────────────────────
+function renderDemand(){
+  if(!D.profiles) D.profiles={};
+  const keys=Object.keys(D.profiles);
+  if(!dmSel || !D.profiles[dmSel]) dmSel = (D.active && D.profiles[D.active]) ? D.active : keys[0];
+  const sel=$('dmActive');
+  sel.innerHTML=keys.map(k=>`<option ${k===D.active?'selected':''}>${esc(k)}</option>`).join('');
+  sel.onchange=()=>{ D.active=sel.value; renderDemand(); };
+  $('dmChips').innerHTML=keys.map(k=>`<span class="pchip ${k===dmSel?'active':''} ${k===D.active?'live':''}" data-p="${esc(k)}">${esc(k)} · ${esc(D.profiles[k].label||'')}</span>`).join('') || '<span class="hint">無 profile</span>';
+  $('dmChips').querySelectorAll('[data-p]').forEach(c=>c.onclick=()=>{ dmSel=c.dataset.p; renderDemand(); });
+  const p=D.profiles[dmSel];
+  if(!p){ $('dmMeta').innerHTML=''; $('dmMatrix').innerHTML=''; return; }
+  $('dmMeta').innerHTML=`<label>label <input id="dmLabel" value="${esc(p.label||'')}"></label>
+    <label><input type="checkbox" id="dmSym" ${p.symmetric?'checked':''}> symmetric</label>
+    <label>default <input class="num" id="dmDflt" type="number" step="any" value="${esc(p.default??1)}" style="width:70px"></label>`;
+  $('dmLabel').oninput=e=>p.label=e.target.value;
+  $('dmSym').onchange=e=>p.symmetric=e.target.checked;
+  $('dmDflt').oninput=e=>{ const v=parseFloat(e.target.value); if(!isNaN(v))p.default=v; };
+  const ids=new Set();
+  for(const a of Object.keys(p.matrix||{})){ ids.add(a); for(const b of Object.keys(p.matrix[a])) ids.add(b); }
+  const ax=[...ids].sort();
+  let h='<tr><th></th>'+ax.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr>';
+  for(const r of ax){ h+=`<tr><td class="rowh">${esc(r)}</td>`+ax.map(c=>{
+    if(r===c) return '<td style="background:#eef1f4"></td>';
+    const v=(p.matrix[r]&&p.matrix[r][c]!=null)?p.matrix[r][c]:'';
+    return `<td><input type="number" min="0" step="any" class="num" data-r="${esc(r)}" data-c="${esc(c)}" value="${v}"></td>`;
+  }).join('')+'</tr>'; }
+  const tb=$('dmMatrix'); tb.innerHTML=h;
+  tb.querySelectorAll('input[data-r]').forEach(inp=>inp.oninput=()=>{
+    const r=inp.dataset.r,c=inp.dataset.c,raw=inp.value.trim();
+    if(!p.matrix[r])p.matrix[r]={};
+    if(raw===''){ delete p.matrix[r][c]; } else { const v=parseFloat(raw); if(!isNaN(v))p.matrix[r][c]=v; }   // parseFloat:demand 為浮點 Gbps,勿截斷
+  });
+}
+$('dmAddProfile').onclick=()=>{ history.push();
+  let n=1; while(D.profiles['profile'+n]) n++;
+  const base=D.profiles[dmSel];
+  D.profiles['profile'+n]= base ? JSON.parse(JSON.stringify(base)) : { label:'profile'+n, symmetric:true, default:1, matrix:{} };
+  D.profiles['profile'+n].label='profile'+n;
+  dmSel='profile'+n; renderDemand();
+};
+
+// ── SRLG 編輯器 ──────────────────────────────────────────────────────────
+function renderSrlg(){
+  const tb=$('srlgTable');
+  // 封閉集合:affects 一定是拓樸 node/edge id。用 chip + datalist 加入框(只接受清單內 id → 驗證免費)。
+  const validIds=new Set([...cy.nodes().filter(n=>n.id()!=='__ghost__').map(n=>n.id()),
+    ...cy.edges().filter(e=>e.id()!=='__ghostE__').map(e=>e.id())]);
+  const idOpts=[...validIds].sort();
+  const markId=(inp,i)=>{ const v=inp.value.trim(), dup=S.some((g,j)=>j!==i&&(g.id||'')===v);
+    inp.classList.toggle('invalid', v===''||dup); inp.title=v===''?'id 不可空':(dup?'id 重複':''); };
+  const affectsCell=(g)=>{
+    const chips=(g.affects||[]).map(a=>{ const bad=!validIds.has(a);
+      return `<span class="chip${bad?' bad':''}"${bad?' title="未知 id（不在拓樸）"':''}>${esc(a)}<span class="chip-x" data-rm="${esc(a)}">×</span></span>`;
+    }).join('');
+    return `<td><div class="affects-cell">${chips}<input class="chip-add" list="dl_srlg_ids" placeholder="＋ 加入"></div></td>`;
+  };
+  let h=`<tr><th>id</th><th>label</th><th>type</th><th>affects<datalist id="dl_srlg_ids">${idOpts.map(o=>`<option value="${esc(o)}">`).join('')}</datalist></th><th></th></tr>`;
+  S.forEach((g,i)=>{ h+=`<tr data-i="${i}">
+    <td><input data-k="id" value="${esc(g.id||'')}"></td>
+    <td><input data-k="label" value="${esc(g.label||'')}"></td>
+    <td><select data-k="type">${['submarine','conduit','site','upstream'].map(t=>`<option ${t===g.type?'selected':''}>${t}</option>`).join('')}</select></td>
+    ${affectsCell(g)}
+    <td class="x" data-del="${i}">✕</td></tr>`; });
+  tb.innerHTML=h;
+  // id / label / type:沿用 data-k 即時寫回(affects 改走 chip,不在此列)
+  tb.querySelectorAll('input[data-k],select[data-k]').forEach(inp=>{ const ev=inp.tagName==='SELECT'?'onchange':'oninput';
+    inp[ev]=()=>{ const i=+inp.closest('tr').dataset.i,k=inp.dataset.k;
+      S[i][k]=inp.value; if(k==='id') tb.querySelectorAll('input[data-k="id"]').forEach(o=>markId(o,+o.closest('tr').dataset.i)); }; });
+  // chip 移除
+  tb.querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{ const i=+x.closest('tr').dataset.i;
+    history.push(); S[i].affects=(S[i].affects||[]).filter(a=>a!==x.dataset.rm); renderSrlg(); });
+  // chip 加入:Enter 或從 datalist 選取(change);只收拓樸內 id,否則紅字提示
+  tb.querySelectorAll('.chip-add').forEach(inp=>{
+    const add=()=>{ const i=+inp.closest('tr').dataset.i, v=inp.value.trim(); if(!v) return;
+      if(!validIds.has(v)){ inp.classList.add('invalid'); inp.title='未知 id（不在拓樸）'; return; }
+      history.push(); S[i].affects=[...new Set([...(S[i].affects||[]), v])]; renderSrlg();
+      const re=tb.querySelectorAll('.chip-add')[i]; if(re) re.focus(); };   // 加完 re-focus 同列加入框
+    inp.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); add(); } });
+    inp.addEventListener('change', add);
+    inp.addEventListener('input', ()=>{ inp.classList.remove('invalid'); inp.removeAttribute('title'); });
+  });
+  // id 初始標記(空 / 重複)
+  tb.querySelectorAll('input[data-k="id"]').forEach(inp=>markId(inp,+inp.closest('tr').dataset.i));
+  tb.querySelectorAll('[data-del]').forEach(x=>x.onclick=()=>{ history.push(); S.splice(+x.dataset.del,1); renderSrlg(); });
+}
+$('srlgAdd').onclick=()=>{ history.push(); let n=1; const ids=new Set(S.map(g=>g.id)); while(ids.has('srlg_'+n))n++;
+  S.push({ id:'srlg_'+n, label:'', type:'submarine', affects:[] }); renderSrlg(); };
+
+// ── RTT 編輯器 ───────────────────────────────────────────────────────────
+function rttFlatTable(tb, rows, cols){
+  // col.sel 為陣列時渲染為 <select>;空值選項(—)讓新增列預設無選擇。
+  // col.chk 已由選單取代(選單本身限制選項,不需紅框驗證)。
+  // col.suggest 為陣列 → <input list> + <datalist>(給建議但仍可自由輸入,適合 cityRef)。
+  const tbid=tb.id||'tbl', dlId=c=>`dl_${tbid}_${c.k}`;
+  const mkSelect=(c,val)=>{
+    const opts=['', ...(c.sel||[])].map(o=>`<option value="${esc(o)}" ${o===val?'selected':''}>${o===''?'—':esc(o)}</option>`).join('');
+    return `<td><select data-k="${c.k}">${opts}</select></td>`;
+  };
+  // datalist 掛在 <th>(合法、隨表重建即清乾淨,不會累積重複 id)
+  let h='<tr>'+cols.map(c=>{
+    const dl=c.suggest ? `<datalist id="${dlId(c)}">${[...new Set(c.suggest)].map(o=>`<option value="${esc(o)}">`).join('')}</datalist>` : '';
+    return `<th>${c.h}${dl}</th>`;
+  }).join('')+'<th></th></tr>';
+  rows.forEach((r,i)=>{ h+=`<tr data-i="${i}">`+cols.map(c=>{
+    if(c.sel) return mkSelect(c, r[c.k]??'');
+    const list=c.suggest ? ` list="${dlId(c)}"` : '';
+    return `<td><input ${c.num?'type="number" min="0" step="any" class="num"':''}${list} data-k="${c.k}" value="${esc(r[c.k]??'')}"></td>`;
+  }).join('')+`<td class="x" data-del="${i}">✕</td></tr>`; });
+  tb.innerHTML=h;
+  tb.querySelectorAll('[data-k]').forEach(inp=>{ const ev=inp.tagName==='SELECT'?'onchange':'oninput';
+    inp[ev]=()=>{ const i=+inp.closest('tr').dataset.i,k=inp.dataset.k,col2=cols.find(c=>c.k===k);
+      if(col2.num){ const v=parseFloat(inp.value); if(!isNaN(v))rows[i][k]=v; } else rows[i][k]=inp.value; }; });
+  tb.querySelectorAll('[data-del]').forEach(x=>x.onclick=()=>{ history.push(); rows.splice(+x.dataset.del,1); renderRtt(); });
+}
+function renderRtt(){
+  if(!R.matrix)R.matrix={}; if(!R.edges)R.edges=[];
+  $('rttMeta').innerHTML=`<label>unit <input id="rUnit" value="${esc(R.unit||'ms')}" style="width:56px"></label>
+    <label>fiberRttPerKm <input id="rFib" type="number" min="0" step="any" class="num" value="${esc(R.fiberRttPerKm??0.01014)}" style="width:96px"></label>
+    <label>timestamp <input id="rTs" value="${esc(R.timestamp||'')}" style="width:108px"></label>
+    <label style="flex:1;min-width:200px;display:flex;align-items:center;gap:4px">note <input id="rNote" value="${esc(R.note||'')}" style="flex:1;min-width:0"></label>`;
+  $('rUnit').oninput=e=>R.unit=e.target.value;
+  $('rFib').oninput=e=>{ const v=parseFloat(e.target.value); if(!isNaN(v))R.fiberRttPerKm=v; };
+  $('rTs').oninput=e=>R.timestamp=e.target.value;
+  $('rNote').oninput=e=>R.note=e.target.value;
+  // edges 的 a/b:node id 選單(必為拓樸節點,選單限制即免驗證)
+  const nodeList=[...new Set(cy.nodes().filter(n=>n.id()!=='__ghost__').map(n=>n.id()))].sort();
+  rttFlatTable($('rttEdges'), R.edges, [{h:'a',k:'a',sel:nodeList},{h:'b',k:'b',sel:nodeList},{h:'rtt',k:'rtt',num:1},{h:'src',k:'src',sel:['measured','city-ref','model']}]);
+  const ids=new Set(); for(const a of Object.keys(R.matrix)){ ids.add(a); for(const b of Object.keys(R.matrix[a])) ids.add(b); }
+  const ax=[...ids].sort();
+  let h='<tr><th></th>'+ax.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr>';
+  for(const r of ax){ h+=`<tr><td class="rowh">${esc(r)}</td>`+ax.map(c=>{
+    if(r===c) return '<td style="background:#eef1f4"></td>';
+    const v=(R.matrix[r]&&R.matrix[r][c]!=null)?R.matrix[r][c]:'';
+    return `<td><input type="number" min="0" step="any" class="num" data-r="${esc(r)}" data-c="${esc(c)}" value="${v}"></td>`;
+  }).join('')+'</tr>'; }
+  const tb=$('rttMatrix'); tb.innerHTML=h;
+  tb.querySelectorAll('input[data-r]').forEach(inp=>inp.oninput=()=>{
+    const r=inp.dataset.r,c=inp.dataset.c,raw=inp.value.trim();
+    if(!R.matrix[r])R.matrix[r]={};
+    if(raw===''){ delete R.matrix[r][c]; } else { const v=parseFloat(raw); if(!isNaN(v))R.matrix[r][c]=v; }
+  });
+}
+$('rttEdgeAdd').onclick=()=>{ history.push(); R.edges.push({a:'',b:'',rtt:0,src:'model'}); renderRtt(); };
+// rttRefAdd 已移除(cityRef 唯讀,不提供 UI 編輯;匯入時保留原值,匯出時照樣輸出)
+
+// ── 序列化器(對齊 gen.mjs;字串單引號、rtt 浮點保 .0)────────────────────────
+const q=s=>"'"+String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'";
+function pf(x,nd){ let s=(+x).toFixed(nd); if(s.indexOf('.')>=0) s=s.replace(/0+$/,'').replace(/\.$/,''); if(s.indexOf('.')<0)s+='.0'; return s; }
+function exportDemand(){
+  const L=['// Demand matrix — Gbps offered between every router pair. Edited via edit2.html.','const demand = {'];
+  L.push('  unit: '+q(D.unit||'Gbps')+',');
+  L.push('  source: '+q(D.source||'synthetic')+',');
+  L.push('  timestamp: '+q(D.timestamp||'')+',','');
+  L.push('  active: '+q(D.active||Object.keys(D.profiles)[0]||'')+',','');
+  L.push('  profiles: {');
+  for(const k of Object.keys(D.profiles)){
+    const p=D.profiles[k];
+    L.push('    '+k+': {');
+    L.push('      label: '+q(p.label||'')+',');
+    L.push('      symmetric: '+(p.symmetric?'true':'false')+',');
+    L.push('      default: '+(p.default??1)+',');
+    L.push('      matrix: {');
+    for(const a of Object.keys(p.matrix||{})){
+      const inner=Object.keys(p.matrix[a]).map(b=>b+': '+p.matrix[a][b]).join(', ');
+      L.push('        '+a+': { '+inner+' },');
+    }
+    L.push('      },','    },');
+  }
+  L.push('  },','');
+  L.push('  get matrix()  { return this.profiles[this.active].matrix; },');
+  L.push('  get default() { return this.profiles[this.active].default; },');
+  L.push('};','',"if (typeof module !== 'undefined') module.exports = { demand };",'');
+  return L.join('\n');
+}
+function exportSrlg(){
+  const tc={submarine:'  // submarine — 海纜系統共用風險',conduit:'  // conduit — 共管線路 / IX fabric',site:'  // site — 機房 / 落地站 / 電力',upstream:'  // upstream — 上游 ISP 依賴'};
+  const L=['// SRLG (Shared Risk Link Group) definitions. Edited via edit2.html.','const srlg = ['];
+  let cur=null;
+  for(const g of S){
+    if(g.type!==cur){ L.push(''); if(tc[g.type])L.push(tc[g.type]); cur=g.type; }
+    L.push('  { id: '+q(g.id)+', label: '+q(g.label)+', type: '+q(g.type)+', affects: ['+(g.affects||[]).map(q).join(', ')+'] },');
+  }
+  L.push('];','');
+  return L.join('\n');
+}
+function exportRtt(){
+  const L=['// City-pair RTT lookup (ms). Edited via edit2.html.','const rtt = {'];
+  L.push('  unit: '+q(R.unit||'ms')+',');
+  L.push('  note: '+q(R.note||'')+',');
+  L.push('  fiberRttPerKm: '+pf(R.fiberRttPerKm??0.01014,6)+',');
+  L.push('  timestamp: '+q(R.timestamp||'')+',','');
+  L.push('  matrix: {');
+  for(const a of Object.keys(R.matrix||{})){
+    const inner=Object.keys(R.matrix[a]).map(b=>b+': '+pf(R.matrix[a][b],2)).join(', ');
+    L.push('    '+a+': { '+inner+' },');
+  }
+  L.push('  },','');
+  L.push('  cityRef: [');
+  L.push((R.cityRef||[]).map(r=>'    { a: '+q(r.a)+', b: '+q(r.b)+', rtt: '+pf(r.rtt,2)+' }').join(',\n'));
+  L.push('  ],','');
+  L.push('  edges: [');
+  L.push((R.edges||[]).map(r=>'    { a: '+q(r.a)+', b: '+q(r.b)+', rtt: '+pf(r.rtt,2)+', src: '+q(r.src)+' }').join(',\n'));
+  L.push('  ],','};','',"if (typeof module !== 'undefined') module.exports = { rtt };",'');
+  return L.join('\n');
+}
+const FILEMAP={ topo:['topology.js',exportText], demand:['demand.js',exportDemand], srlg:['srlg.js',exportSrlg], rtt:['rtt.js',exportRtt] };
+// 工具列可見群組對應(SSOT)— cur=隨 tab 動態的三個按鈕(載入/匯入/匯出本檔);file=topo 專屬(匯入 OSPF)
+const TAB_BTNS = {
+  topo:   new Set(['io','cur','file','edit','hist','view','check']),
+  demand: new Set(['io','cur','hist','check']),
+  srlg:   new Set(['io','cur','hist','check']),
+  rtt:    new Set(['io','cur','hist','check']),
+};
+
+// ── 載入 / 匯出(本檔 = 當前分頁;全部 = 4 檔)──────────────────────────────
+function loadOne(tab,txt){
+  if(tab==='topo'){ history.push(); loadTopologyText(txt); }
+  else if(tab==='demand'){ D=parseGlobal(txt,'demand'); dmSel=null; renderDemand(); }
+  else if(tab==='srlg'){ S=parseGlobal(txt,'srlg'); renderSrlg(); }
+  else if(tab==='rtt'){ R=parseGlobal(txt,'rtt'); renderRtt(); }
+}
+$('btnExport').onclick=()=>{ const m=FILEMAP[TAB]; dl(m[0],m[1]()); toast('已匯出 '+m[0]); };
+$('btnExportAll').onclick=()=>{ for(const k of Object.keys(FILEMAP)){ const m=FILEMAP[k]; dl(m[0],m[1]()); } toast('已匯出 4 個檔'); };
+$('btnLoadLocal').onclick=()=>{ const f=FILEMAP[TAB][0];
+  fetch(f).then(r=>r.ok?r.text():Promise.reject(r.status)).then(t=>{ loadOne(TAB,t); toast('已載入 '+f); }).catch(e=>toast('載入失敗('+e+')')); };
+$('btnImport').onclick=()=>{ modal.classList.add('open'); $('modalText').value=''; $('fileInput').value='';
+  $('modalTitle').textContent='匯入 '+FILEMAP[TAB][0]; $('modalText').focus(); };
+$('modalOk').onclick=()=>{ try{ loadOne(TAB,$('modalText').value); modal.classList.remove('open'); }
+  catch(err){ toast('解析失敗:'+err.message); } };
+$('btnLoadAll').onclick=()=>{
+  const get=(f,cb)=>fetch(f).then(r=>r.ok?r.text():Promise.reject()).then(cb).catch(()=>{});
+  Promise.all([ get('topology.js',t=>{ history.push(); loadTopologyText(t); }),
+    get('demand.js',t=>{ D=parseGlobal(t,'demand'); dmSel=null; }),
+    get('srlg.js',t=>{ S=parseGlobal(t,'srlg'); }),
+    get('rtt.js',t=>{ R=parseGlobal(t,'rtt'); }) ])
+   .then(()=>{ switchTab(TAB); toast('已載入同目錄 4 個檔'); });
+};
+
+// ── 啟動:試載同目錄 4 個檔,topology 缺則種子起步 ──────────────────────────
+(function start(){
+  const get=f=>fetch(f).then(r=>r.ok?r.text():Promise.reject());
+  const seed=()=>{ addNodeRaw(routerData('TPE',{country:'TW',city:'TPE',isASBR:true,stubs:['1.1.1.1/32']}),{x:300,y:240});
+    setStatus('warn','空白起步 — 用工具列/右鍵新增,或「載入全部 / 匯入」'); };
+  Promise.allSettled([get('topology.js'),get('demand.js'),get('srlg.js'),get('rtt.js')]).then(rs=>{
+    if(rs[0].status==='fulfilled'){ try{loadTopologyText(rs[0].value);}catch(e){seed();} } else seed();
+    if(rs[1].status==='fulfilled'){ try{D=parseGlobal(rs[1].value,'demand');}catch(e){} }
+    if(rs[2].status==='fulfilled'){ try{S=parseGlobal(rs[2].value,'srlg');}catch(e){} }
+    if(rs[3].status==='fulfilled'){ try{R=parseGlobal(rs[3].value,'rtt');}catch(e){} }
+    refresh();
+  });
+})();
+
+// 初始工具列狀態(topo 為預設 tab,all groups 可見;明確初始化以防未來調整預設)
+switchTab(TAB);
+
+// cy 容器尺寸保險:視窗縮放即時重量;載入後下一幀再量一次(等版面定案)
+window.addEventListener('resize', ()=>cy.resize());
+requestAnimationFrame(()=>{ cy.resize(); });
+</script>
+</body>
+</html>

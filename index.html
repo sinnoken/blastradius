@@ -1772,6 +1772,9 @@ const C2_Matrix = (() => {
   let matrixCache = null;
   // 模式狀態(對齊 C3 的 nodeWeightMode):由 ACTIONS.c2Mode 寫入,render 讀取
   let matrixMode = 'rtt';
+  // 鍵盤導航狀態 — 目前選中格的 (i,j) 座標;keyHandler 存參考供 render() 移舊加新
+  let selectedCell = null;   // { i, j, src, dst }
+  let keyHandler = null;
 
   function render() {
     const adj = buildAdjacency(topology.edges, failedEdges, failedNodes);
@@ -1903,12 +1906,49 @@ const C2_Matrix = (() => {
     document.querySelectorAll('#matrix-result td.clickable').forEach(td => {
       td.addEventListener('click', () => showCellDetail(td.dataset.src, td.dataset.dst));
     });
+
+    // 鍵盤導航:方向鍵在矩陣格間移動(僅 Matrix Tab 顯示中且無 input/textarea focus 時生效)
+    if (keyHandler) document.removeEventListener('keydown', keyHandler);
+    keyHandler = (e) => {
+      if (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
+      if (!selectedCell || !matrixCache) return;
+      // 有 input/textarea/select focus 時不攔截(讓 SLO 輸入框等正常使用方向鍵)
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Matrix Tab 必須是 active
+      if (!document.querySelector('.tab[data-tab="matrix"]')?.classList.contains('active')) return;
+      e.preventDefault();
+      const routers = matrixCache.routers;
+      const N = routers.length;
+      let { i, j } = selectedCell;
+      if (e.key === 'ArrowUp')    i = (i - 1 + N) % N;
+      if (e.key === 'ArrowDown')  i = (i + 1) % N;
+      if (e.key === 'ArrowLeft')  j = (j - 1 + N) % N;
+      if (e.key === 'ArrowRight') j = (j + 1) % N;
+      // 跳過對角格(src === dst),同方向再移一格
+      if (i === selectedCell.i && j === selectedCell.j) return;   // 不動
+      if (routers[i] === routers[j]) {
+        if (e.key === 'ArrowUp')    i = (i - 1 + N) % N;
+        if (e.key === 'ArrowDown')  i = (i + 1) % N;
+        if (e.key === 'ArrowLeft')  j = (j - 1 + N) % N;
+        if (e.key === 'ArrowRight') j = (j + 1) % N;
+      }
+      const src = routers[i], dst = routers[j];
+      showCellDetail(src, dst);
+      // 把新選格捲進視窗
+      const td = document.querySelector(`#matrix-result td[data-src="${src}"][data-dst="${dst}"]`);
+      if (td) td.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    };
+    document.addEventListener('keydown', keyHandler);
   }
 
   function showCellDetail(src, dst) {
     if (!matrixCache) return;
     const cell = matrixCache.matrix[src][dst];
     const div = dom('matrix-detail');
+    // 記錄當前格的 (i,j) 座標供鍵盤導航使用
+    const ri = matrixCache.routers.indexOf(src), rj = matrixCache.routers.indexOf(dst);
+    if (ri >= 0 && rj >= 0) selectedCell = { i: ri, j: rj, src, dst };
     const edgeRoles = new Map();
     const nodeRoles = new Map();
 
@@ -1979,6 +2019,7 @@ const C2_Matrix = (() => {
     activate: render,
     render,
     setMode: (m) => { matrixMode = m; render(); },
+    _cleanup: () => { if (keyHandler) { document.removeEventListener('keydown', keyHandler); keyHandler = null; } },
   };
 })();
 
@@ -3296,6 +3337,8 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     dom('tab-' + tab.dataset.tab).classList.add('active');
     clearAllRoles();
+    // 離開 Matrix Tab 時移除鍵盤導航 handler
+    if (tab.dataset.tab !== 'matrix' && C2_Matrix._cleanup) C2_Matrix._cleanup();
     TABS[tab.dataset.tab]?.activate?.();
   });
 });

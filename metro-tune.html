@@ -11,65 +11,72 @@
 body{display:flex;height:100vh;overflow:hidden;background:#0f1117;color:#e2e8f0;font:13px/1.5 system-ui,sans-serif}
 
 /* ── 左側控制面板 ── */
-#panel{width:270px;flex-shrink:0;display:flex;flex-direction:column;gap:0;border-right:1px solid #1e2433;overflow-y:auto}
-#panel-inner{padding:14px;display:flex;flex-direction:column;gap:14px}
+#panel{width:280px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid #1e2433;overflow-y:auto}
+#panel-inner{padding:14px;display:flex;flex-direction:column;gap:12px}
 
-h1{font-size:14px;font-weight:700;color:#90cdf4;letter-spacing:.03em}
-.subtitle{font-size:11px;color:#4a5568;margin-top:2px}
+h1{font-size:14px;font-weight:700;color:#90cdf4}
+.subtitle{font-size:11px;color:#4a6580;margin-top:2px}
 
-.section{display:flex;flex-direction:column;gap:8px}
-.sec-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#4a6580;padding-bottom:3px;border-bottom:1px solid #1e2433}
+.sec-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#4a6580;
+  padding-bottom:4px;border-bottom:1px solid #1e2433;margin-bottom:2px}
 
-.param{display:flex;flex-direction:column;gap:4px}
-.param-header{display:flex;justify-content:space-between;align-items:baseline}
-.param-name{font-size:12px;color:#cbd5e0}
-.param-val{font-size:13px;font-weight:700;color:#63b3ed;font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
-.param-desc{font-size:10px;color:#4a6580;line-height:1.3}
-input[type=range]{width:100%;height:4px;accent-color:#4299e1;cursor:pointer}
+/* 壓縮模式選擇器 */
+.mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.mode-btn{background:#151b28;border:1px solid #1e2433;border-radius:6px;
+  padding:7px 6px;cursor:pointer;font-size:11px;color:#718096;text-align:center;
+  transition:all .15s;line-height:1.3}
+.mode-btn:hover{border-color:#2d6a9f;color:#90cdf4}
+.mode-btn.active{background:#172339;border-color:#4299e1;color:#90cdf4;font-weight:600}
+.mode-btn .mode-icon{font-size:15px;display:block;margin-bottom:2px}
 
 /* 壓縮曲線 */
 #curve-wrap{background:#151b28;border-radius:6px;padding:8px;border:1px solid #1e2433}
 #curve{display:block}
-.curve-labels{display:flex;justify-content:space-between;font-size:9px;color:#4a6580;margin-top:2px;padding:0 2px}
+.curve-label{display:flex;justify-content:space-between;font-size:9px;color:#4a6580;
+  margin-top:2px;padding:0 2px}
+
+/* Slider 參數 */
+.params-section{display:flex;flex-direction:column;gap:8px}
+.param-group{display:none}
+.param-group.active{display:flex;flex-direction:column;gap:8px}
+.param{display:flex;flex-direction:column;gap:3px}
+.param-header{display:flex;justify-content:space-between;align-items:baseline}
+.param-name{font-size:12px;color:#cbd5e0}
+.param-val{font-size:13px;font-weight:700;color:#63b3ed;font-variant-numeric:tabular-nums;min-width:40px;text-align:right}
+.param-desc{font-size:10px;color:#4a6580;line-height:1.3}
+input[type=range]{width:100%;height:4px;accent-color:#4299e1;cursor:pointer}
+
+/* 共用參數分隔線 */
+.divider{height:1px;background:#1e2433}
 
 /* 統計 */
-.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.stat{background:#151b28;border:1px solid #1e2433;border-radius:6px;padding:8px 10px}
-.stat-val{font-size:22px;font-weight:800;color:#63b3ed;line-height:1}
-.stat-label{font-size:10px;color:#4a6580;margin-top:3px}
+.octi-bar-wrap{height:6px;background:#1e2433;border-radius:3px;overflow:hidden}
+#octiBarFill{height:100%;width:0%;background:linear-gradient(90deg,#fc8181 0%,#f6ad55 55%,#48bb78 85%);transition:width .3s}
+.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.stat{background:#151b28;border:1px solid #1e2433;border-radius:5px;padding:7px 9px}
+.stat-val{font-size:20px;font-weight:800;color:#63b3ed;line-height:1}
+.stat-label{font-size:9px;color:#4a6580;margin-top:2px}
 
-/* 八向化進度條 */
-.octi-bar-wrap{height:8px;background:#1e2433;border-radius:4px;overflow:hidden}
-#octiBarFill{height:100%;width:0%;background:linear-gradient(90deg,#fc8181 0%,#f6ad55 50%,#48bb78 85%);transition:width .3s}
+.legend{display:flex;gap:10px;flex-wrap:wrap}
+.leg{display:flex;align-items:center;gap:4px;font-size:10px;color:#718096}
+.leg-line{width:14px;height:3px;border-radius:2px;flex-shrink:0}
 
-/* 圖例 */
-.legend{display:flex;gap:12px;flex-wrap:wrap}
-.leg{display:flex;align-items:center;gap:5px;font-size:11px;color:#a0aec0}
-.leg-line{width:16px;height:3px;border-radius:2px;flex-shrink:0}
-
-/* 複製按鈕 */
-#btnCopy{background:#2b4a72;color:#90cdf4;border:1px solid #2d6a9f;border-radius:6px;padding:9px 12px;
-  cursor:pointer;font-size:12px;font-weight:600;transition:background .15s;text-align:center}
-#btnCopy:hover{background:#2d6a9f}
-
-/* 重設按鈕 */
-#btnReset{background:#1a202c;color:#718096;border:1px solid #2d3748;border-radius:6px;
-  padding:6px 10px;cursor:pointer;font-size:11px}
-#btnReset:hover{color:#e2e8f0}
-
+/* 按鈕 */
+#btnCopy{background:#172339;color:#90cdf4;border:1px solid #2d6a9f;border-radius:6px;
+  padding:8px 12px;cursor:pointer;font-size:12px;font-weight:600;text-align:center;width:100%;transition:background .15s}
+#btnCopy:hover{background:#1d3a5c}
 .btn-row{display:flex;gap:6px}
+.btn-sm{background:#151b28;color:#718096;border:1px solid #1e2433;border-radius:5px;
+  padding:6px 10px;cursor:pointer;font-size:11px;flex:1;transition:all .15s}
+.btn-sm:hover{color:#e2e8f0;border-color:#4a6580}
 
 /* ── 右側畫布 ── */
 #cy-wrap{flex:1;position:relative;overflow:hidden}
 #cy{width:100%;height:100%}
-
-/* 狀態列 */
 #statusbar{position:absolute;bottom:0;left:0;right:0;background:#0f1117cc;
   backdrop-filter:blur(4px);padding:5px 12px;font-size:11px;color:#718096;
   border-top:1px solid #1e2433;display:flex;justify-content:space-between}
 #status-msg{color:#90cdf4}
-
-/* 載入遮罩 */
 #loading{position:absolute;inset:0;background:#0f1117;display:flex;align-items:center;
   justify-content:center;font-size:14px;color:#4a6580;z-index:10;transition:opacity .3s}
 </style>
@@ -81,89 +88,173 @@ input[type=range]{width:100%;height:4px;accent-color:#4299e1;cursor:pointer}
 
   <div>
     <h1>Metro Map Tuner</h1>
-    <div class="subtitle">拖動 slider 即時預覽八向化效果</div>
+    <div class="subtitle">選擇壓縮模式，拖動 slider 即時預覽</div>
   </div>
 
-  <!-- 壓縮 -->
-  <div class="section">
-    <div class="sec-title">非線性壓縮</div>
-    <div class="param">
-      <div class="param-header">
-        <span class="param-name">distPow</span>
-        <span class="param-val" id="v_distPow">0.75</span>
-      </div>
-      <input type="range" id="distPow" min="0.30" max="1.00" step="0.05" value="0.75">
-      <div class="param-desc">徑向壓縮指數 — 1.0=不壓縮、0.7=溫和、0.5=sqrt 激進壓跨洋長邊</div>
-    </div>
-    <div id="curve-wrap">
-      <canvas id="curve" width="238" height="90"></canvas>
-      <div class="curve-labels"><span>r=0</span><span>原始距離</span><span>r=1</span></div>
-    </div>
-  </div>
-
-  <!-- 格點 -->
-  <div class="section">
-    <div class="sec-title">格點</div>
-    <div class="param">
-      <div class="param-header">
-        <span class="param-name">grid</span>
-        <span class="param-val" id="v_grid">80</span>
-      </div>
-      <input type="range" id="grid" min="40" max="160" step="10" value="80">
-      <div class="param-desc">格點間距 (px) — 越大越粗獷、越小越精細</div>
+  <!-- 壓縮模式 -->
+  <div>
+    <div class="sec-title">壓縮模式</div>
+    <div class="mode-grid" id="modeGrid">
+      <button class="mode-btn active" data-mode="none">
+        <span class="mode-icon">🌐</span>不壓縮
+      </button>
+      <button class="mode-btn" data-mode="radial">
+        <span class="mode-icon">⭕</span>徑向(power)
+      </button>
+      <button class="mode-btn" data-mode="axis">
+        <span class="mode-icon">↔↕</span>分軸(X/Y)
+      </button>
+      <button class="mode-btn" data-mode="sigmoid">
+        <span class="mode-icon">〜</span>Sigmoid
+      </button>
+      <button class="mode-btn" data-mode="cap">
+        <span class="mode-icon">✂️</span>邊長截斷
+      </button>
+      <button class="mode-btn" data-mode="region">
+        <span class="mode-icon">🗺️</span>區域分欄
+      </button>
     </div>
   </div>
 
-  <!-- 八向化 -->
-  <div class="section">
-    <div class="sec-title">八向微調</div>
-    <div class="param">
-      <div class="param-header">
-        <span class="param-name">nudgeIter</span>
-        <span class="param-val" id="v_nudgeIter">5</span>
-      </div>
-      <input type="range" id="nudgeIter" min="1" max="15" step="1" value="5">
-      <div class="param-desc">迭代輪數 — 越多八向化率越高，收益遞減</div>
+  <!-- 壓縮曲線 -->
+  <div id="curve-wrap">
+    <canvas id="curve" width="248" height="80"></canvas>
+    <div class="curve-label"><span>0</span><span id="curveLabel">原始距離 r</span><span>max</span></div>
+  </div>
+
+  <!-- 模式專屬參數 -->
+  <div class="params-section">
+
+    <div class="param-group" id="pg-none">
+      <div class="param-desc" style="color:#4a6580">Equal Earth 原始投影，不做任何壓縮。</div>
     </div>
-    <div class="param">
-      <div class="param-header">
-        <span class="param-name">angleTol</span>
-        <span class="param-val" id="v_angleTol">8</span>
+
+    <div class="param-group" id="pg-radial">
+      <div class="param">
+        <div class="param-header"><span class="param-name">distPow</span><span class="param-val" id="v_distPow">0.75</span></div>
+        <input type="range" id="distPow" min="0.30" max="0.99" step="0.03" value="0.75">
+        <div class="param-desc">1.0=不壓縮 · 0.7=溫和 · 0.5=sqrt 激進壓跨洋長邊</div>
       </div>
-      <input type="range" id="angleTol" min="2" max="20" step="1" value="8">
-      <div class="param-desc">角度容差 (°) — 差距超過此值才 nudge</div>
     </div>
-    <div class="param">
-      <div class="param-header">
-        <span class="param-name">geoAnchor</span>
-        <span class="param-val" id="v_geoAnchor">0.40</span>
+
+    <div class="param-group" id="pg-axis">
+      <div class="param">
+        <div class="param-header"><span class="param-name">powX (東西)</span><span class="param-val" id="v_powX">0.70</span></div>
+        <input type="range" id="powX" min="0.30" max="0.99" step="0.03" value="0.70">
+        <div class="param-desc">壓縮經度方向（跨洋主要是 E-W）</div>
       </div>
-      <input type="range" id="geoAnchor" min="0.00" max="1.00" step="0.05" value="0.40">
-      <div class="param-desc">地理引力 — 每輪把節點拉回地理位置的力道</div>
+      <div class="param">
+        <div class="param-header"><span class="param-name">powY (南北)</span><span class="param-val" id="v_powY">0.90</span></div>
+        <input type="range" id="powY" min="0.30" max="0.99" step="0.03" value="0.90">
+        <div class="param-desc">壓縮緯度方向（通常保持較真實）</div>
+      </div>
+    </div>
+
+    <div class="param-group" id="pg-sigmoid">
+      <div class="param">
+        <div class="param-header"><span class="param-name">sigma</span><span class="param-val" id="v_sigma">0.40</span></div>
+        <input type="range" id="sigma" min="0.10" max="0.90" step="0.05" value="0.40">
+        <div class="param-desc">飽和半徑（佔最大距離的比例）— 超過此距離急速壓縮</div>
+      </div>
+    </div>
+
+    <div class="param-group" id="pg-cap">
+      <div class="param">
+        <div class="param-header"><span class="param-name">capPct</span><span class="param-val" id="v_capPct">0.50</span></div>
+        <input type="range" id="capPct" min="0.15" max="0.90" step="0.05" value="0.50">
+        <div class="param-desc">截斷半徑（佔最大距離的比例）— 超過的直接截斷</div>
+      </div>
+    </div>
+
+    <div class="param-group" id="pg-region">
+      <div class="param">
+        <div class="param-header"><span class="param-name">regionGap</span><span class="param-val" id="v_regionGap">300</span></div>
+        <input type="range" id="regionGap" min="100" max="600" step="50" value="300">
+        <div class="param-desc">區域間固定間距 (px)：EU · ASIA · AMER 三欄</div>
+      </div>
+      <div class="param">
+        <div class="param-header"><span class="param-name">intraScale</span><span class="param-val" id="v_intraScale">0.80</span></div>
+        <input type="range" id="intraScale" min="0.20" max="1.50" step="0.05" value="0.80">
+        <div class="param-desc">區域內擴散比例（1.0=原始，0.5=收緊）</div>
+      </div>
+    </div>
+
+  </div><!-- params-section -->
+
+  <div class="divider"></div>
+
+  <!-- 共用參數 -->
+  <div>
+    <div class="sec-title">共用參數</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+      <div class="param">
+        <div class="param-header"><span class="param-name">grid</span><span class="param-val" id="v_grid">160</span></div>
+        <input type="range" id="grid" min="40" max="200" step="10" value="160">
+        <div class="param-desc">格點間距 (px)</div>
+      </div>
+      <div class="param">
+        <div class="param-header"><span class="param-name">nudgeIter</span><span class="param-val" id="v_nudgeIter">10</span></div>
+        <input type="range" id="nudgeIter" min="1" max="20" step="1" value="10">
+        <div class="param-desc">八向微調迭代輪數</div>
+      </div>
+      <div class="param">
+        <div class="param-header"><span class="param-name">angleTol</span><span class="param-val" id="v_angleTol">16</span></div>
+        <input type="range" id="angleTol" min="2" max="22" step="1" value="16">
+        <div class="param-desc">角度容差 (°)</div>
+      </div>
+      <div class="param">
+        <div class="param-header"><span class="param-name">geoAnchor</span><span class="param-val" id="v_geoAnchor">1.00</span></div>
+        <input type="range" id="geoAnchor" min="0.00" max="1.00" step="0.05" value="1.00">
+        <div class="param-desc">地理引力（每輪拉回地理位置的力道）</div>
+      </div>
     </div>
   </div>
 
   <!-- 統計 -->
-  <div class="section">
+  <div>
     <div class="sec-title">結果</div>
-    <div class="octi-bar-wrap"><div id="octiBarFill"></div></div>
-    <div class="stat-row">
-      <div class="stat"><div class="stat-val" id="s_pct">—</div><div class="stat-label">八向化率</div></div>
-      <div class="stat"><div class="stat-val" id="s_ok">—</div><div class="stat-label">達標邊</div></div>
-      <div class="stat"><div class="stat-val" id="s_total">—</div><div class="stat-label">總邊數</div></div>
-      <div class="stat"><div class="stat-val" id="s_placed">—</div><div class="stat-label">地理節點</div></div>
-    </div>
-    <div class="legend">
-      <div class="leg"><div class="leg-line" style="background:#48bb78"></div>八向化</div>
-      <div class="leg"><div class="leg-line" style="background:#f6ad55"></div>近似</div>
-      <div class="leg"><div class="leg-line" style="background:#fc8181"></div>非八向</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+      <div class="octi-bar-wrap"><div id="octiBarFill"></div></div>
+      <div class="stat-row">
+        <div class="stat"><div class="stat-val" id="s_pct">—</div><div class="stat-label">八向化率</div></div>
+        <div class="stat"><div class="stat-val" id="s_ok">—</div><div class="stat-label">達標邊</div></div>
+        <div class="stat"><div class="stat-val" id="s_total">—</div><div class="stat-label">總邊數</div></div>
+        <div class="stat"><div class="stat-val" id="s_placed">—</div><div class="stat-label">地理節點</div></div>
+      </div>
+      <div class="legend">
+        <div class="leg"><div class="leg-line" style="background:#48bb78"></div>八向化</div>
+        <div class="leg"><div class="leg-line" style="background:#f6ad55"></div>近似</div>
+        <div class="leg"><div class="leg-line" style="background:#fc8181"></div>非八向</div>
+      </div>
     </div>
   </div>
 
-  <!-- 操作 -->
-  <div class="section">
+  <!-- 顯示調整 -->
+  <div>
+    <div class="sec-title">顯示調整</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-top:6px">
+      <div class="param">
+        <div class="param-header"><span class="param-name">邊寬</span><span class="param-val" id="v_edgeW">3</span></div>
+        <input type="range" id="edgeW" min="1" max="8" step="0.5" value="3">
+      </div>
+      <div class="param">
+        <div class="param-header"><span class="param-name">節點大小</span><span class="param-val" id="v_nodeS">14</span></div>
+        <input type="range" id="nodeS" min="6" max="30" step="2" value="14">
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-sm" id="btnLabel" data-on="true">標籤 ✓</button>
+        <button class="btn-sm" id="btnPN" data-on="true">Pseudonode ✓</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- 按鈕 -->
+  <div style="display:flex;flex-direction:column;gap:6px">
     <div class="btn-row">
-      <button id="btnReset">重設預設值</button>
+      <button class="btn-sm" id="btnReset">重設預設值</button>
+      <button class="btn-sm" id="btnRerun">▶ 重新跑</button>
     </div>
     <button id="btnCopy">📋 複製 LAYOUT_PARAMS.metro</button>
   </div>
@@ -183,17 +274,16 @@ input[type=range]{width:100%;height:4px;accent-color:#4299e1;cursor:pointer}
 <script type="module">
 import { CITY_GEO as GRAVITY_CITY_GEO } from './gravity.js';
 
-// ── Equal Earth(與 edit.html 相同) ──
-const EE_A=[1.340264,-0.081106,0.000893,0.003796], EE_DEG=0.015037;
+// ── Equal Earth 投影(與 edit.html 相同) ──
+const EE_A=[1.340264,-0.081106,0.000893,0.003796],EE_DEG=0.015037;
 function equalEarth(lat,lon,lon0){
-  const R=Math.PI/180, dl=((lon-lon0+540)%360)-180;
+  const R=Math.PI/180,dl=((lon-lon0+540)%360)-180;
   const phi=lat*R,lam=dl*R,[A1,A2,A3,A4]=EE_A;
   const th=Math.asin(Math.sqrt(3)/2*Math.sin(phi)),t2=th*th;
   const x=(2*Math.sqrt(3)*lam*Math.cos(th))/(3*(9*A4*t2*t2*t2*t2+7*A3*t2*t2*t2+3*A2*t2+A1));
   const y=A4*t2*t2*t2*t2*th+A3*t2*t2*t2*th+A2*t2*th+A1*th;
   return {x,y};
 }
-
 const GEO_CITY=new Proxy(GRAVITY_CITY_GEO,{
   get(t,k){const v=t[k];if(!v)return undefined;const a=[v.lat,v.lon];a.lat=v.lat;a.lon=v.lon;a.country=v.country;return a;}
 });
@@ -205,99 +295,179 @@ const GEO_COUNTRY={
   GR:[39.0,22.0],ES:[40.0,-4.0],IT:[42.8,12.8],BE:[50.6,4.6],TR:[39.0,35.0],KH:[12.57,104.99],
 };
 
-// ── Cytoscape ──
-const DEFAULTS={distPow:0.75,grid:80,nudgeIter:5,angleTol:8,geoAnchor:0.40};
+// 國家 → 區域（區域壓縮用）
+const COUNTRY_REGION={};
+'TW JP CN HK SG KR TH PH VN KH MY ID AU NZ IN BD LK MM GU PK'.split(' ').forEach(c=>COUNTRY_REGION[c]='asia');
+'US CA MX BR AR CL'.split(' ').forEach(c=>COUNTRY_REGION[c]='amer');
+'GB DE FR NL BE CH SE NO DK FI IE AT IT ES PT GR PL RU TR AE IL SA UA'.split(' ').forEach(c=>COUNTRY_REGION[c]='euro');
 
+// ── Cytoscape ──
 const cy=cytoscape({
   container:document.getElementById('cy'),
   style:[
-    {selector:'node',style:{
-      'background-color':'#2d4a6e','width':16,'height':16,
-      'label':'data(id)','font-size':8,'color':'#90cdf4',
-      'text-valign':'top','text-margin-y':-4,'text-outline-width':0,
-    }},
-    {selector:'node[type="pseudonode"]',style:{
-      'background-color':'#1a2a3e','width':10,'height':10,'shape':'diamond','label':'',
-    }},
-    {selector:'edge',style:{'width':1.5,'line-color':'#2d4a6e','curve-style':'straight'}},
+    {selector:'node',style:{'background-color':'#2d4a6e','width':14,'height':14,
+      'label':'data(id)','font-size':7,'color':'#90cdf4',
+      'text-valign':'top','text-margin-y':-3}},
+    {selector:'node[type="pseudonode"]',style:{'background-color':'#1a2a3e','width':8,'height':8,'shape':'diamond','label':''}},
+    {selector:'edge',style:{'width':1.5,'line-color':'#263a54','curve-style':'straight'}},
     {selector:'edge.ok',  style:{'line-color':'#48bb78','width':2}},
     {selector:'edge.near',style:{'line-color':'#f6ad55','width':1.5}},
     {selector:'edge.bad', style:{'line-color':'#fc8181','width':1.5}},
   ],
   elements:[
     ...topology.nodes.map(n=>({data:{...n}})),
-    ...topology.edges.map(e=>({data:{id:e.id??e.source+'_'+e.target,source:e.source,target:e.target,...e}})),
+    ...topology.edges.map(e=>({data:{id:e.id||(e.source+'__'+e.target),source:e.source,target:e.target,...e}})),
   ],
   layout:{name:'preset',positions:n=>{
     const p=topology.positions?.[n.data('id')];
-    return p||{x:Math.random()*600-300,y:Math.random()*400-200};
+    return p||{x:(Math.random()-.5)*600,y:(Math.random()-.5)*400};
   }},
   userZoomingEnabled:true,userPanningEnabled:true,
 });
-document.getElementById('loading').style.opacity='0';
-setTimeout(()=>document.getElementById('loading').style.display='none',350);
+setTimeout(()=>{document.getElementById('loading').style.opacity='0';
+  setTimeout(()=>document.getElementById('loading').style.display='none',300);},100);
 
-// ── 壓縮曲線 ──
-function drawCurve(p){
+// ── 壓縮函式（每個都作用在 pos 物件上）──
+function centroid(pos){
+  const vs=Object.values(pos);
+  const xs=vs.map(p=>p.x),ys=vs.map(p=>p.y);
+  return{cx:(Math.max(...xs)+Math.min(...xs))/2, cy:(Math.max(...ys)+Math.min(...ys))/2,
+    rmax:Math.max(...vs.map(p=>Math.hypot(p.x-(Math.max(...xs)+Math.min(...xs))/2,p.y-(Math.max(...ys)+Math.min(...ys))/2)))||1,
+    xhalf:(Math.max(...xs)-Math.min(...xs))/2||1, yhalf:(Math.max(...ys)-Math.min(...ys))/2||1};
+}
+
+function compressRadial(pos,all,{distPow}){
+  const {cx,cy,rmax}=centroid(pos);
+  all.forEach(n=>{const id=n.id(),dx=pos[id].x-cx,dy=pos[id].y-cy,r=Math.hypot(dx,dy);
+    if(r<0.001)return;const rp=Math.pow(r/rmax,distPow)*rmax;pos[id]={x:cx+dx/r*rp,y:cy+dy/r*rp};});
+}
+
+function compressAxis(pos,all,{powX,powY}){
+  const {cx,cy,xhalf,yhalf}=centroid(pos);
+  all.forEach(n=>{const id=n.id(),dx=pos[id].x-cx,dy=pos[id].y-cy;
+    const nx=dx/xhalf,ny=dy/yhalf;
+    pos[id]={x:cx+Math.sign(nx)*Math.pow(Math.abs(nx),powX)*xhalf,
+              y:cy+Math.sign(ny)*Math.pow(Math.abs(ny),powY)*yhalf};});
+}
+
+function compressSigmoid(pos,all,{sigma}){
+  const {cx,cy,rmax}=centroid(pos);
+  const k=sigma*rmax, scale=rmax/Math.tanh(rmax/k);
+  all.forEach(n=>{const id=n.id(),dx=pos[id].x-cx,dy=pos[id].y-cy,r=Math.hypot(dx,dy);
+    if(r<0.001)return;const rp=Math.tanh(r/k)*scale;pos[id]={x:cx+dx/r*rp,y:cy+dy/r*rp};});
+}
+
+function compressCap(pos,all,{capPct}){
+  const {cx,cy,rmax}=centroid(pos);
+  const rcap=rmax*capPct;
+  all.forEach(n=>{const id=n.id(),dx=pos[id].x-cx,dy=pos[id].y-cy,r=Math.hypot(dx,dy);
+    if(r<=rcap||r<0.001)return;pos[id]={x:cx+dx/r*rcap,y:cy+dy/r*rcap};});
+}
+
+function compressRegion(pos,all,{regionGap,intraScale}){
+  // 每個節點歸屬區域
+  const nodeRgn={};
+  all.forEach(n=>{const co=(n.data('country')||'').toUpperCase();nodeRgn[n.id()]=COUNTRY_REGION[co]||'other';});
+  // 各區域重心
+  const rgs={};
+  all.forEach(n=>{const id=n.id(),r=nodeRgn[id];if(!rgs[r])rgs[r]={sx:0,sy:0,n:0};
+    rgs[r].sx+=pos[id].x;rgs[r].sy+=pos[id].y;rgs[r].n++;});
+  for(const r in rgs){rgs[r].cx=rgs[r].sx/rgs[r].n;rgs[r].cy=rgs[r].sy/rgs[r].n;}
+  // 依 x 排序（西→東）
+  const sorted=Object.keys(rgs).sort((a,b)=>rgs[a].cx-rgs[b].cx);
+  const globalCy=Object.values(rgs).reduce((s,r)=>s+r.cy,0)/Object.values(rgs).length;
+  sorted.forEach((r,i)=>{rgs[r].newCx=(i-(sorted.length-1)/2)*regionGap;rgs[r].newCy=globalCy;});
+  // 重新定位
+  all.forEach(n=>{const id=n.id(),rg=rgs[nodeRgn[id]];if(!rg)return;
+    pos[id]={x:rg.newCx+(pos[id].x-rg.cx)*intraScale, y:rg.newCy+(pos[id].y-rg.cy)*intraScale};});
+}
+
+const COMPRESS_FN={none:null,radial:compressRadial,axis:compressAxis,sigmoid:compressSigmoid,cap:compressCap,region:compressRegion};
+
+// ── 壓縮曲線繪製 ──
+function drawCurve(mode,params){
   const cv=document.getElementById('curve'),ctx=cv.getContext('2d');
-  const W=cv.width,H=cv.height;
-  ctx.clearRect(0,0,W,H);
-  const PAD={l:20,r:6,t:6,b:4};
+  const W=cv.width,H=cv.height,PAD={l:18,r:4,t:5,b:4};
   const iW=W-PAD.l-PAD.r,iH=H-PAD.t-PAD.b;
-
-  // 背景
+  ctx.clearRect(0,0,W,H);
   ctx.fillStyle='#151b28';ctx.fillRect(0,0,W,H);
-
   // 格線
   ctx.strokeStyle='#1e2433';ctx.lineWidth=1;
-  [0.25,0.5,0.75].forEach(v=>{
+  [.25,.5,.75].forEach(v=>{
     ctx.beginPath();ctx.moveTo(PAD.l+v*iW,PAD.t);ctx.lineTo(PAD.l+v*iW,PAD.t+iH);ctx.stroke();
     ctx.beginPath();ctx.moveTo(PAD.l,PAD.t+iH*(1-v));ctx.lineTo(PAD.l+iW,PAD.t+iH*(1-v));ctx.stroke();
   });
-
   // 軸
   ctx.strokeStyle='#2d4a6e';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(PAD.l,PAD.t);ctx.lineTo(PAD.l,PAD.t+iH);ctx.lineTo(PAD.l+iW,PAD.t+iH);ctx.stroke();
 
+  function plotCurve(fn,color){
+    ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash([]);ctx.beginPath();
+    for(let i=0;i<=120;i++){const t=i/120,rp=Math.max(0,Math.min(1,fn(t)));
+      i===0?ctx.moveTo(PAD.l+t*iW,PAD.t+iH*(1-rp)):ctx.lineTo(PAD.l+t*iW,PAD.t+iH*(1-rp));}
+    ctx.stroke();
+  }
+
   // p=1 參考線
-  ctx.strokeStyle='#2d4a6e';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+  ctx.strokeStyle='#2d4a6e';ctx.lineWidth=1;ctx.setLineDash([3,3]);
   ctx.beginPath();ctx.moveTo(PAD.l,PAD.t+iH);ctx.lineTo(PAD.l+iW,PAD.t);ctx.stroke();
   ctx.setLineDash([]);
 
-  // 曲線
-  const grad=ctx.createLinearGradient(PAD.l,0,PAD.l+iW,0);
-  grad.addColorStop(0,'#4299e1');grad.addColorStop(1,'#63b3ed');
-  ctx.strokeStyle=grad;ctx.lineWidth=2.5;
-  ctx.beginPath();
-  for(let i=0;i<=120;i++){
-    const t=i/120,rp=Math.pow(t,p);
-    const cx2=PAD.l+t*iW,cy2=PAD.t+iH*(1-rp);
-    i===0?ctx.moveTo(cx2,cy2):ctx.lineTo(cx2,cy2);
-  }
-  ctx.stroke();
-
-  // 標籤
-  ctx.fillStyle='#63b3ed';ctx.font='bold 11px system-ui';
-  ctx.fillText(`p = ${p.toFixed(2)}`,PAD.l+4,PAD.t+14);
-  if(p<1){
-    // 面積陰影(視覺化「被壓縮了多少」)
-    ctx.fillStyle='rgba(66,153,225,0.07)';
-    ctx.beginPath();ctx.moveTo(PAD.l,PAD.t+iH);
-    for(let i=0;i<=120;i++){
-      const t=i/120,rp=Math.pow(t,p);
-      ctx.lineTo(PAD.l+t*iW,PAD.t+iH*(1-rp));
-    }
-    ctx.lineTo(PAD.l+iW,PAD.t+iH);ctx.closePath();ctx.fill();
+  if(mode==='none'){
+    ctx.fillStyle='#4a6580';ctx.font='10px system-ui';ctx.textAlign='center';
+    ctx.fillText('Equal Earth 原始(無壓縮)',PAD.l+iW/2,PAD.t+iH/2+4);ctx.textAlign='left';
+    document.getElementById('curveLabel').textContent='原始距離 r';
+  } else if(mode==='radial'){
+    const p=params.distPow;
+    plotCurve(t=>Math.pow(t,p),'#63b3ed');
+    ctx.fillStyle='#63b3ed';ctx.font='bold 10px system-ui';ctx.fillText(`p = ${p.toFixed(2)}`,PAD.l+3,PAD.t+12);
+    document.getElementById('curveLabel').textContent='原始距離 r';
+  } else if(mode==='axis'){
+    const {powX,powY}=params;
+    plotCurve(t=>Math.pow(t,powX),'#63b3ed');
+    plotCurve(t=>Math.pow(t,powY),'#f6ad55');
+    ctx.fillStyle='#63b3ed';ctx.font='10px system-ui';ctx.fillText(`X: p=${powX.toFixed(2)}`,PAD.l+3,PAD.t+11);
+    ctx.fillStyle='#f6ad55';ctx.fillText(`Y: p=${powY.toFixed(2)}`,PAD.l+3,PAD.t+22);
+    document.getElementById('curveLabel').textContent='原始距離（藍=X 橙=Y）';
+  } else if(mode==='sigmoid'){
+    const s=params.sigma;
+    plotCurve(t=>Math.tanh(t/s)/Math.tanh(1/s),'#68d391');
+    ctx.fillStyle='#68d391';ctx.font='bold 10px system-ui';ctx.fillText(`σ = ${s.toFixed(2)}`,PAD.l+3,PAD.t+12);
+    // 飽和點標記
+    ctx.strokeStyle='#68d391';ctx.lineWidth=1;ctx.setLineDash([2,3]);
+    ctx.beginPath();ctx.moveTo(PAD.l+s*iW,PAD.t);ctx.lineTo(PAD.l+s*iW,PAD.t+iH);ctx.stroke();
+    ctx.setLineDash([]);
+    document.getElementById('curveLabel').textContent='原始距離 r（虛線=飽和點）';
+  } else if(mode==='cap'){
+    const c=params.capPct;
+    plotCurve(t=>Math.min(t,c),'#fc8181');
+    ctx.strokeStyle='#fc8181';ctx.lineWidth=1;ctx.setLineDash([2,3]);
+    ctx.beginPath();ctx.moveTo(PAD.l+c*iW,PAD.t);ctx.lineTo(PAD.l+c*iW,PAD.t+iH);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#fc8181';ctx.font='bold 10px system-ui';ctx.fillText(`cap ${Math.round(c*100)}%`,PAD.l+3,PAD.t+12);
+    document.getElementById('curveLabel').textContent='原始距離 r（超過截斷）';
+  } else if(mode==='region'){
+    // 顯示三個色塊代表區域分欄
+    const labels=['EU','ASIA','AMER'],colors=['#9f7aea','#63b3ed','#f6ad55'];
+    const bw=iW/3;
+    labels.forEach((l,i)=>{
+      ctx.fillStyle=colors[i]+'33';ctx.fillRect(PAD.l+i*bw+1,PAD.t+2,bw-2,iH-4);
+      ctx.fillStyle=colors[i];ctx.font='bold 11px system-ui';ctx.textAlign='center';
+      ctx.fillText(l,PAD.l+i*bw+bw/2,PAD.t+iH/2+4);
+    });
+    ctx.textAlign='left';
+    document.getElementById('curveLabel').textContent='三區域固定間距排列';
   }
 }
 
-// ── Metro 演算法 ──
-function runMetro(params){
-  const {distPow:D_POW,grid:GRID,nudgeIter:N_ITER,angleTol:A_TOL,geoAnchor:G_ANC}=params;
+// ── Metro 演算法主體 ──
+function runMetro(mode,params){
+  const {grid:GRID,nudgeIter:N_ITER,angleTol:A_TOL,geoAnchor:G_ANC}=params;
   const snapG=v=>Math.round(v/GRID)*GRID;
   const t0=performance.now();
-
   const all=cy.nodes();
+
+  // 投影
   const ll={},placed=[],unplaced=[];
   all.forEach(n=>{
     const c=n.data('city'),co=(n.data('country')||'').toUpperCase();
@@ -306,15 +476,13 @@ function runMetro(params){
   });
   if(!placed.length){setStatus('無城市座標');return null;}
 
-  // Step 1: Equal Earth 投影
   const LON0=140,proj={};
   placed.forEach(n=>{const[lat,lon]=ll[n.id()];const e=equalEarth(lat,lon,LON0);
     proj[n.id()]={u:e.x/EE_DEG,v:-e.y/EE_DEG};});
 
-  // 自動比例尺
   const nn2=[];
-  placed.forEach(a=>{let m=Infinity;placed.forEach(b=>{
-    if(a===b)return;const d=Math.hypot(proj[a.id()].u-proj[b.id()].u,proj[a.id()].v-proj[b.id()].v);
+  placed.forEach(a=>{let m=Infinity;placed.forEach(b=>{if(a===b)return;
+    const d=Math.hypot(proj[a.id()].u-proj[b.id()].u,proj[a.id()].v-proj[b.id()].v);
     if(d>0.3&&d<m)m=d;});if(m<Infinity)nn2.push(m);});
   nn2.sort((a,b)=>a-b);
   const dense=nn2.length?(nn2[Math.floor(nn2.length*0.15)]||nn2[0]):1;
@@ -329,62 +497,47 @@ function runMetro(params){
   });
   all.forEach(nd=>{if(!pos[nd.id()])pos[nd.id()]={x:0,y:0};});
 
-  // Step 2: 非線性徑向壓縮
-  if(D_POW<0.999){
-    const xs=Object.values(pos).map(p=>p.x),ys=Object.values(pos).map(p=>p.y);
-    const cx=(Math.max(...xs)+Math.min(...xs))/2,cy=(Math.max(...ys)+Math.min(...ys))/2;
-    const rmax=Math.max(...Object.values(pos).map(p=>Math.hypot(p.x-cx,p.y-cy)))||1;
-    all.forEach(n=>{const id=n.id(),dx=pos[id].x-cx,dy=pos[id].y-cy,r=Math.hypot(dx,dy);
-      if(r<0.001)return;const rp=Math.pow(r/rmax,D_POW)*rmax;
-      pos[id]={x:cx+dx/r*rp,y:cy+dy/r*rp};});
-  }
+  // 壓縮
+  const fn=COMPRESS_FN[mode];
+  if(fn) fn(pos,all,params);
 
   const anchor={};all.forEach(n=>{anchor[n.id()]={...pos[n.id()]};});
 
-  // Step 3: 格點量化
+  // 格點量化
   all.forEach(n=>{pos[n.id()]={x:snapG(pos[n.id()].x),y:snapG(pos[n.id()].y)};});
 
   // 同格點展開
   const GA=Math.PI*(3-Math.sqrt(5));
-  const ND=((placed[0]&&placed[0].width())||16)+6;
+  const ND=((placed[0]&&placed[0].width())||14)+5;
   const cells={};
   all.forEach(n=>{const k=`${pos[n.id()].x},${pos[n.id()].y}`;(cells[k]??=[]).push(n.id());});
-  for(const ids of Object.values(cells)){
-    if(ids.length<2)continue;ids.sort();
+  for(const ids of Object.values(cells)){if(ids.length<2)continue;ids.sort();
     const ccx=pos[ids[0]].x,ccy=pos[ids[0]].y;
-    ids.forEach((id,i)=>{const r=ND*Math.sqrt(i),a=i*GA;pos[id]={x:ccx+r*Math.cos(a),y:ccy+r*Math.sin(a)};});
-  }
+    ids.forEach((id,i)=>{const r=ND*Math.sqrt(i),a=i*GA;pos[id]={x:ccx+r*Math.cos(a),y:ccy+r*Math.sin(a)};});}
 
-  // Step 4: 八向 Nudge
-  const deg={};
-  all.forEach(n=>{deg[n.id()]=n.connectedEdges().length;});
+  // 八向 Nudge
+  const deg={};all.forEach(n=>{deg[n.id()]=n.connectedEdges().length;});
   const bedges=cy.edges();
-
   for(let iter=0;iter<N_ITER;iter++){
     bedges.forEach(e=>{
       const sid=e.source().id(),tid=e.target().id();
       const dx=pos[tid].x-pos[sid].x,dy=pos[tid].y-pos[sid].y;
       const L=Math.hypot(dx,dy);if(L<1)return;
-      const angle=Math.atan2(dy,dx)*180/Math.PI;
-      const target=Math.round(angle/45)*45;
+      const angle=Math.atan2(dy,dx)*180/Math.PI,target=Math.round(angle/45)*45;
       const diff=Math.abs(angle-target),adiff=diff>180?360-diff:diff;
       if(adiff<=A_TOL)return;
       const rad=target*Math.PI/180;
-      if(deg[tid]<=deg[sid]){
-        pos[tid]={x:snapG(pos[sid].x+L*Math.cos(rad)),y:snapG(pos[sid].y+L*Math.sin(rad))};
-      }else{
-        pos[sid]={x:snapG(pos[tid].x-L*Math.cos(rad)),y:snapG(pos[tid].y-L*Math.sin(rad))};
-      }
+      if(deg[tid]<=deg[sid]){pos[tid]={x:snapG(pos[sid].x+L*Math.cos(rad)),y:snapG(pos[sid].y+L*Math.sin(rad))};}
+      else{pos[sid]={x:snapG(pos[tid].x-L*Math.cos(rad)),y:snapG(pos[tid].y-L*Math.sin(rad))};}
     });
     if(G_ANC>0)all.forEach(n=>{const id=n.id(),f=G_ANC*0.25;
       pos[id].x+=(anchor[id].x-pos[id].x)*f;pos[id].y+=(anchor[id].y-pos[id].y)*f;});
   }
 
-  // Step 5: 去重疊
+  // 去重疊
   const IDS=all.map(n=>n.id());
   for(let p=0;p<3;p++)for(let i=0;i<IDS.length;i++)for(let j=i+1;j<IDS.length;j++){
-    const ai=IDS[i],bi=IDS[j];
-    const dx=pos[bi].x-pos[ai].x,dy=pos[bi].y-pos[ai].y,dist=Math.hypot(dx,dy);
+    const ai=IDS[i],bi=IDS[j],dx=pos[bi].x-pos[ai].x,dy=pos[bi].y-pos[ai].y,dist=Math.hypot(dx,dy);
     if(dist===0){pos[bi].x+=GRID;continue;}
     if(dist<ND){const push=(ND-dist)/2,nx=dx/dist*push,ny=dy/dist*push;
       pos[ai].x-=nx;pos[ai].y-=ny;pos[bi].x+=nx;pos[bi].y+=ny;}
@@ -392,7 +545,6 @@ function runMetro(params){
 
   // 套用 + 邊著色
   cy.layout({name:'preset',positions:n=>pos[n.id()],fit:true,padding:40,animate:false}).run();
-
   let ok=0,near=0,bad=0;
   bedges.removeClass('ok near bad');
   bedges.forEach(e=>{
@@ -406,34 +558,43 @@ function runMetro(params){
     else{e.addClass('bad');bad++;}
   });
 
-  const elapsed=Math.round(performance.now()-t0);
-  return{ok,near,bad,total:ok+near+bad,placed:placed.length,elapsed};
+  return{ok,near,bad,total:ok+near+bad,placed:placed.length,elapsed:Math.round(performance.now()-t0)};
 }
 
-// ── UI 連線 ──
-function getParams(){
-  return{
-    distPow: +document.getElementById('distPow').value,
-    grid:    +document.getElementById('grid').value,
-    nudgeIter:+document.getElementById('nudgeIter').value,
-    angleTol:+document.getElementById('angleTol').value,
-    geoAnchor:+document.getElementById('geoAnchor').value,
-  };
-}
+// ── UI 狀態 ──
+let currentMode='none';
+
 function setStatus(msg){document.getElementById('status-msg').textContent=msg;}
 
-const FMT={distPow:v=>v.toFixed(2),geoAnchor:v=>v.toFixed(2),grid:v=>v,nudgeIter:v=>v,angleTol:v=>v};
+function getParams(){
+  const g=id=>+document.getElementById(id).value;
+  return{
+    distPow:g('distPow'),powX:g('powX'),powY:g('powY'),
+    sigma:g('sigma'),capPct:g('capPct'),
+    regionGap:g('regionGap'),intraScale:g('intraScale'),
+    grid:g('grid'),nudgeIter:g('nudgeIter'),angleTol:g('angleTol'),geoAnchor:g('geoAnchor'),
+  };
+}
+
+const DEFAULTS={distPow:0.75,powX:0.70,powY:0.90,sigma:0.40,capPct:0.50,
+  regionGap:300,intraScale:0.80,grid:160,nudgeIter:10,angleTol:16,geoAnchor:1.00};
+
+const FMT={
+  distPow:v=>v.toFixed(2),powX:v=>v.toFixed(2),powY:v=>v.toFixed(2),
+  sigma:v=>v.toFixed(2),capPct:v=>v.toFixed(2),intraScale:v=>v.toFixed(2),geoAnchor:v=>v.toFixed(2),
+  grid:v=>v,nudgeIter:v=>v,angleTol:v=>v,regionGap:v=>v,
+};
 
 let timer=null;
-function schedule(fast=false){
+function schedule(){
   clearTimeout(timer);
   timer=setTimeout(()=>{
     const params=getParams();
-    drawCurve(params.distPow);
+    drawCurve(currentMode,params);
     setStatus('計算中…');
     requestAnimationFrame(()=>{
-      const s=runMetro(params);
-      if(!s){return;}
+      const s=runMetro(currentMode,params);
+      if(!s)return;
       const pct=s.total?Math.round(s.ok/s.total*100):0;
       document.getElementById('s_pct').textContent=pct+'%';
       document.getElementById('s_ok').textContent=s.ok;
@@ -441,30 +602,49 @@ function schedule(fast=false){
       document.getElementById('s_placed').textContent=s.placed+'/'+cy.nodes().length;
       document.getElementById('octiBarFill').style.width=pct+'%';
       document.getElementById('status-time').textContent=s.elapsed+'ms';
-      setStatus(`八向化 ${pct}%（${s.ok} 達標 · ${s.near} 近似 · ${s.bad} 非八向）`);
+      setStatus(`[${currentMode}] 八向化 ${pct}% · ${s.ok} 達標 · ${s.near} 近似 · ${s.bad} 非八向`);
     });
-  }, fast?50:220);
+  },200);
 }
 
-['distPow','grid','nudgeIter','angleTol','geoAnchor'].forEach(id=>{
-  const el=document.getElementById(id),vEl=document.getElementById('v_'+id);
-  el.addEventListener('input',()=>{
-    vEl.textContent=FMT[id](+el.value);
-    schedule();
-  });
+// 模式切換
+document.getElementById('modeGrid').addEventListener('click',e=>{
+  const btn=e.target.closest('[data-mode]');if(!btn)return;
+  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  currentMode=btn.dataset.mode;
+  document.querySelectorAll('.param-group').forEach(g=>g.classList.remove('active'));
+  const pg=document.getElementById('pg-'+currentMode);if(pg)pg.classList.add('active');
+  schedule();
+});
+
+// Slider 連線
+Object.keys(DEFAULTS).forEach(id=>{
+  const el=document.getElementById(id);if(!el)return;
+  const vEl=document.getElementById('v_'+id);
+  el.addEventListener('input',()=>{if(vEl)vEl.textContent=FMT[id](+el.value);schedule();});
 });
 
 document.getElementById('btnReset').addEventListener('click',()=>{
   Object.entries(DEFAULTS).forEach(([k,v])=>{
-    const el=document.getElementById(k);
-    if(el){el.value=v;document.getElementById('v_'+k).textContent=FMT[k](v);}
+    const el=document.getElementById(k);if(!el)return;
+    el.value=v;const vEl=document.getElementById('v_'+k);if(vEl)vEl.textContent=FMT[k](v);
   });
-  schedule(true);
+  schedule();
 });
+document.getElementById('btnRerun').addEventListener('click',()=>schedule());
 
 document.getElementById('btnCopy').addEventListener('click',()=>{
   const p=getParams();
-  const txt=`  metro: {\n    grid:      ${p.grid},\n    nudgeIter:  ${p.nudgeIter},\n    angleTol:   ${p.angleTol},\n    geoAnchor: ${p.geoAnchor.toFixed(2)},\n    distPow:   ${p.distPow.toFixed(2)},\n  },`;
+  const modeParams={
+    none:`    distPow:   1.00,`,
+    radial:`    distPow:   ${p.distPow.toFixed(2)},`,
+    axis:`    powX:      ${p.powX.toFixed(2)},  // 分軸模式\n    powY:      ${p.powY.toFixed(2)},`,
+    sigmoid:`    sigma:     ${p.sigma.toFixed(2)},  // sigmoid 模式`,
+    cap:`    capPct:    ${p.capPct.toFixed(2)},  // 截斷模式`,
+    region:`    regionGap: ${p.regionGap},  // 區域分欄模式\n    intraScale:${p.intraScale.toFixed(2)},`,
+  }[currentMode]||'';
+  const txt=`  metro: {\n    grid:      ${p.grid},\n    nudgeIter:  ${p.nudgeIter},\n    angleTol:   ${p.angleTol},\n    geoAnchor: ${p.geoAnchor.toFixed(2)},\n${modeParams}\n    // mode: '${currentMode}'\n  },`;
   navigator.clipboard.writeText(txt).then(()=>{
     const b=document.getElementById('btnCopy');
     b.textContent='✅ 已複製到剪貼簿';
@@ -472,9 +652,39 @@ document.getElementById('btnCopy').addEventListener('click',()=>{
   });
 });
 
-// 初始跑一次
-drawCurve(DEFAULTS.distPow);
-schedule(true);
+// ── 顯示調整（不影響佈局算法，只改 cy 樣式）──
+function applyVisStyle(){
+  const w=+document.getElementById('edgeW').value;
+  const s=+document.getElementById('nodeS').value;
+  const showLabel=document.getElementById('btnLabel').dataset.on==='true';
+  const showPN=document.getElementById('btnPN').dataset.on==='true';
+  cy.style()
+    .selector('node').style({'width':s,'height':s,'label':showLabel?'data(id)':'','font-size':Math.max(6,s*0.55)})
+    .selector('node[type="pseudonode"]').style({'display':showPN?'element':'none'})
+    .selector('edge').style({'width':w,'line-color':'#263a54'})
+    .selector('edge.ok').style({'width':w+0.5,'line-color':'#48bb78'})
+    .selector('edge.near').style({'width':w,'line-color':'#f6ad55'})
+    .selector('edge.bad').style({'width':w,'line-color':'#fc8181'})
+    .update();
+}
+
+document.getElementById('edgeW').addEventListener('input',e=>{
+  document.getElementById('v_edgeW').textContent=(+e.target.value).toFixed(1);applyVisStyle();});
+document.getElementById('nodeS').addEventListener('input',e=>{
+  document.getElementById('v_nodeS').textContent=e.target.value;applyVisStyle();});
+
+document.getElementById('btnLabel').addEventListener('click',function(){
+  this.dataset.on=this.dataset.on==='true'?'false':'true';
+  this.textContent='標籤 '+(this.dataset.on==='true'?'✓':'✗');applyVisStyle();});
+document.getElementById('btnPN').addEventListener('click',function(){
+  this.dataset.on=this.dataset.on==='true'?'false':'true';
+  this.textContent='Pseudonode '+(this.dataset.on==='true'?'✓':'✗');applyVisStyle();});
+
+// 初始化
+document.getElementById('pg-none').classList.add('active');
+applyVisStyle();
+drawCurve('none',getParams());
+schedule();
 </script>
 </body>
 </html>

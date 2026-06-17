@@ -1360,6 +1360,7 @@ cy.on('free','node',(e)=>{
   }
   // 最後一個 free 後清除（所有節點都放開了）
   requestAnimationFrame(()=>{ _dragSnap=null; _dragDone=false; });
+  if(_dragDone) markDirty();
   updateFloatBar();
 });
 
@@ -1537,7 +1538,63 @@ function refresh(){
   $('stEdges').textContent=edges.size;
   $('stPseudo').textContent=pnData.length;
   $('stCountries').textContent=new Set(routerData.map(d=>d.country)).size;
+  markDirty();
 }
+
+// ── localStorage + BroadcastChannel ────────────────────────────────────────
+const DRAFT_KEY='blastradius-draft';
+const _bc=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('blastradius'):null;
+
+function serializeAll(){
+  return {
+    nodes:[...nodes.values()],
+    edges:[...edges.values()],
+    positions:Object.fromEntries(positions),
+    externals:structuredClone(externals),
+    demand:structuredClone(D),
+    srlg:structuredClone(S),
+    rtt:structuredClone(R),
+  };
+}
+
+function hydrateAll(data){
+  cy.elements().remove(); _inspMountedId=null;
+  const pos=data.positions||{}, eles=[];
+  for(const d of data.nodes||[]) eles.push({group:'nodes',data:{...d},position:pos[d.id]||{x:0,y:0},classes:d.type||''});
+  for(const d of data.edges||[]) eles.push({group:'edges',data:{...d}});
+  cy.add(eles);
+  externals=structuredClone(data.externals||[]);
+  if(data.demand){D.unit=data.demand.unit;D.source=data.demand.source;D.timestamp=data.demand.timestamp;D.active=data.demand.active;D.profiles=structuredClone(data.demand.profiles||{});}
+  if(data.srlg) S=structuredClone(data.srlg);
+  if(data.rtt)  R=structuredClone(data.rtt);
+  const posCount=Object.keys(pos).length;
+  if(posCount) cy.layout({name:'preset',positions:n=>pos[n.id()],fit:true,padding:40,animate:false}).run();
+  else cy.fit(40);
+  _hydrating=true; select(null); refresh(); _hydrating=false;
+}
+let _hydrating=false;
+
+let _dirtyTimer=null;
+function markDirty(){
+  if(_hydrating) return;  // hydrateAll 載入中，不回存
+  clearTimeout(_dirtyTimer);
+  _dirtyTimer=setTimeout(()=>{
+    const data=serializeAll();
+    try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(data)); }catch(e){}
+    // 廣播拓樸部分給 index.html
+    _bc?.postMessage({type:'topo-update',topo:{nodes:data.nodes,edges:data.edges,positions:data.positions}});
+  },1500);
+}
+
+// 啟動時恢復草稿
+(()=>{
+  const raw=localStorage.getItem(DRAFT_KEY);
+  if(!raw) return;
+  try{
+    const data=JSON.parse(raw);
+    if((data.nodes||[]).length>0){ hydrateAll(data); toast('↩ 草稿已恢復'); }
+  }catch(e){}
+})();
 let stTimer=null;
 function setStatus(kind,msg){
   $('connDot').className='dot '+(kind==='ok'?'ok':kind==='warn'?'warn':'bad');

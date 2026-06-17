@@ -12,6 +12,41 @@
 <script src="demand.js"></script>
 <script src="srlg.js"></script>
 <script src="rtt.js"></script>
+<script>
+// ── localStorage 草稿覆蓋 ──────────────────────────────────────────────────
+// edit.html 存的草稿優先於 topology.js（properties mutate，不違反 const）
+(()=>{
+  const raw=localStorage.getItem('blastradius-draft');
+  if(!raw) return;
+  try{
+    const d=JSON.parse(raw);
+    if((d.nodes||[]).length>0){
+      topology.nodes=d.nodes; topology.edges=d.edges; topology.positions=d.positions||{};
+    }
+  }catch(e){}
+})();
+// ── BroadcastChannel：edit.html 有更新時顯示提示 banner ──────────────────
+(()=>{
+  if(typeof BroadcastChannel==='undefined') return;
+  const bc=new BroadcastChannel('blastradius');
+  bc.onmessage=e=>{
+    if(e.data?.type!=='topo-update') return;
+    // 更新 localStorage，讓下次 reload 時生效
+    const cur=JSON.parse(localStorage.getItem('blastradius-draft')||'{}');
+    Object.assign(cur, e.data.topo);
+    localStorage.setItem('blastradius-draft', JSON.stringify(cur));
+    // 顯示 banner
+    if(document.getElementById('_bcBanner')) return;
+    const b=document.createElement('div');
+    b.id='_bcBanner';
+    b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--accent);color:#fff;text-align:center;padding:8px 16px;font-size:13px;cursor:pointer';
+    b.setAttribute('data-i18n','ui.bcBanner');
+    b.textContent=I18N[LANG]?.['ui.bcBanner']||I18N['zh']?.['ui.bcBanner']||'⟳ Topology updated';
+    b.onclick=()=>location.reload();
+    document.body.prepend(b);
+  };
+})();
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style type="text/tailwindcss">
   /* tab 分組色票(--tab-*)已抽至共用 theme.css(index 與 edit 共用單一來源)— 見 <head> 的 <link href="theme.css">;其餘 role/node 圖色見下方純 <style> :root */
@@ -968,6 +1003,7 @@ const I18N = {
     'ui.togglePseudoTitle':'Pseudo-node 是交換式網段的虛擬節點,用來表示多台 Router 共用同一個 LAN。隱藏後只顯示實體 Router。',
     'ui.clearFailed':      '清除所有故障',
     'ui.clearFailedTitle': '清除所有右鍵標記的故障鏈路與節點,回到正常拓樸。',
+    'ui.bcBanner':         '⟳ 拓樸已從編輯器更新 — 點此重新載入',
     'ui.demandProfile':    '流量情境',
     'ui.interactionHint':  '右鍵鏈路/節點 → 切換故障 · 左鍵拖曳排版',
     'ui.legend':           '圖例',
@@ -1259,6 +1295,7 @@ const I18N = {
     'ui.togglePseudoTitle':'A pseudo-node is a virtual node for a switched segment, representing multiple routers sharing one LAN. Hiding shows only physical routers.',
     'ui.clearFailed':      'Clear all failures',
     'ui.clearFailedTitle': 'Clear all right-click-marked failed links and nodes, returning to the normal topology.',
+    'ui.bcBanner':         '⟳ Topology updated from editor — click to reload',
     'ui.demandProfile':    'Traffic scenario',
     'ui.interactionHint':  'Right-click link/node → toggle failure · left-drag to lay out',
     'ui.legend':           'Legend',

@@ -194,6 +194,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
     <!-- 共用群組:所有 tab 都顯示,位置固定在左側 -->
     <button class="btn" data-g="io"  id="btnLoadAll"  title="從同目錄 fetch topology / demand / srlg / rtt.js 全部載入">⤓ 載入全部</button>
     <button class="btn" data-g="io"  id="btnExportAll" title="將 topology / demand / srlg / rtt.js 全部下載到本機">⇩ 匯出全部</button>
+    <button class="btn" data-g="io"  id="btnSyncRemote" title="將目前資料同步到雲端（CF Workers KV）">☁ 同步</button>
     <button class="btn" data-g="cur" id="btnLoadLocal" title="從同目錄 fetch 當前分頁對應的 .js 載入">⤓ 載入</button>
     <button class="btn" data-g="cur" id="btnImport"    title="貼上或選取檔案,將 JS 資料載入當前分頁">⇪ 匯入</button>
     <button class="btn" data-g="cur" id="btnExport"    title="將當前分頁的資料下載為 .js 檔">⇩ 匯出本檔</button>
@@ -1608,7 +1609,6 @@ function markDirty(){
   _dirtyTimer=setTimeout(()=>{
     const data=serializeAll();
     Draft.write(data);
-    pushRemote(data).catch(()=>{});  // 靜默失敗，本地已存
     _bc?.postMessage({type:'topo-update',topo:{nodes:data.nodes,edges:data.edges,positions:data.positions}});
   },1500);
 }
@@ -2116,6 +2116,14 @@ function loadOne(tab,txt){
 }
 $('btnExport').onclick=()=>{ const m=FILEMAP[TAB]; dl(m[0],m[1]()); toast('已匯出 '+m[0]); };
 $('btnExportAll').onclick=()=>{ for(const k of Object.keys(FILEMAP)){ const m=FILEMAP[k]; dl(m[0],m[1]()); } toast('已匯出 4 個檔'); };
+$('btnSyncRemote').onclick=async()=>{
+  $('btnSyncRemote').disabled=true;
+  try{
+    await pushRemote(serializeAll());
+    toast('☁ 已同步到雲端');
+  }catch(e){ toast('同步失敗：'+e.message); }
+  finally{ $('btnSyncRemote').disabled=false; }
+};
 $('btnLoadLocal').onclick=()=>{ const f=FILEMAP[TAB][0];
   fetch(f).then(r=>r.ok?r.text():Promise.reject(r.status)).then(t=>{ loadOne(TAB,t); toast('已載入 '+f); }).catch(e=>toast('載入失敗('+e+')')); };
 $('btnImport').onclick=()=>{ modal.classList.add('open'); $('modalText').value=''; $('fileInput').value='';

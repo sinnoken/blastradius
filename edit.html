@@ -2,6 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BlastRadius — Data Editor</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -724,11 +725,11 @@ const LAYOUT_PARAMS = {
   },
   // layoutMetroMap
   metro: {
-    grid:      80,   // ★ 格點間距(px);越大線條越粗獷、越小越細膩
-    nudgeIter:  5,   // 八向微調迭代輪數
-    angleTol:   8,   // 邊角度容差(°);差距超過此值才嘗試微調
-    geoAnchor: 0.4,  // ★ 地理引力係數(每輪把節點拉回地理位置;0=無 1=強)
-    distPow:  0.75,  // ★ 徑向壓縮指數(1=不壓縮/Equal Earth 原始,0.5=sqrt 激進壓縮長邊)
+    grid:     160,   // ★ 格點間距(px);越大線條越粗獷、越小越細膩
+    nudgeIter: 10,   // 八向微調迭代輪數
+    angleTol:  16,   // 邊角度容差(°);差距超過此值才嘗試微調
+    geoAnchor:1.00,  // ★ 地理引力係數(每輪把節點拉回地理位置;0=無 1=強)
+    distPow:  1.00,  // ★ 徑向壓縮指數(1=不壓縮/Equal Earth 原始,0.5=sqrt 激進壓縮長邊)
   },
   // layoutMDS
   mds: {

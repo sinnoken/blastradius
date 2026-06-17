@@ -2,6 +2,7 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Metro Map Tuner — BlastRadius</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
@@ -198,6 +199,15 @@ input[type=range]{width:100%;height:4px;accent-color:#4299e1;cursor:pointer}
         <div class="param-desc">八向微調迭代輪數</div>
       </div>
       <div class="param">
+        <div class="param-header"><span class="param-name">directions</span><span class="param-val" id="v_directions">8</span></div>
+        <div style="display:flex;gap:5px;margin-top:2px">
+          <button class="btn-sm dir-btn active" data-d="8">8向<br><span style="font-size:9px;color:#4a6580">45°</span></button>
+          <button class="btn-sm dir-btn" data-d="16">16向<br><span style="font-size:9px;color:#4a6580">22.5°</span></button>
+          <button class="btn-sm dir-btn" data-d="32">32向<br><span style="font-size:9px;color:#4a6580">11.25°</span></button>
+        </div>
+        <div class="param-desc" id="dir-desc">snap 到 45° 倍數（標準八向化）</div>
+      </div>
+      <div class="param">
         <div class="param-header"><span class="param-name">angleTol</span><span class="param-val" id="v_angleTol">16</span></div>
         <input type="range" id="angleTol" min="2" max="22" step="1" value="16">
         <div class="param-desc">角度容差 (°)</div>
@@ -244,6 +254,14 @@ input[type=range]{width:100%;height:4px;accent-color:#4299e1;cursor:pointer}
       <div style="display:flex;gap:6px">
         <button class="btn-sm" id="btnLabel" data-on="true">標籤 ✓</button>
         <button class="btn-sm" id="btnPN" data-on="true">Pseudonode ✓</button>
+      </div>
+      <!-- Edge 樣式 -->
+      <div style="margin-top:4px">
+        <div class="param-desc" style="margin-bottom:4px">Edge 樣式</div>
+        <div style="display:flex;gap:5px">
+          <button class="btn-sm edge-style-btn active" data-es="straight">直線</button>
+          <button class="btn-sm edge-style-btn" data-es="taxi">Taxi (90°)</button>
+        </div>
       </div>
     </div>
   </div>
@@ -462,7 +480,8 @@ function drawCurve(mode,params){
 
 // ── Metro 演算法主體 ──
 function runMetro(mode,params){
-  const {grid:GRID,nudgeIter:N_ITER,angleTol:A_TOL,geoAnchor:G_ANC}=params;
+  const {grid:GRID,nudgeIter:N_ITER,angleTol:A_TOL,geoAnchor:G_ANC,directions:DIRS}=params;
+  const STEP=360/DIRS;
   const snapG=v=>Math.round(v/GRID)*GRID;
   const t0=performance.now();
   const all=cy.nodes();
@@ -523,7 +542,7 @@ function runMetro(mode,params){
       const sid=e.source().id(),tid=e.target().id();
       const dx=pos[tid].x-pos[sid].x,dy=pos[tid].y-pos[sid].y;
       const L=Math.hypot(dx,dy);if(L<1)return;
-      const angle=Math.atan2(dy,dx)*180/Math.PI,target=Math.round(angle/45)*45;
+      const angle=Math.atan2(dy,dx)*180/Math.PI,target=Math.round(angle/STEP)*STEP;
       const diff=Math.abs(angle-target),adiff=diff>180?360-diff:diff;
       if(adiff<=A_TOL)return;
       const rad=target*Math.PI/180;
@@ -566,6 +585,7 @@ let currentMode='none';
 
 function setStatus(msg){document.getElementById('status-msg').textContent=msg;}
 
+let currentDirections=8;
 function getParams(){
   const g=id=>+document.getElementById(id).value;
   return{
@@ -573,11 +593,24 @@ function getParams(){
     sigma:g('sigma'),capPct:g('capPct'),
     regionGap:g('regionGap'),intraScale:g('intraScale'),
     grid:g('grid'),nudgeIter:g('nudgeIter'),angleTol:g('angleTol'),geoAnchor:g('geoAnchor'),
+    directions:currentDirections,
   };
 }
 
 const DEFAULTS={distPow:0.75,powX:0.70,powY:0.90,sigma:0.40,capPct:0.50,
-  regionGap:300,intraScale:0.80,grid:160,nudgeIter:10,angleTol:16,geoAnchor:1.00};
+  regionGap:300,intraScale:0.80,grid:160,nudgeIter:10,angleTol:16,geoAnchor:1.00,directions:8};
+
+const DIR_DESC={8:'snap 到 45° 倍數（標準八向化）',16:'snap 到 22.5° 倍數（適合 Mesh）',32:'snap 到 11.25° 倍數（幾乎保持原角）'};
+document.querySelectorAll('.dir-btn').forEach(b=>{
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.dir-btn').forEach(x=>x.classList.remove('active'));
+    this.classList.add('active');
+    currentDirections=+this.dataset.d;
+    document.getElementById('v_directions').textContent=currentDirections;
+    document.getElementById('dir-desc').textContent=DIR_DESC[currentDirections]||'';
+    schedule();
+  });
+});
 
 const FMT={
   distPow:v=>v.toFixed(2),powX:v=>v.toFixed(2),powY:v=>v.toFixed(2),
@@ -653,20 +686,34 @@ document.getElementById('btnCopy').addEventListener('click',()=>{
 });
 
 // ── 顯示調整（不影響佈局算法，只改 cy 樣式）──
+let currentEdgeStyle='straight';
+
+
 function applyVisStyle(){
   const w=+document.getElementById('edgeW').value;
   const s=+document.getElementById('nodeS').value;
   const showLabel=document.getElementById('btnLabel').dataset.on==='true';
   const showPN=document.getElementById('btnPN').dataset.on==='true';
+  const cs=currentEdgeStyle==='taxi'?'taxi':'straight';
   cy.style()
     .selector('node').style({'width':s,'height':s,'label':showLabel?'data(id)':'','font-size':Math.max(6,s*0.55)})
     .selector('node[type="pseudonode"]').style({'display':showPN?'element':'none'})
-    .selector('edge').style({'width':w,'line-color':'#263a54'})
+    .selector('edge').style({'width':w,'line-color':'#263a54','curve-style':cs})
     .selector('edge.ok').style({'width':w+0.5,'line-color':'#48bb78'})
     .selector('edge.near').style({'width':w,'line-color':'#f6ad55'})
     .selector('edge.bad').style({'width':w,'line-color':'#fc8181'})
     .update();
+
 }
+
+document.querySelectorAll('.edge-style-btn').forEach(b=>{
+  b.addEventListener('click',function(){
+    document.querySelectorAll('.edge-style-btn').forEach(x=>x.classList.remove('active'));
+    this.classList.add('active');
+    currentEdgeStyle=this.dataset.es;
+    applyVisStyle();
+  });
+});
 
 document.getElementById('edgeW').addEventListener('input',e=>{
   document.getElementById('v_edgeW').textContent=(+e.target.value).toFixed(1);applyVisStyle();});

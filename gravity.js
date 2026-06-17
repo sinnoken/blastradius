@@ -167,7 +167,7 @@ export const CITY_GEO = {
   MEX: { lat:19.43,  lon:-99.13, country:'MX' },  // 墨西哥市
   GRU: { lat:-23.43, lon:-46.47, country:'BR' },  // 聖保羅
   GIG: { lat:-22.81, lon:-43.25, country:'BR' },  // 里約熱內盧
-  FOR: { lat:-3.78,  lon:-38.53, country:'BR' },  // 福塔雷薩
+  FOR: { lat:-3.78,  lon:-40.55, country:'BR' },  // 福塔雷薩(lon 微調至 seam 40°W 右側，避免 LON0=140°E 投影跑到歐洲左邊)
   POA: { lat:-29.98, lon:-51.18, country:'BR' },  // 阿雷格里港
   BOG: { lat:4.70,   lon:-74.14, country:'CO' },  // 波哥大
   LIM: { lat:-12.02, lon:-77.10, country:'PE' },  // 利馬

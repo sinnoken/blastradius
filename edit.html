@@ -1543,6 +1543,29 @@ function refresh(){
   markDirty();
 }
 
+// ── Remote（CF Workers + KV）──────────────────────────────────────────────
+const REMOTE_URL = 'https://blastradius-worker.99pd.workers.dev';
+const REMOTE_TOKEN = '7d1314741faa96d3857cde4f7e09bee7fba8b771d7130e142fa231894d457729';
+const clientId = (() => {
+  const k = 'br-client-id';
+  return localStorage.getItem(k) || (()=>{ const id=crypto.randomUUID(); localStorage.setItem(k,id); return id; })();
+})();
+
+const remoteHeaders = { 'Content-Type':'application/json', 'X-Token': REMOTE_TOKEN };
+
+async function fetchRemote(){
+  const r = await fetch(`${REMOTE_URL}/latest?client=${clientId}`, { headers: remoteHeaders });
+  if(!r.ok) return null;
+  return r.json();
+}
+async function pushRemote(data){
+  await fetch(`${REMOTE_URL}?client=${clientId}`, {
+    method: 'PUT',
+    headers: remoteHeaders,
+    body: JSON.stringify(data),
+  });
+}
+
 // ── localStorage + BroadcastChannel ────────────────────────────────────────
 const _bc=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('blastradius'):null;
 
@@ -1584,7 +1607,8 @@ function markDirty(){
   clearTimeout(_dirtyTimer);
   _dirtyTimer=setTimeout(()=>{
     const data=serializeAll();
-    Draft.write(data);  // 有效期、key 由 Draft 統一管理
+    Draft.write(data);
+    pushRemote(data).catch(()=>{});  // 靜默失敗，本地已存
     _bc?.postMessage({type:'topo-update',topo:{nodes:data.nodes,edges:data.edges,positions:data.positions}});
   },1500);
 }
@@ -2112,9 +2136,9 @@ async function startLoad(){
   // ① 本地 localStorage（已在上方 IIFE 處理）
   if(_loadedFromDraft) return;
 
-  // ② remote（CF Workers / DB）— 未實作，留 stub
-  // const remoteData = await fetchRemote().catch(()=>null);
-  // if(remoteData){ hydrateAll(remoteData); return; }
+  // ② remote（CF Workers + KV）
+  const remoteData = await fetchRemote().catch(()=>null);
+  if(remoteData?.nodes?.length){ hydrateAll(remoteData); return; }
 
   // ③ 同目錄 *.js 檔案（fallback）
   const get=f=>fetch(f).then(r=>r.ok?r.text():Promise.reject());

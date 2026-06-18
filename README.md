@@ -89,6 +89,13 @@ Because `engine.js` is an ES module, browsers won't allow loading it over
 - **VS Code**: install the Live Server extension → right-click `index.html` → "Open with Live Server"
 - **GitHub Pages**: Repo Settings → Pages → once enabled, open `https://<user>.github.io/<repo>/` directly
 
+### Auxiliary pages
+
+| Page | URL | Purpose |
+|------|-----|---------|
+| **Data editor** | `/edit.html` | 4-tab editor (topology / demand / SRLG / RTT); import OSPF LSDB; export back to `.js`. Dependencies: Cytoscape core + cxtmenu + Tailwind CDN; edge-drawing and undo/redo are hand-rolled (no external plugins). Load order: `dagre` must precede `cytoscape-dagre`. |
+| **Metro Map Tuner** | `/metro-tune.html` | Interactive parameter tuner for the "Metro Map" octilinear layout — adjust grid size, nudge iterations, compression mode, and direction count (8 / 16 / 32-way) with live edge-colour feedback (green = octilinear, orange = near, red = non-octilinear); copy the final `LAYOUT_PARAMS.metro` block to paste into `edit.html` |
+
 ### Interactions
 
 | Action | Effect |

@@ -84,6 +84,13 @@ BlastRadius 是一個**單檔 HTML** 的網路拓樸分析工具,把「最短路
 - **VS Code**:裝 Live Server 擴充套件 → 右鍵 `index.html` → "Open with Live Server"
 - **GitHub Pages**:Repo Settings → Pages → 啟用後直接開 `https://<user>.github.io/<repo>/`
 
+### 輔助頁面
+
+| 頁面 | URL | 用途 |
+|------|-----|------|
+| **資料編輯器** | `/edit.html` | 4 分頁編輯（topology / demand / SRLG / RTT）；匯入 OSPF LSDB；匯出回 `.js`。依賴：Cytoscape core + cxtmenu + Tailwind CDN；建邊與 undo/redo 自寫（不用外掛）。載入順序：`dagre` 必須早於 `cytoscape-dagre`。 |
+| **Metro Map 調參器** | `/metro-tune.html` | 八向化佈局的互動調參工具 — 即時調整格點大小、迭代輪數、壓縮模式、方向數（8 / 16 / 32 向），邊依八向化狀態著色（綠=達標、橙=近似、紅=未達標）；調好後複製 `LAYOUT_PARAMS.metro` 貼回 `edit.html` |
+
 ### 互動操作
 
 | 操作 | 效果 |

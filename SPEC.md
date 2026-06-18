@@ -37,6 +37,8 @@ const topology = {
 };
 ```
 
+> **Note (edit.html internal state)**: In edit.html's internal state, externals are stored per-node (`node.externals`). Export flattens them back to the top-level `externals` array for `topology.js` compatibility.
+
 ### §1.2 Node
 
 ```ts
@@ -51,6 +53,7 @@ type Node =
       area: string;          // OSPF area (currently only '0' supported)
       stubs?: string[];      // LSA3 equivalent: prefixes (CIDR) advertised by this router
       isASBR?: boolean;      // whether it is an ASBR (injects LSA5 externally)
+      externals?: External[]; // LSA5 advertisements, per-node (moved from top-level topology.externals array). Only present on router nodes with isASBR=true.
       isABR?: boolean;       // whether it is an ABR (inter-area computation not yet enabled)
     }
   | {
@@ -102,6 +105,9 @@ type External = {
 | `demand.js` | `module.exports = { demand }` | C4 edge traffic, C5 failure-sim traffic view | Traffic views show "demand.js not loaded" |
 | `rtt.js` | `module.exports = { rtt }` | C2 RTT/SLO matrix mode (§4.5), C10 cost reference | C2 falls back to cost-only; C10 reference column hidden |
 | `srlg.js` | global `srlg` (no exports) | C5 failure-sim SRLG dropdown | Only single-element failure remains |
+| `draft.js` | `window.Draft` | index.html + edit.html localStorage persistence | — |
+
+`draft.js` is a shared localStorage persistence module. Exports `window.Draft` with `read(topoKey)`, `write(data, topoKey)`, `clear(topoKey)`. Per-topology keys via `?topo=` URL param. 2-hour expiry. Used by both index.html and edit.html.
 
 `demand.js` provides **5 scenario profiles** — `avg` / `max` / `asia_busy` / `amer_busy` / `eu_busy` — switched via `demand.active`; `engine.js` only reads `demand.matrix` / `demand.default` (profile switching is transparent to the algorithms). Values are **float Gbps** (1 decimal place in gen.mjs; 3 decimal places in companions.mjs). `rtt.js` contains only `matrix` (city×city RTT) and `edges` (PoP node-pair RTT); the `cityRef` field has been removed (it was a mirror of `city_rtt.csv`, never consumed by the frontend).
 
@@ -588,6 +594,7 @@ Topolograph naming). Main differences:
 - `rtt.js` now contains only `matrix` and `edges`; the `cityRef` field has been removed (it was a mirror of `city_rtt.csv`, never consumed by the frontend)
 - `ospf-import.js` `OSPF_CITY` values simplified from `{ city, country }` objects to plain city code strings; country is derived from `CITY_GEO` in `gravity.js`
 - `edit.html` data editor: Equal Earth projection LON0 changed from 140°E to 150°E in both `layoutGeoMap()` and `layoutMetroMap()` (ITU/Telegeography Asia-Pacific convention; seam at −30°W avoids Fortaleza wrapping to the wrong side); new **Metro Map** layout option ("八向化") added — Equal Earth projection → grid quantization → Octilinear Nudge → overlap resolution; parameters in `LAYOUT_PARAMS.metro` (`grid`, `nudgeIter`, `angleTol`, `geoAnchor`, `distPow`, `directions` 8/16/32); ~70–80% of edges achieve octilinear angles
+- **edit.html data architecture**: JS SSOT Maps (nodes/edges/positions) as single source of truth; cy is renderer only. Inspector uses mount/patch pattern — only rebuilds DOM when switching elements, patches field values in-place otherwise. `applyField` writes Maps first, then syncs to Cytoscape (`_skipCySync` flag prevents cy data events from bouncing back to Maps). `externals` relocated from top-level array to per-node `node.externals`. localStorage sync via shared `draft.js` module with BroadcastChannel for cross-tab updates.
 - `metro-tune.html`: new standalone interactive parameter tuner for Metro Map layout; features 6 compression modes, live preview with edge coloring (green=octilinear / orange=near / red=non-octilinear), direction selector (8/16/32), and display controls
 - `serve.py`: new dev HTTP server returning `Cache-Control: no-store`; replaces `python -m http.server` which had ~1 min browser-cache delay
 - **Planned (not implemented)**: explicit-path steering **steer** (Tier 0, pull specific traffic off the shortest path) + bandwidth admission **CAC** (Tier 1, "overflow / admission-fail once full"). Design in `steer.md`; once implemented, merged into a new §.

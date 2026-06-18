@@ -1,6 +1,6 @@
-# BlastRadius SPEC
+# Topocide SPEC
 
-本文件規範 BlastRadius POC 的資料模型、演算法定義、模組分層與視覺狀態機。
+本文件規範 Topocide POC 的資料模型、演算法定義、模組分層與視覺狀態機。
 **以程式碼為準** — 本文件描述的是 `engine.js` / `index.html` 的實際行為。
 
 ## 編號慣例(務必先讀)
@@ -32,6 +32,8 @@ const topology = {
 };
 ```
 
+**注意（edit.html 內部狀態）**：edit.html 內部以 per-node 方式儲存 externals（`node.externals`）。匯出時會攤平回 `topology.js` 的頂層 `externals` 陣列，維持格式相容性。
+
 ### §1.2 Node
 
 ```ts
@@ -47,6 +49,7 @@ type Node =
       stubs?: string[];      // LSA3 等價:該 router 宣告的 prefix(CIDR)
       isASBR?: boolean;      // 是否為 ASBR(對外注入 LSA5)
       isABR?: boolean;       // 是否為 ABR(目前未啟用 inter-area 計算)
+      externals?: External[];  // LSA5 廣播，per-node 儲存（由頂層陣列移入）。僅在 isASBR=true 的 router 節點出現。
     }
   | {
       id: string;            // 以 'PN' 開頭表示 pseudo-node(LSA2 抽象)
@@ -97,6 +100,7 @@ type External = {
 | `demand.js` | `module.exports = { demand }` | C4 邊流量、C5 失效模擬流量視角 | 流量視圖顯示「未載入 demand.js」 |
 | `rtt.js` | `module.exports = { rtt }` | C2 RTT/SLO 矩陣模式(§4.5)、C10 成本參考 | C2 退回純成本;C10 參考欄隱藏 |
 | `srlg.js` | global `srlg`(無 exports) | C5 失效模擬的 SRLG 下拉 | 僅剩單一元件失效選項 |
+| `draft.js` | localStorage 草稿共用模組。匯出 `window.Draft`，提供 `read(topoKey)` / `write(data, topoKey)` / `clear(topoKey)` API。以 `?topo=` URL 參數區分各拓樸的獨立 draft key。2 小時有效期。index.html 與 edit.html 共用。|
 
 `demand.js` 提供 **5 個情境 profile** — `avg` / `max` / `asia_busy` / `amer_busy` / `eu_busy` — 透過 `demand.active` 切換；`engine.js` 只讀 `demand.matrix` / `demand.default`(profile 切換對演算法透明)。值為**浮點 Gbps**（gen.mjs 保留 1 位小數；companions 保留 3 位小數）。`rtt.js` 只含 `matrix`（城市對 RTT）與 `edges`（PoP 節點對 RTT）；`cityRef` 欄位已移除（僅是 `city_rtt.csv` 的鏡像，前端不消費）。
 
@@ -518,7 +522,7 @@ op 優先:
 
 ## §14 與原始 OSPF spec 的差異
 
-本 SPEC 對應 BlastRadius POC `v1.x`(從 Topolograph 命名分支出來後)。主要差異:
+本 SPEC 對應 Topocide POC `v1.x`(從 Topolograph 命名分支出來後)。主要差異:
 
 - 新增 §6.2b 流量加權邊負載(`allPairsTraffic`)+ C4 邊流量分頁
 - 新增 §10 N-1 Worst-case Ranking,並接上 SRLG 群組失效
@@ -535,6 +539,7 @@ op 優先:
 - `edit.html` 資料編輯器：Equal Earth 投影 LON0 從 140°E 改為 150°E（`layoutGeoMap()` 與 `layoutMetroMap()` 皆適用；ITU/Telegeography 亞太電信業界慣例，縫合線在 −30°W，避免 Fortaleza 跑到錯的一側）；新增**地鐵圖**佈局選項（「八向化」）— Equal Earth 投影 → 格點量化 → Octilinear Nudge → 重疊消解；參數在 `LAYOUT_PARAMS.metro`（`grid`、`nudgeIter`、`angleTol`、`geoAnchor`、`distPow`、`directions` 8/16/32）；約 70–80% 的邊可達到八向角
 - `metro-tune.html`：新獨立互動調參工具，用於調整地鐵圖佈局參數；6 種壓縮模式、邊著色即時預覽（綠=八向/橘=近似/紅=非八向）、方向數選擇器（8/16/32）、顯示控制
 - `serve.py`：新開發用 HTTP 伺服器，回傳 `Cache-Control: no-store`；取代 `python -m http.server`（後者有約 1 分鐘的瀏覽器快取延遲）
+- **edit.html 資料層架構**：`nodes` / `edges` / `positions` Maps 為 SSOT，cy 僅作渲染器。Inspector 採 mount/patch 模式——切換元素才重建 DOM，同元素只更新欄位值（保留 focus）。`applyField` 先寫 Maps 再同步 cy（`_skipCySync` 旗標防止 cy data 事件回寫 Maps）。`externals` 從頂層陣列移入 `node.externals`。localStorage 同步透過共用的 `draft.js` 模組，並以 BroadcastChannel 實現跨分頁即時更新。
 - **規劃中(未實作)**:明確路徑導流 **steer**(Tier 0,把特定流量拉離最短路)+ 頻寬准入 **CAC**(Tier 1,「填滿才溢出 / admission 失敗」)。設計見 `steer.md`;實作後整併為新 §。
 
 `engine.js` 的區塊註解(`§4 — SPT` …)與本文 § 編號雙向對應;UI 分頁編號另見 §12。

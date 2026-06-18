@@ -1,170 +1,126 @@
-# BlastRadius
+# Topocide
 
-**OSPF / IGP 韌性審計工具 — 看清一條鏈路、一台 Router 倒下時,網路會炸出多大半徑**
+**OSPF 骨幹網路韌性審計工具 — 量化失效衝擊、壅塞風險與成本最佳化。**
 
 ---
 
-## 專案概述(Executive Summary)
+## 解決的問題
 
-BlastRadius 是一個**單檔 HTML** 的網路拓樸分析工具,把「最短路徑」、「ECMP 等成本路徑」、
-「失效模擬」、「N-1 / SRLG worst-case 排行」這些原本散落在試算表、Visio、CLI 跟人腦裡的
-工程動作,集中到同一張可互動的拓樸圖上。
+骨幹網路工程師在設計與維運中面對三個反覆出現的痛點：
 
-定位是 **設計階段的韌性審計** + **事故演練前的爆炸半徑試算**,**不是**即時監控。
+| 痛點 | 難在哪裡 |
+|------|---------|
+| **失效情境難估算** | 一條電路或一台路由器斷掉，流量往哪跑、哪段會滿、哪些 prefix 失去備援——靠人腦或 Excel 無法快速算清楚 |
+| **壅塞情境難估算** | 現有 OSPF 權重是否讓流量分配均勻？worst-case 在哪條鏈路？SRLG 同時斷掉之後容量夠不夠？ |
+| **鏈路維運成本難估算** | 哪組權重讓 MLU 最低？現有成本和 RTT 延遲之間偏離多少？如何在不違反物理約束下自動找到更好的設定？ |
 
-| 項目 | 內容 |
+**Topocide 的做法**：匯入 OSPF LSDB、RTT、SRLG、訊務需求矩陣、鏈路容量，用演算法計算後視覺化呈現，並提供節點、鏈路、成本、RTT 各維度的最佳化。
+
+---
+
+## 工具定位
+
+| 項目 | 說明 |
 |------|------|
-| **專案階段** | POC — 功能完成、可展示 |
-| **交付型態** | 純前端靜態網頁(無後端、無 build step) |
-| **核心價值** | 把「網路斷掉時長什麼樣子」變成可點、可審計、可排行的視圖 |
-| **資料來源** | 拓樸 / 流量 / RTT 為合成資料,可替換為自有網路 |
+| **用途** | 設計審計 + 演練前的衝擊預計算 |
+| **不是** | 即時監控 / 設備推送 |
+| **資料輸入** | `topology.js` 靜態匯入，或貼上 `show ip ospf database` 輸出自動解析 |
+| **架構** | 純前端靜態頁面，無後端、無 build step |
 
 ---
 
-## 範圍與目標對象(Scope & Stakeholders)
+## 功能總覽
 
-**目標使用者**
+### 分析視角（C1–C9）
 
-- **OSPF / 骨幹網路工程師** — 審查現有設計的單點 / 共同風險暴露面
-- **網路規劃 / 容量團隊** — 失效情境下的流量重分配與容量溢出試算
-- **維運 / 事故演練** — 演練前先算清楚「拔哪條會痛、痛多大」
+| Tab | 功能 |
+|-----|------|
+| **C1 路徑** | 任意點對最短路徑（SPT + ECMP），自動分類主/備路徑，掃描無備援段 |
+| **C2 矩陣** | 全點對成本矩陣或 RTT/SLO 模式（實際路徑延遲 vs SLO 目標，覆蓋率統計）|
+| **C3 中心性** | 鏈路/節點介中心性清單，標出純備援電路（正常零流量）|
+| **C4 邊流量** | 以訊務矩陣算出各鏈路實際負載與利用率，標出超載 |
+| **C5 失效模擬** | 單元素或整個 SRLG 群組同時故障；顯示連通性、流量重分配、容量溢出 |
+| **C6 ECMP** | 對每個 ECMP 組逐一切斷成員，確認殘餘 ECMP 能否接手 |
+| **C7 非對稱** | 去回路徑或成本不同的點對清單 |
+| **C8 前綴** | Subnet 備援熱力圖：≥2 節點宣告 = 有備援，僅 1 = 單點依賴 |
+| **C9 N-1** | 列舉所有單點故障，排列「最脆弱點對」與「最致命故障情境」|
 
-**本工具做什麼 vs 不做什麼**
+### 最佳化（C10）
 
-| 範圍內 | 範圍外 |
-|--------|--------|
-| 單一 Area(area 0)SPT / ECMP 計算 | 多 Area / inter-area summary LSA |
-| 單點 + SRLG 群組失效模擬 | 即時遙測 / 線上監控 |
-| 流量矩陣驅動的鏈路利用率 | **即時**從 router 自動拉 LSDB(文字 `show` 輸出可匯入) |
-| 設計層級的 N-1 worst-case 排行 | 設備設定產生 / 下發 |
-
----
-
-## 狀態與里程碑(Milestones)
-
-| 里程碑 | 狀態 |
-|--------|------|
-| C1–C10 十大分析分頁 | ✅ 完成 |
-| SRLG(海纜 / 共管 / 機房 / 上游)群組失效 | ✅ 完成 |
-| 流量矩陣 + 多情境快照(月均 / 最壞 / 區域忙時) | ✅ 完成 |
-| 確定性資料產生器(同輸入永遠 byte-identical) | ✅ 完成 |
-| OSPF 權重壅塞最佳化(Fortz-Thorup 目標 + Tabu 搜尋) | ✅ 完成 |
-| 明確路徑導流(steer)+ 頻寬准入(CAC) | ⬜ 規劃中(見 steer.md) |
-| SLO 矩陣覆蓋(C2 每 pair 路徑 RTT vs SLO 目標,覆蓋率 %) | ✅ 完成 |
-| LSDB → `topology.js` parser(貼上 / 檔案 `show ip ospf database`) | ✅ 完成 |
-| 多 Area / OSPF inter-area cost | ⬜ 規劃中 |
+| 功能 | 說明 |
+|------|------|
+| **鏈路成本編輯** | 即時編輯去/回程成本，路徑即時重算 |
+| **壅塞最佳化** | Fortz-Thorup 目標函數 + Tabu Search，自動搜尋降低 MLU 的權重組合，RTT 物理下限約束 |
+| **RTT 參考欄** | 每條鏈路依 RTT 推算建議成本，偏離時琥珀條標示 |
 
 ---
 
-## 為什麼不是另一個拓樸瀏覽器
+## 使用方式
 
-市面上多數工具側重「畫出網路長什麼樣子」。BlastRadius 側重的是 **「網路斷掉時長什麼樣子」**:
+因為 `engine.js` 是 ES module，需要透過 HTTP 伺服器開啟：
 
-| 功能 | 一般拓樸瀏覽器 | BlastRadius |
-|------|----------------|-------------|
-| 顯示鏈路 / 節點 | ✅ | ✅ |
-| 計算最短路徑 | ✅ | ✅ (含 ECMP) |
-| 失效後重算 SPT | ⚠ 部分支援 | ✅ Tab 內建情境 |
-| 找出純備援電路 | ❌ | ✅ 全 Pair 掃描 |
-| Unbackup 段偵測 | ❌ | ✅ 單點故障敏感度 |
-| ECMP 完整性審計 | ❌ | ✅ 砍邊測試 |
-| 非對稱路徑偵測 | ❌ | ✅ |
-| Subnet 備援熱圖 | ❌ | ✅ 基於 LSA |
-| SRLG 群組失效 | ❌ | ✅ 海纜 / 共管 / 機房 / 上游 |
-| **N-1 worst-case 排行** | ❌ | ✅ 「最脆弱 pair / 最致命失效」 |
-| **OSPF 權重壅塞最佳化** | ❌ | ✅ Fortz-Thorup + Tabu(自動壓低 MLU) |
+```bash
+cd /mnt/workspace/output && python serve.py
+# 開啟 http://localhost:8000/
+# serve.py 回傳 no-cache header，改版後立即生效
+# python -m http.server 有約 1 分鐘快取延遲
+```
 
----
+也可使用 VS Code Live Server，或部署到 GitHub Pages / CF Pages。
 
-## 如何執行(How to Run)
+### 輔助工具
 
-因為 `engine.js` 是 ES module,瀏覽器不允許 `file://` 載入,需用 HTTP 啟動:
+| 頁面 | 用途 |
+|------|------|
+| `/edit.html` | 4 分頁資料編輯器（topology / demand / SRLG / RTT）；匯入 OSPF LSDB；雲端同步（CF Workers + R2）；依賴：Cytoscape core + cxtmenu + Tailwind CDN；建邊與 undo/redo 自寫（不用外掛）；載入順序：`dagre` 必須早於 `cytoscape-dagre` |
+| `/metro-tune.html` | 地鐵圖佈局互動調參，即時調整格點大小、迭代輪數、壓縮模式、方向數（8 / 16 / 32 向），邊依八向化狀態著色（綠=達標、橙=近似、紅=未達標）；調好後複製 `LAYOUT_PARAMS.metro` 貼回 `edit.html` |
 
-- **命令列**:`cd /mnt/workspace/output && python serve.py` → 瀏覽器開 `http://localhost:8000/`（`serve.py` 回傳 `Cache-Control: no-store`,改版後立即生效；`python -m http.server` 有約 1 分鐘快取延遲）
-- **VS Code**:裝 Live Server 擴充套件 → 右鍵 `index.html` → "Open with Live Server"
-- **GitHub Pages**:Repo Settings → Pages → 啟用後直接開 `https://<user>.github.io/<repo>/`
-
-### 輔助頁面
-
-| 頁面 | URL | 用途 |
-|------|-----|------|
-| **資料編輯器** | `/edit.html` | 4 分頁編輯（topology / demand / SRLG / RTT）；匯入 OSPF LSDB；匯出回 `.js`。依賴：Cytoscape core + cxtmenu + Tailwind CDN；建邊與 undo/redo 自寫（不用外掛）。載入順序：`dagre` 必須早於 `cytoscape-dagre`。 |
-| **Metro Map 調參器** | `/metro-tune.html` | 八向化佈局的互動調參工具 — 即時調整格點大小、迭代輪數、壓縮模式、方向數（8 / 16 / 32 向），邊依八向化狀態著色（綠=達標、橙=近似、紅=未達標）；調好後複製 `LAYOUT_PARAMS.metro` 貼回 `edit.html` |
-
-### 互動操作
+### 基本互動
 
 | 操作 | 效果 |
 |------|------|
-| **左鍵拖曳節點** | 重新排版 |
-| **右鍵點鏈路** | 切換故障狀態(持久,跨 Tab 保留) |
-| **右鍵點 Router** | 切換節點故障(Pseudo-node 為 LSA2 抽象,不可故障) |
-| **左側「清除所有故障」** | 一鍵還原 |
-| **左側「隱藏 Pseudo-node」** | 只看實體 Router 拓樸,排除 LSA2 抽象 |
-
-### 故障模式語意
-
-- **右鍵故障**:模擬「現在線路掛了」 — 即時狀態組分頁即時反映。
-- **設計審計組**:完全忽略右鍵故障,基於原始完整拓樸 — 因為審計問的是「設計本身夠不夠韌」,不是「現在通不通」。
+| 右鍵鏈路 | 切換故障狀態（跨 tab 持久）|
+| 右鍵路由器 | 切換節點故障 |
+| 左鍵拖曳 | 重排版面 |
+| 清除所有故障 | 一鍵重置 |
 
 ---
 
-## Tab 功能總覽
+## 資料輸入
 
-### 即時狀態組(吃圖上故障標記)
-
-| Tab | 編號 | 用途 |
-|-----|------|------|
-| **路徑** | C1 | Source → Destination 最短路徑(SPT + ECMP),自動判定 PRIMARY / BACKUP MODE,附 Unbackup 段掃描 |
-| **矩陣** | C2 | 全 Router pair 矩陣 — **成本** 或 **RTT / SLO** 模式(預設 RTT:每 pair 路徑 RTT vs SLO 目標,附覆蓋率 %);底色分階,標記 ECMP / 非對稱 |
-| **樞紐度** | C3 | 鏈路 / 節點介數中心性盤點(節點可切**過路數 ⇄ 流量加權**)+ 純備援電路(平時零流量的鏈路) |
-| **邊流量** | C4 | 依流量矩陣計算每條鏈路實際負載與利用率,標出過載 / 高水位 |
-
-### 設計審計組(忽略右鍵故障,基於完整拓樸)
-
-| Tab | 編號 | 用途 |
-|-----|------|------|
-| **失效模擬** | C5 | 選單一元件或整組 SRLG 同時失效,檢視連通性、分群、流量重分配與容量溢出 |
-| **N-1** | C9 | 枚舉所有單點失效,排出**最脆弱 pair** + **最致命失效情境** |
-| **ECMP** | C6 | 對每對 ECMP pair,模擬砍掉群組內任一邊,確認剩餘 ECMP 仍能接手 |
-| **非對稱** | C7 | A→B 與 B→A 路徑或 cost 不同的 pair |
-| **Prefix** | C8 | Subnet 備援熱圖 — 被 ≥2 節點宣告 = backed-up,僅 1 = non-backuped |
-
-### 編輯組
-
-| Tab | 編號 | 用途 |
-|-----|------|------|
-| **鏈路** | C10 | 即時修改 link cost(可分別設正反向,非對稱 p2p);內建**壅塞最佳化**(Fortz-Thorup 目標 + Tabu 自動搜權重壓低 MLU);RTT 換算的參考建議值;匯出 `topology.js` |
+更換成自己的網路：替換 `topology.js`（格式見 [SPEC.zh.md](./SPEC.zh.md)）。也可在 edit.html 貼上 OSPF LSDB 輸出自動建圖，再補上 demand / SRLG / RTT 資料。
 
 ---
 
-## 技術棧
+## 技術架構
 
 - **Cytoscape.js** — 圖形渲染
 - **Tailwind CDN** — UI 樣式
-- 純 vanilla JavaScript ES module,無 build step
+- **Vanilla ES module** — 無 build step，純靜態頁面
+- **CF Workers + R2** — 雲端資料同步（可選）
 
 ---
 
-## 風險與限制(Risks & Limitations)
+## 限制與風險
 
-1. 目前只支援 **單一 Area / 純 area 0** — 沒有 ABR / inter-area summary LSA 處理
-2. LSA5 external 只有「精確匹配 + default route fallback」,無完整 LPM
-3. 沒有 cost-as-latency 的 telemetry feed — 想做 latency-aware SPF 還需要對接 RFC 7471 的資料源
-4. 拓樸可用靜態 `topology.js`,或從貼上 / 檔案的 `show ip ospf database router/network` 輸出匯入(資料編輯器的 OSPF 匯入);**即時**從 router 自動拉(SNMP/API)仍是未來方向
-5. 內建資料為**合成樣本**,正式評估前需替換為自有網路的真實拓樸 / 流量
+1. 目前僅支援 **單 area / pure area 0**，不含 ABR 跨區彙整 LSA
+2. LSA5 外部路由僅做 exact match + 預設路由 fallback，非完整 LPM
+3. 無即時從路由器自動拉取拓樸（CLI `show` 輸出可手動匯入）
+4. 內建資料為合成樣本，正式評估前需替換為真實網路資料
 
 ---
 
 ## Roadmap
 
-- [x] SRLG(Shared Risk Link Group)海纜群組失效 — N-1 進階成 N-K
-- [x] SLO 矩陣覆蓋 — C2 RTT / SLO 模式(每 pair 路徑 RTT vs SLO 目標,覆蓋率 %)
-- [x] LSDB → `topology.js` parser — 經資料編輯器貼上 / 檔案 `show ip ospf database`
-- [ ] C10 壅塞最佳化 v2 — N-1 生存性閘、RTT 繞道上限、頻寬單位成本、異動上限;設計見 [C10-next.md](./C10-next.md)
-- [ ] 明確路徑導流(steer / TE):把特定流量拉離最短路 + 頻寬准入(CAC,「填滿才溢出 / admission 失敗」)— 規劃見 [steer.md](./steer.md)
-- [ ] 多 Area / OSPF inter-area cost 計算
-- [ ] Flex-Algo (RFC 9350) 多 SPF 並行視覺化
+- [x] SRLG 群組失效（海纜/共管/機房/上游）
+- [x] RTT / SLO 矩陣覆蓋率
+- [x] OSPF LSDB 解析匯入
+- [x] 壅塞最佳化（Fortz-Thorup + Tabu）
+- [x] edit.html + 雲端同步（CF Workers + R2）
+- [ ] C10 最佳化 v2（N-1 存活閘、RTT 繞行上限、頻寬成本）
+- [ ] 顯式路徑引導（steer）+ 頻寬准入（CAC）
+- [ ] 多 area / OSPF 跨區成本計算
 
 ---
 
-要換成自己的網路:替換 `topology.js`(Schema 見 [SPEC.zh.md](./SPEC.zh.md))。詳細演算法與資料模型亦見 [SPEC.zh.md](./SPEC.zh.md)。
+詳細演算法與資料模型見 [SPEC.zh.md](./SPEC.zh.md)。

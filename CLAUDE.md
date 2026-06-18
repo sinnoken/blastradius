@@ -1,4 +1,4 @@
-# BlastRadius — 維護指引
+# Topocide — 維護指引
 
 OSPF/IGP 網路韌性審計工具。兩頁 SPA（index.html 分析、edit.html 編輯），共用 engine.js 演算法、theme.css 設計 token、draft.js 持久化。無 build step，Cytoscape.js + Tailwind CDN + vanilla ES module。雲端同步走 CF Workers + R2，本機 fallback 靠 localStorage。
 

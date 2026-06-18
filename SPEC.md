@@ -1,7 +1,7 @@
-# BlastRadius SPEC
+# Topocide SPEC
 
 This document specifies the data model, algorithm definitions, module layering,
-and visual state machine of the BlastRadius POC.
+and visual state machine of the Topocide POC.
 **The code is authoritative** — this document describes the actual behavior of
 `engine.js` / `index.html`.
 
@@ -578,7 +578,7 @@ relationships**, not fixed values for any specific dataset.
 
 ## §14 Differences from the original OSPF spec
 
-This SPEC corresponds to BlastRadius POC `v1.x` (after branching off from the
+This SPEC corresponds to Topocide POC `v1.x` (after branching off from the
 Topolograph naming). Main differences:
 
 - Added §6.2b traffic-weighted edge load (`allPairsTraffic`) + the C4 edge-traffic tab

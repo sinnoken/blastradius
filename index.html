@@ -15,23 +15,23 @@
 <script src="rtt.js"></script>
 <script>
 // ── 載入優先序：廣播 > 本地 > remote > JS ─────────────────────────────────
-// 廣播（BroadcastChannel）：runtime 收到時寫入本地並刷新，使其成為下次（或立即）最高優先
+const _topoKey = new URLSearchParams(location.search).get('topo') || null;
+
+// 廣播：收到時寫入本地並 reload
 (()=>{
   if(typeof BroadcastChannel==='undefined') return;
   const bc=new BroadcastChannel('blastradius');
   bc.onmessage=e=>{
     if(e.data?.type!=='topo-update') return;
-    // 寫入本地（Draft.write 自動重置 _savedAt）
-    const cur=Draft.read()||{};
-    Draft.write({...cur, ...e.data.topo});
-    // 立即 reload，讓本地取得最高優先（廣播 → 本地 → 頁面生效）
+    const cur=Draft.read(_topoKey)||{};
+    Draft.write({...cur, ...e.data.topo}, _topoKey);
     location.reload();
   };
 })();
 
 // 本地 localStorage（優先於 topology.js）
 (()=>{
-  const d=Draft.read();
+  const d=Draft.read(_topoKey);
   if(!d || !(d.nodes||[]).length) return;
   topology.nodes=d.nodes; topology.edges=d.edges; topology.positions=d.positions||{};
 })();
@@ -42,6 +42,12 @@
 // })();
 
 // topology.js 已由 <script src="topology.js"> 載入，以上各層直接 mutate 其 properties
+
+// ✎ 資料編輯器連結帶上 ?topo= 參數
+if(_topoKey) document.addEventListener('DOMContentLoaded', ()=>{
+  const a=document.getElementById('toEditorLink');
+  if(a) a.href=`edit.html?topo=${encodeURIComponent(_topoKey)}`;
+});
 </script>
 <script src="https://cdn.tailwindcss.com"></script>
 <style type="text/tailwindcss">
@@ -321,7 +327,7 @@
 <header class="bg-blue-900 text-white px-5 py-2 shadow-sm flex items-baseline gap-3 flex-wrap">
   <h1 class="text-sm font-semibold tracking-wide shrink-0">BlastRadius</h1>
   <span class="text-xs text-blue-200" data-i18n="ui.subtitle">國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出</span>
-  <a href="edit.html" class="ml-auto shrink-0 px-2.5 py-1 border border-white/40 rounded text-xs text-white no-underline hover:bg-white/15" data-i18n="ui.toEditor" title="開啟資料編輯器">✎ 資料編輯器</a>
+  <a id="toEditorLink" href="edit.html" class="ml-auto shrink-0 px-2.5 py-1 border border-white/40 rounded text-xs text-white no-underline hover:bg-white/15" data-i18n="ui.toEditor" title="開啟資料編輯器">✎ 資料編輯器</a>
 </header>
 
 <main class="flex-1 flex min-h-0">

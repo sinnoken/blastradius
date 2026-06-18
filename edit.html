@@ -235,7 +235,7 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
     </select>
     <button class="btn" data-g="view" id="btnLayout" title="依選單指定的演算法重新排列所有節點位置">⟲ 佈局</button>
     <button class="btn" data-g="view" id="btnFit"    title="縮放並捲動，讓所有節點都在視窗範圍內">⤢ 置中</button>
-    <a href="index.html" class="ml-auto shrink-0 px-2.5 py-1 border border-white/40 rounded text-xs text-white no-underline hover:bg-white/15" title="切換到分析檢視">← 分析檢視</a>
+    <a id="toIndexLink" href="index.html" class="ml-auto shrink-0 px-2.5 py-1 border border-white/40 rounded text-xs text-white no-underline hover:bg-white/15" title="切換到分析檢視">← 分析檢視</a>
   </header>
 
   <nav class="tabbar" id="tabbar">
@@ -1628,7 +1628,7 @@ const clientId = (() => {
   return localStorage.getItem(k) || (()=>{ const id=crypto.randomUUID(); localStorage.setItem(k,id); return id; })();
 })();
 // ?topo=xxx 指定拓樸名稱作為 R2 key；沒有則 fallback 到 clientId
-const topoKey = new URLSearchParams(location.search).get('topo') || clientId;
+const topoKey = new URLSearchParams(location.search).get('topo') || null;
 
 const remoteHeaders = { 'Content-Type':'application/json', 'X-Token': REMOTE_TOKEN };
 
@@ -1679,14 +1679,14 @@ function markDirty(){
   clearTimeout(_dirtyTimer);
   _dirtyTimer=setTimeout(()=>{
     const data=serializeAll();
-    Draft.write(data);
+    Draft.write(data, topoKey);
     _bc?.postMessage({type:'topo-update',topo:{nodes:data.nodes,edges:data.edges,positions:data.positions}});
   },1500);
 }
 
 // 啟動時恢復草稿：有草稿就跳過後續 fetch（本地 > remote > JS）
 (()=>{
-  const data=Draft.read();  // 有效期判斷由 Draft 統一處理
+  const data=Draft.read(topoKey);  // 有效期判斷由 Draft 統一處理
   if(!data || !(data.nodes||[]).length) return;
   hydrateAll(data); toast('↩ 草稿已恢復'); _loadedFromDraft=true;
 })();
@@ -2241,6 +2241,9 @@ startLoad();
 
 // 初始工具列狀態(topo 為預設 tab,all groups 可見;明確初始化以防未來調整預設)
 switchTab(TAB);
+
+// ← 分析檢視連結帶上 ?topo= 參數
+if(topoKey){ const a=$('toIndexLink'); if(a) a.href=`index.html?topo=${encodeURIComponent(topoKey)}`; }
 
 // cy 容器尺寸保險:視窗縮放即時重量;載入後下一幀再量一次(等版面定案)
 window.addEventListener('resize', ()=>cy.resize());

@@ -405,14 +405,35 @@ const cy = cytoscape({
   layout:{ name:'preset' },
 });
 
-// ── 狀態 ───────────────────────────────────────────────────────────────
-let externals = [];
+// ══════════════════════════════════════════════════════════════════════
+// 狀態宣告區 — 所有 let/const 狀態變數集中於此，確保不發生 TDZ
+// ══════════════════════════════════════════════════════════════════════
+
+// ── 互動模式 ──
 let connectMode = false;
 
-// JS SSOT：節點/邊資料 + 位置，與 cy 同步。其他 tab 的資料（demand/srlg/rtt）本已是 JS 物件。
-const nodes = new Map();      // id → data object
+// ── JS SSOT：拓樸資料（externals 已併入 node.externals）──
+const nodes = new Map();      // id → data object（含 node.externals LSA5）
 const edges = new Map();      // id → data object
 const positions = new Map();  // node id → {x, y}
+
+// ── 多 tab 資料物件 ──
+let D = { unit:'Gbps', source:'synthetic', timestamp:'', active:'', profiles:{} };
+let S = [];
+let R = { unit:'ms', note:'', fiberRttPerKm:0.01014, timestamp:'', matrix:{}, edges:[] };
+
+// ── Tab / UI 狀態 ──
+let TAB = 'topo', dmSel = null;
+
+// ── 初始化 / 載入狀態 ──
+let _hydrating=false, _loadedFromDraft=false;
+// externals helper：讀/寫節點的 LSA5 外部路由（_skipCySync 防 cy data 事件回寫）
+const getNodeExternals = (id) => nodes.get(id)?.externals || [];
+function setNodeExternals(id, exts){
+  const n=nodes.get(id); if(!n) return;
+  nodes.set(id, {...n, externals:exts});
+  _skipCySync=true; cy.getElementById(id).data('externals', exts); _skipCySync=false;
+}
 function nextId(prefix){ let i=1; while(cy.getElementById(prefix+i).nonempty()) i++; return prefix+i; }
 
 // ── 快照式 undo/redo(自寫,取代外掛)──────────────────────────────────────
@@ -423,7 +444,6 @@ const history = (()=>{
   const snap = ()=>({
     snNodes: [...nodes.entries()].map(([id,d])=>({ group:'nodes', data:{...d}, position:{...positions.get(id)||{x:0,y:0}}, classes:d.type||'' })),
     snEdges: [...edges.entries()].map(([id,d])=>({ group:'edges', data:{...d} })),
-    ext: structuredClone(externals),
     d: { unit:D.unit, source:D.source, timestamp:D.timestamp, active:D.active, profiles: structuredClone(D.profiles||{}) },
     s: structuredClone(S),
     r: structuredClone(R),
@@ -433,7 +453,7 @@ const history = (()=>{
     _inspMountedId=null;     // Inspector 強制重建
     if (snp.snNodes||snp.snEdges) cy.add([ ...(snp.snNodes||[]), ...(snp.snEdges||[]) ]);
     else if (snp.elements) cy.add([ ...(snp.elements.nodes||[]), ...(snp.elements.edges||[]) ]); // 相容舊格式
-    externals = structuredClone(snp.ext||[]);
+    // externals 已在 nodes data 內，cy.add 時自動還原
     if (snp.d){ D.unit=snp.d.unit; D.source=snp.d.source; D.timestamp=snp.d.timestamp; D.active=snp.d.active; D.profiles=structuredClone(snp.d.profiles||{}); }
     if (snp.s) S = structuredClone(snp.s);
     if (snp.r) R = structuredClone(snp.r);
@@ -478,15 +498,18 @@ function removeRaw(eles){ if(eles&&eles.length){ eles.remove(); refresh(); } }
 // ── 自寫「連線模式」建邊(取代 edgehandles)─────────────────────────────────
 // 開啟後:在節點上按下 → 拉出虛線 ghost 跟著游標 → 放在另一節點上 → 建邊。
 // cy → JS SSOT 同步（add/remove/data/position 事件驅動）
+const isGhost = (id) => id==='__ghost__' || id==='__ghostE__';
 cy.on('add','node', e=>{
-  if(e.target.id()==='__ghost__') return;
+  if(isGhost(e.target.id())) return;
   nodes.set(e.target.id(),{...e.target.data()});
   positions.set(e.target.id(),{...e.target.position()});
 });
-cy.on('add','edge', e=>{ if(e.target.id()!=='__ghost__') edges.set(e.target.id(),{...e.target.data()}); });
-cy.on('remove','node', e=>{ nodes.delete(e.target.id()); positions.delete(e.target.id()); });
-cy.on('remove','edge', e=>edges.delete(e.target.id()));
+cy.on('add','edge', e=>{ if(!isGhost(e.target.id())) edges.set(e.target.id(),{...e.target.data()}); });
+cy.on('remove','node', e=>{ if(!isGhost(e.target.id())){ nodes.delete(e.target.id()); positions.delete(e.target.id()); } });
+cy.on('remove','edge', e=>{ if(!isGhost(e.target.id())) edges.delete(e.target.id()); });
+let _skipCySync=false;  // applyField 寫 cy 時設 true，避免 cy data 事件回寫 Maps
 cy.on('data','node,edge', e=>{
+  if(_skipCySync) return;
   const map=e.target.isNode()?nodes:edges;
   if(map.has(e.target.id())) map.set(e.target.id(),{...e.target.data()});
 });
@@ -516,7 +539,7 @@ cy.on('mouseup', ()=>{
   if(isPN(sid) && isPN(tid)){ toast('兩端都是 pseudonode,無法連線'); return; }
   const base = (isPN(sid)||isPN(tid))
     ? ('e_'+(isPN(sid)?tid:sid)+'_'+(isPN(sid)?sid:tid)) : ('e_'+sid+'_'+tid);
-  const id = cy.getElementById(base).nonempty() ? base+'_'+Date.now().toString(36) : base;
+  let id=base, n=2; while(cy.getElementById(id).nonempty()) id=`${base}_${n++}`;
   history.push();
   const e=addEdgeRaw(edgeData(id, sid, tid)); select(e);
 });
@@ -679,32 +702,50 @@ function bindInspector(){
   bindCityCountry(body);
   const del=$('delSel'); if(del) del.addEventListener('click', ()=>{ history.push(); removeRaw(selEle()); select(null); });
 }
+// applyField：Maps 優先寫入（SSOT），再同步到 cy（_skipCySync 防止 cy data 事件回寫）
 function applyField(k, inp){
-  const sel=sel; if(!sel) return;
-  if(k==='id'){ renameEle(sel, inp.value.trim()); return; }
+  const ele=selEle(); if(!ele) return;
+  if(k==='id'){ renameEle(ele, inp.value.trim()); return; }
+
+  const isNode=ele.isNode(), map=isNode?nodes:edges, id=ele.id();
+  const cur={...map.get(id)};  // 淺拷貝，避免直接 mutate Map 的值
+
+  // 計算更新後的資料
   if(k==='_hasRev'){
     const wrap=$('revWrap'); wrap.style.display=inp.checked?'':'none';
-    if(!inp.checked){ sel.removeData('costRev'); sel.data('_asym',false); }
-    else { sel.data('costRev', sel.data('cost')); sel.data('_asym',false); }
-    refresh(); return;
+    if(!inp.checked){ delete cur.costRev; cur._asym=false; }
+    else { cur.costRev=cur.cost; cur._asym=false; }
+  } else if(k==='stubs'){
+    return;  // stubs 由 bindStubsChip 的 save() 統一寫入
+  } else if(k==='isASBR'||k==='isABR'){
+    cur[k]=inp.checked;
+  } else if(k==='cost'||k==='capacity'||k==='costRev'){
+    const v=parseInt(inp.value,10); if(isNaN(v)) return;
+    cur[k]=v;
+    if(k!=='capacity'){ cur._asym=cur.costRev!=null&&cur.costRev!==cur.cost; }
+  } else if(k==='type'){
+    cur.type=inp.value;
+    if(inp.value==='transit'){ delete cur.costRev; cur._asym=false; }
+  } else if(k==='country'){
+    cur.country=inp.value; cur._color=colorFor(inp.value);
+  } else {
+    cur[k]=inp.value;  // label / city / subnet / 其他
   }
-  if(k==='stubs') return; // stubs 由 chip 直接寫回 node data,不走 applyField
-  if(k==='isASBR'||k==='isABR'){ sel.data(k, inp.checked); refresh(); return; }
-  if(k==='cost'||k==='capacity'||k==='costRev'){
-    const v=parseInt(inp.value,10); if(isNaN(v)) return; sel.data(k, v);
-    if(k!=='capacity'){ const c=sel.data('cost'),r=sel.data('costRev'); sel.data('_asym', r!=null&&r!==c); }
-    refresh(); return;
-  }
-  if(k==='type'){
-    sel.data('type', inp.value);
-    if(inp.value==='transit'){ sel.removeData('costRev'); sel.data('_asym',false); }
-    renderInspector(); refresh(); return;
-  }
-  if(k==='label'){ sel.data('label', inp.value); refresh(); return; }   // label 獨立可編,不再被 city/country 覆寫
-  if(k==='country'){ sel.data('country',inp.value); sel.data('_color',colorFor(inp.value)); refresh(); return; }
-  if(k==='city'){ sel.data('city',inp.value); return; }
-  if(k==='subnet'){ sel.data('subnet',inp.value); markCIDR(inp); return; }
-  sel.data(k, inp.value);
+
+  // ① 寫 Maps（SSOT）
+  map.set(id, cur);
+
+  // ② 同步到 cy（_skipCySync 防循環）
+  _skipCySync=true;
+  Object.entries(cur).forEach(([ck, cv])=>ele.data(ck, cv));
+  // 刪除的欄位（costRev）也要從 cy 移除
+  Object.keys(map.get(id)||{}).forEach(ck=>{ if(!(ck in cur)) ele.removeData(ck); });
+  _skipCySync=false;
+
+  // ③ UI 後處理
+  if(k==='type') renderInspector();
+  if(k==='subnet') markCIDR(inp);
+  if(!['city','subnet'].includes(k)) refresh();
 }
 // id 改名:cy id 不可變 → remove+add(node 須搬連邊)。整個動作一個 undo 快照。
 function renameEle(ele, newId){
@@ -722,15 +763,30 @@ function renameEle(ele, newId){
     conn.forEach(ed=>{ ed.source=ed.source===oldId?newId:ed.source; ed.target=ed.target===oldId?newId:ed.target;
       cy.add({group:'edges', data:ed}); });
   });
-  externals.forEach(x=>{ if(x.advertising_router===oldId) x.advertising_router=newId; });
+  // 同步更新所有 tab 裡參照到 oldId 的資料
+  // externals 已在 node.externals，改名時節點一起搬，不需另外處理
+  S.forEach(g=>{ g.affects=(g.affects||[]).map(a=>a===oldId?newId:a); });
+  if(R.matrix?.[oldId]){
+    R.matrix[newId]=R.matrix[oldId]; delete R.matrix[oldId];
+    Object.keys(R.matrix).forEach(k=>{ if(R.matrix[k]?.[oldId]){ R.matrix[k][newId]=R.matrix[k][oldId]; delete R.matrix[k][oldId]; } });
+  }
+  if(R.edges) R.edges.forEach(e=>{ if(e.a===oldId) e.a=newId; if(e.b===oldId) e.b=newId; });
+  if(D.profiles) Object.values(D.profiles).forEach(p=>{
+    if(p.matrix?.[oldId]){ p.matrix[newId]=p.matrix[oldId]; delete p.matrix[oldId]; }
+    Object.keys(p.matrix||{}).forEach(k=>{ if(p.matrix[k]?.[oldId]){ p.matrix[k][newId]=p.matrix[k][oldId]; delete p.matrix[k][oldId]; } });
+  });
   select(cy.getElementById(newId)); refresh();
 }
 
-// ── externals(LSA5)──────────────────────────────────────────────────────
+// ── externals(LSA5) — 現在存在各 ASBR 節點的 node.externals ────────────────
 function externalsPanel(){
+  // 彙總所有節點的 externals 為平坦列表（保留 advertising_router 欄位）
+  const allExts=[...nodes.values()]
+    .filter(d=>d.type==='router')
+    .flatMap(d=>(d.externals||[]).map(x=>({...x, advertising_router:d.id})));
   const routers=[...nodes.values()].filter(d=>d.type==='router').map(d=>d.id).sort();
   const opts=(sel)=>routers.map(r=>`<option ${r===sel?'selected':''}>${r}</option>`).join('');
-  const rows=externals.map((x,i)=>`<div class="ext-row" data-i="${i}">
+  const rows=allExts.map((x,i)=>`<div class="ext-row" data-i="${i}" data-router="${esc(x.advertising_router)}">
     <select data-ek="advertising_router">${opts(x.advertising_router)}</select>
     <input data-ek="subnet" value="${esc(x.subnet)}">
     <span class="x" data-del="${i}">✕</span></div>`).join('');
@@ -740,15 +796,28 @@ function externalsPanel(){
 function bindExternals(){
   const add=$('addExt');
   if(add) add.addEventListener('click', ()=>{
-    const r0=[...nodes.values()].find(d=>d.type==='router')?.id||'';
-    history.push(); externals.push({ advertising_router:r0, subnet:'0.0.0.0/0', metric:1, metric_type:'E2' }); renderInspector();
+    const r0=[...nodes.values()].find(d=>d.type==='router')?.id||''; if(!r0) return;
+    history.push();
+    setNodeExternals(r0, [...getNodeExternals(r0), {advertising_router:r0, subnet:'0.0.0.0/0', metric:1, metric_type:'E2'}]);
+    renderInspector();
   });
-  document.querySelectorAll('[data-del]').forEach(x=>x.addEventListener('click',()=>{ history.push(); externals.splice(+x.dataset.del,1); renderInspector(); }));
+  document.querySelectorAll('[data-del]').forEach(x=>x.addEventListener('click',()=>{
+    const row=x.closest('.ext-row'), nid=row.dataset.router, i=+row.dataset.i;
+    const exts=[...nodes.values()].filter(d=>d.type==='router').flatMap(d=>(d.externals||[]).map(e=>({...e,_nid:d.id})));
+    const target=exts[i]; if(!target) return;
+    history.push();
+    setNodeExternals(target._nid, getNodeExternals(target._nid).filter((_,j)=>j!==exts.filter(e=>e._nid===target._nid).indexOf(target)));
+    renderInspector();
+  }));
   document.querySelectorAll('.ext-row [data-ek]').forEach(inp=>{
     if(inp.dataset.ek==='subnet') markCIDR(inp);
     inp.addEventListener('input',()=>{
-      const i=+inp.closest('.ext-row').dataset.i; externals[i][inp.dataset.ek]=inp.value;
-      if(inp.dataset.ek==='subnet') markCIDR(inp); });
+      const row=inp.closest('.ext-row'), nid=row.dataset.router;
+      const localIdx=+[...document.querySelectorAll(`.ext-row[data-router="${nid}"]`)].indexOf(row);
+      const exts=[...getNodeExternals(nid)]; exts[localIdx]={...exts[localIdx],[inp.dataset.ek]:inp.value};
+      setNodeExternals(nid, exts);
+      if(inp.dataset.ek==='subnet') markCIDR(inp);
+    });
   });
 }
 
@@ -1478,7 +1547,13 @@ function bindStubsChip(container){
   const cell=container.querySelector('#stubsCell'); if(!cell||!selEle()) return;
   const inp=container.querySelector('#stubsAdd');
   const err=container.querySelector('#stubsErr');
-  const save=()=>{ selEle().data('stubs',[...cell.querySelectorAll('.chip')].map(c=>c.firstChild.textContent.trim())); };
+  const save=()=>{
+    const ele=selEle(); if(!ele) return;
+    const stubs=[...cell.querySelectorAll('.chip')].map(c=>c.firstChild.textContent.trim());
+    // Maps（SSOT）優先，再同步 cy
+    nodes.set(ele.id(), {...nodes.get(ele.id()), stubs});
+    _skipCySync=true; ele.data('stubs', stubs); _skipCySync=false;
+  };
   const add=()=>{ const v=(inp.value||'').trim(); if(!v) return;
     if(!isCIDR(v)){ err.textContent='格式不對,請輸入合法 CIDR(如 10.0.0.0/8)'; inp.classList.add('invalid'); return; }
     // 去重
@@ -1508,7 +1583,8 @@ function validate(){
   const badCidr=[], badNodes=new Set();
   routerIds.forEach(id=>{ const d=nodes.get(id); (d.stubs||[]).forEach(c=>{ if(!isCIDR(c)){ badCidr.push(id+':'+c); badNodes.add(id); } }); });
   [...nodes.values()].filter(d=>d.type==='pseudonode').forEach(d=>{ if(d.subnet&&!isCIDR(d.subnet)){ badCidr.push(d.id+':'+d.subnet); badNodes.add(d.id); } });
-  externals.forEach(x=>{ if(x.subnet&&!isCIDR(x.subnet)) badCidr.push('ext:'+x.subnet); });
+  [...nodes.values()].filter(d=>d.type==='router').forEach(d=>
+    (d.externals||[]).forEach(x=>{ if(x.subnet&&!isCIDR(x.subnet)) badCidr.push(d.id+'/ext:'+x.subnet); }));
   const allIds=new Set([...nodes.keys(), ...edges.keys()]);
   const badSrlg=[];
   S.forEach(g=>(g.affects||[]).forEach(a=>{ if(!allIds.has(a)) badSrlg.push((g.id||'?')+'→'+a); }));
@@ -1544,23 +1620,25 @@ function refresh(){
   markDirty();
 }
 
-// ── Remote（CF Workers + KV）──────────────────────────────────────────────
+// ── Remote（CF Workers + R2）──────────────────────────────────────────────
 const REMOTE_URL = 'https://blastradius-worker.99pd.workers.dev';
 const REMOTE_TOKEN = '7d1314741faa96d3857cde4f7e09bee7fba8b771d7130e142fa231894d457729';
 const clientId = (() => {
   const k = 'br-client-id';
   return localStorage.getItem(k) || (()=>{ const id=crypto.randomUUID(); localStorage.setItem(k,id); return id; })();
 })();
+// ?topo=xxx 指定拓樸名稱作為 R2 key；沒有則 fallback 到 clientId
+const topoKey = new URLSearchParams(location.search).get('topo') || clientId;
 
 const remoteHeaders = { 'Content-Type':'application/json', 'X-Token': REMOTE_TOKEN };
 
 async function fetchRemote(){
-  const r = await fetch(`${REMOTE_URL}/latest?client=${clientId}`, { headers: remoteHeaders });
+  const r = await fetch(`${REMOTE_URL}/latest?key=${topoKey}`, { headers: remoteHeaders });
   if(!r.ok) return null;
   return r.json();
 }
 async function pushRemote(data){
-  await fetch(`${REMOTE_URL}?client=${clientId}`, {
+  await fetch(`${REMOTE_URL}?key=${topoKey}`, {
     method: 'PUT',
     headers: remoteHeaders,
     body: JSON.stringify(data),
@@ -1575,25 +1653,18 @@ function serializeAll(){
     nodes:[...nodes.values()],
     edges:[...edges.values()],
     positions:Object.fromEntries(positions),
-    externals:structuredClone(externals),
     demand:structuredClone(D),
     srlg:structuredClone(S),
     rtt:structuredClone(R),
   };
 }
-
-// D / S / R 需在 hydrateAll 之前宣告（localStorage IIFE 啟動時即呼叫 hydrateAll）
-let D = { unit:'Gbps', source:'synthetic', timestamp:'', active:'', profiles:{} };
-let S = [];
-let R = { unit:'ms', note:'', fiberRttPerKm:0.01014, timestamp:'', matrix:{}, edges:[] };
-let _hydrating=false, _loadedFromDraft=false;
 function hydrateAll(data){
   cy.elements().remove(); _inspMountedId=null;
   const pos=data.positions||{}, eles=[];
   for(const d of data.nodes||[]) eles.push({group:'nodes',data:{...d},position:pos[d.id]||{x:0,y:0},classes:d.type||''});
   for(const d of data.edges||[]) eles.push({group:'edges',data:{...d}});
   cy.add(eles);
-  externals=structuredClone(data.externals||[]);
+  // externals 已在 nodes data 內，不需單獨還原
   if(data.demand){D.unit=data.demand.unit;D.source=data.demand.source;D.timestamp=data.demand.timestamp;D.active=data.demand.active;D.profiles=structuredClone(data.demand.profiles||{});}
   if(data.srlg) S=structuredClone(data.srlg);
   if(data.rtt)  R=structuredClone(data.rtt);
@@ -1775,16 +1846,21 @@ function loadTopologyText(src){
   try { topo=Function('"use strict";'+src+';return topology;')(); }
   catch(e){ return loadFromOspf(src, $('ridMapText').value); }   // 不是有效 JS → 自動改試 OSPF parser(真的不是 OSPF 時由它回報明確原因)
   if(!topo || !Array.isArray(topo.nodes)) throw new Error('找不到 topology.nodes');
-  cy.elements().remove(); externals=[];
+  cy.elements().remove();
+  // 把 topo.externals 依 advertising_router 分配進各節點 data
+  const extsByNode={};
+  for(const x of topo.externals||[]){
+    const nid=x.advertising_router; if(!nid) continue;
+    (extsByNode[nid]=extsByNode[nid]||[]).push({subnet:x.subnet,metric:x.metric??1,metric_type:x.metric_type??'E2'});
+  }
   const pos=topo.positions||{}, eles=[];
   for(const n of topo.nodes){
     const data = n.type==='pseudonode' ? pnData(n.id,n) : routerData(n.id,n);
+    if(extsByNode[n.id]) data.externals=extsByNode[n.id];
     eles.push({ group:'nodes', data, classes:data.type, position: pos[n.id]?{...pos[n.id]}:undefined });
   }
   for(const e of topo.edges||[]) eles.push({ group:'edges', data:edgeData(e.id,e.source,e.target,e) });
   cy.add(eles);
-  externals=(topo.externals||[]).map(x=>({ advertising_router:x.advertising_router, subnet:x.subnet,
-    metric:x.metric??1, metric_type:x.metric_type??'E2' }));
   // 套用檔內座標:preset = 純放置(非力導向,不跑版)。回報帶到座標的節點數,方便確認 positions 是否進 cy。
   const posCount = topo.nodes.filter(n=>pos[n.id]).length;
   if(posCount) cy.layout({ name:'preset', positions:(n)=>pos[n.id()], fit:true, padding:40, animate:false }).run();
@@ -1796,7 +1872,7 @@ function loadTopologyText(src){
 // OSPF 匯入解析見共用模組 ./ospf-import.js(parseOspfLsdb);loadFromOspf 只負責把結果建進 cy。
 function loadFromOspf(text, ridMapText){
   const { nodes, edges, pnNodes, stats } = parseOspfLsdb(text, ridMapText);
-  cy.elements().remove(); externals=[];
+  cy.elements().remove();
   // OSPF 不帶座標 → 給確定性格狀起點(純座標,匯入不跑布局演算法,避免跑版);要好看再用上方布局選單。
   const allN=[...nodes, ...pnNodes];
   const cols=Math.max(1,Math.ceil(Math.sqrt(allN.length))), GX=150, GY=120, gpos={};
@@ -1839,7 +1915,8 @@ function edgeRecord(d){
 function exportText(){
   const nodeRecs=[...nodes.values()].map(nodeRecord);
   const edgeRecs=[...edges.values()].map(edgeRecord);
-  const exts=externals.map(x=>jobj([['advertising_router',x.advertising_router],['subnet',x.subnet],['metric',+x.metric||1],['metric_type',x.metric_type||'E2']]));
+  const exts=[...nodes.values()].filter(d=>d.type==='router')
+    .flatMap(d=>(d.externals||[]).map(x=>jobj([['advertising_router',d.id],['subnet',x.subnet],['metric',+x.metric||1],['metric_type',x.metric_type||'E2']])));
   const pos=[...positions.entries()].map(([id,p])=>'    '+jval(id)+': '+jobj([['x',Math.round(p.x)],['y',Math.round(p.y)]])).join(',\n');
   return `// Generated by edit.html — BlastRadius topology editor.
 const topology = {
@@ -1869,7 +1946,6 @@ $('btnExport').onclick=()=>{
 // 多檔資料模型(demand / srlg / rtt)+ 分頁編輯器 + 序列化器
 // ════════════════════════════════════════════════════════════════════════
 // D / S / R 已移至 hydrateAll 之前宣告（見上方）
-let TAB = 'topo', dmSel = null;
 const parseGlobal = (src,name)=>Function('"use strict";'+src+';return '+name+';')();
 const dl = (name,text)=>{ const b=new Blob([text],{type:'text/javascript'}); const a=document.createElement('a');
   a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); a.remove(); };
@@ -1928,6 +2004,7 @@ function renderDemand(){
     if(!p.matrix[r])p.matrix[r]={};
     if(raw===''){ delete p.matrix[r][c]; } else { const v=parseFloat(raw); if(!isNaN(v))p.matrix[r][c]=v; }   // parseFloat:demand 為浮點 Gbps,勿截斷
   });
+  markDirty();
 }
 $('dmAddProfile').onclick=()=>{ history.push();
   let n=1; while(D.profiles['profile'+n]) n++;
@@ -1941,8 +2018,7 @@ $('dmAddProfile').onclick=()=>{ history.push();
 function renderSrlg(){
   const tb=$('srlgTable');
   // 封閉集合:affects 一定是拓樸 node/edge id。用 chip + datalist 加入框(只接受清單內 id → 驗證免費)。
-  const validIds=new Set([...cy.nodes().filter(n=>n.id()!=='__ghost__').map(n=>n.id()),
-    ...cy.edges().filter(e=>e.id()!=='__ghostE__').map(e=>e.id())]);
+  const validIds=new Set([...nodes.keys(), ...edges.keys()]);
   const idOpts=[...validIds].sort();
   const markId=(inp,i)=>{ const v=inp.value.trim(), dup=S.some((g,j)=>j!==i&&(g.id||'')===v);
     inp.classList.toggle('invalid', v===''||dup); inp.title=v===''?'id 不可空':(dup?'id 重複':''); };
@@ -1980,6 +2056,7 @@ function renderSrlg(){
   // id 初始標記(空 / 重複)
   tb.querySelectorAll('input[data-k="id"]').forEach(inp=>markId(inp,+inp.closest('tr').dataset.i));
   tb.querySelectorAll('[data-del]').forEach(x=>x.onclick=()=>{ history.push(); S.splice(+x.dataset.del,1); renderSrlg(); });
+  markDirty();
 }
 $('srlgAdd').onclick=()=>{ history.push(); let n=1; const ids=new Set(S.map(g=>g.id)); while(ids.has('srlg_'+n))n++;
   S.push({ id:'srlg_'+n, label:'', type:'submarine', affects:[] }); renderSrlg(); };
@@ -2021,7 +2098,7 @@ function renderRtt(){
   $('rTs').oninput=e=>R.timestamp=e.target.value;
   $('rNote').oninput=e=>R.note=e.target.value;
   // edges 的 a/b:node id 選單(必為拓樸節點,選單限制即免驗證)
-  const nodeList=[...new Set(cy.nodes().filter(n=>n.id()!=='__ghost__').map(n=>n.id()))].sort();
+  const nodeList=[...nodes.keys()].sort();
   rttFlatTable($('rttEdges'), R.edges, [{h:'a',k:'a',sel:nodeList},{h:'b',k:'b',sel:nodeList},{h:'rtt',k:'rtt',num:1},{h:'src',k:'src',sel:['measured','city-ref','model']}]);
   const ids=new Set(); for(const a of Object.keys(R.matrix)){ ids.add(a); for(const b of Object.keys(R.matrix[a])) ids.add(b); }
   const ax=[...ids].sort();
@@ -2037,6 +2114,7 @@ function renderRtt(){
     if(!R.matrix[r])R.matrix[r]={};
     if(raw===''){ delete R.matrix[r][c]; } else { const v=parseFloat(raw); if(!isNaN(v))R.matrix[r][c]=v; }
   });
+  markDirty();
 }
 $('rttEdgeAdd').onclick=()=>{ history.push(); R.edges.push({a:'',b:'',rtt:0,src:'model'}); renderRtt(); };
 // rttRefAdd 已移除(cityRef 唯讀,不提供 UI 編輯;匯入時保留原值,匯出時照樣輸出)

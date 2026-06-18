@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title data-i18n="ui.docTitle">BlastRadius — network failure impact</title>
+<title data-i18n="ui.docTitle">Topocide — network failure impact</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="theme.css">
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
@@ -20,7 +20,7 @@ const _topoKey = new URLSearchParams(location.search).get('topo') || null;
 // 廣播：收到時寫入本地並 reload
 (()=>{
   if(typeof BroadcastChannel==='undefined') return;
-  const bc=new BroadcastChannel('blastradius');
+  const bc=new BroadcastChannel('topocide');
   bc.onmessage=e=>{
     if(e.data?.type!=='topo-update') return;
     const cur=Draft.read(_topoKey)||{};
@@ -325,7 +325,7 @@ if(_topoKey) document.addEventListener('DOMContentLoaded', ()=>{
 <body class="h-screen flex flex-col bg-gray-50 text-gray-800">
 
 <header class="bg-blue-900 text-white px-5 py-2 shadow-sm flex items-baseline gap-3 flex-wrap">
-  <h1 class="text-sm font-semibold tracking-wide shrink-0">BlastRadius</h1>
+  <h1 class="text-sm font-semibold tracking-wide shrink-0">Topocide</h1>
   <span class="text-xs text-blue-200" data-i18n="ui.subtitle">國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出</span>
   <a id="toEditorLink" href="edit.html" class="ml-auto shrink-0 px-2.5 py-1 border border-white/40 rounded text-xs text-white no-underline hover:bg-white/15" data-i18n="ui.toEditor" title="開啟資料編輯器">✎ 資料編輯器</a>
 </header>
@@ -619,7 +619,7 @@ if(_topoKey) document.addEventListener('DOMContentLoaded', ()=>{
 
 <script type="module">
 // ============================================================================
-// BlastRadius POC — UI script
+// Topocide POC — UI script
 //
 // 本檔組織(對應 SPEC §11 視覺狀態機 + §12 Tab 行為矩陣):
 //   §0  CONSTANTS         — class / role 名稱表
@@ -997,7 +997,7 @@ const I18N = {
     'c10.opt.bottleneckValue':     (p) => `瓶頸:${p.edges}`,
     'c10.opt.feasibleNotMetValue': (p) => `最佳可得 ${p.mlu}% &gt; 目標 ${p.target}%`,
     // --- UI chrome(頁首 / 左側面板 / 分頁鈕)---
-    'ui.docTitle':         'BlastRadius — 網路故障影響',
+    'ui.docTitle':         'Topocide — 網路故障影響',
     'ui.subtitle':         '國際骨幹 OSPF 失效衝擊分析 — 計算最短路徑與樞紐度,模擬單點 / SRLG 失效下的流量重分配與容量溢出',
     'ui.toEditor':         '✎ 資料編輯器',
     'ui.controls':         '控制',
@@ -1290,7 +1290,7 @@ const I18N = {
     'c10.opt.bottleneckValue':     (p) => `Bottleneck: ${p.edges}`,
     'c10.opt.feasibleNotMetValue': (p) => `Best achievable ${p.mlu}% &gt; target ${p.target}%`,
     // --- UI chrome (header / left panel / tab buttons) ---
-    'ui.docTitle':         'BlastRadius — network failure impact',
+    'ui.docTitle':         'Topocide — network failure impact',
     'ui.subtitle':         'International-backbone OSPF failure-impact analysis — computes shortest paths and centrality, and simulates traffic redistribution and capacity overflow under single-point / SRLG failures',
     'ui.toEditor':         '✎ Data editor',
     'ui.controls':         'Controls',
@@ -3078,7 +3078,7 @@ const C10_Edges = (() => {
     const posStr   = Object.entries(topo.positions)
       .map(([k, v]) => `    ${k}: ${fmtObj(v)}`).join(',\n');
 
-    return `// Exported from BlastRadius POC at ${new Date().toISOString()}
+    return `// Exported from Topocide POC at ${new Date().toISOString()}
 const topology = {
   nodes: [
 ${nodesStr}

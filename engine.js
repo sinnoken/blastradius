@@ -1,5 +1,5 @@
 // ============================================================================
-// BlastRadius Engine — Pure OSPF / SPT algorithms (§3–§15,含 §6.2b/§6.3b 子節)
+// Topocide Engine — Pure OSPF / SPT algorithms (§3–§15,含 §6.2b/§6.3b 子節)
 // ============================================================================
 // 純函式層,不依賴 DOM / Cytoscape / 全域變數。所有狀態透過參數傳入。
 // 對應 SPEC.md §2 模組分層中的 Module B + Module C。
@@ -935,4 +935,153 @@ export function optimizeWeights(topo, demand, bounds, opts = {}) {
     util: bestEval.util, feasible, targetMet, target,
     bottleneck, binding, frozen, history, iterations, elapsedMs: Date.now() - t0,
   };
+}
+
+// §16 — PATH DIVERSITY (Pairwise Edge Connectivity)
+// ─────────────────────────────────────────────────────────────────────────────
+// Counts the number of edge-disjoint paths between two nodes using
+// Edmonds-Karp (BFS-based max-flow). By Menger's theorem this equals
+// the minimum edge cut, i.e. how many edges must fail simultaneously
+// to disconnect the pair.
+//
+// edgeList: [{source, target}]  — undirected; pseudonode edges excluded
+// returns:  Map<"src|dst", number>  for all ordered pairs of router ids
+
+export function pairwiseEdgeConnectivity(edgeList, routerIds) {
+  // Build adjacency: node → Set of neighbours (undirected, ignoring transit/PN)
+  const nbrs = new Map();
+  const ensure = id => { if (!nbrs.has(id)) nbrs.set(id, new Set()); };
+  for (const e of edgeList) {
+    const { source: s, target: t } = e;
+    ensure(s); ensure(t);
+    nbrs.get(s).add(t);
+    nbrs.get(t).add(s);
+  }
+
+  // Edmonds-Karp max-flow for a single (src, dst) pair.
+  // Capacity: 1 per undirected edge (each direction).
+  function maxFlow(src, dst) {
+    if (src === dst) return Infinity;
+    // residual[u][v] = remaining capacity
+    const res = new Map();
+    const cap = (u, v, c) => {
+      if (!res.has(u)) res.set(u, new Map());
+      res.get(u).set(v, (res.get(u).get(v) || 0) + c);
+    };
+    for (const [u, nbs] of nbrs) for (const v of nbs) { cap(u, v, 1); }
+
+    let flow = 0;
+    while (true) {
+      // BFS: find shortest augmenting path
+      const par = new Map([[src, null]]);
+      const q = [src];
+      bfs: for (let i = 0; i < q.length; i++) {
+        const u = q[i];
+        for (const [v, c] of (res.get(u) || new Map())) {
+          if (c > 0 && !par.has(v)) {
+            par.set(v, u);
+            if (v === dst) break bfs;
+            q.push(v);
+          }
+        }
+      }
+      if (!par.has(dst)) break;
+      // Augment along path
+      flow++;
+      let v = dst;
+      while (v !== src) {
+        const u = par.get(v);
+        res.get(u).set(v, res.get(u).get(v) - 1);
+        if (!res.has(v)) res.set(v, new Map());
+        res.get(v).set(u, (res.get(v).get(u) || 0) + 1);
+        v = u;
+      }
+    }
+    return flow;
+  }
+
+  const result = new Map();
+  for (const s of routerIds) {
+    for (const t of routerIds) {
+      if (s === t) continue;
+      result.set(`${s}|${t}`, maxFlow(s, t));
+    }
+  }
+  return result;  // Map<"s|t", k>  k = edge-disjoint path count
+}
+
+// §17 — N-1 BANDWIDTH SURVIVABILITY
+// ─────────────────────────────────────────────────────────────────────────────
+// For each router pair (src, dst):
+//   1. Find the primary shortest path and its min-capacity bottleneck
+//   2. For each edge on that path, remove it and find the surviving path's
+//      min-capacity bottleneck (0 if unreachable)
+//   3. worst-case survivability = min across all N-1 scenarios
+//   4. rate = worst-case / primary min-capacity × 100  (capped at 200)
+//
+// edges: full topology edge list (with capacity field)
+// routerIds: array of router node ids to compute all-pairs for
+// returns: Map<"src|dst", { primary: number, worstCase: number, rate: number }>
+
+export function n1BandwidthSurvivability(edges, routerIds) {
+  // Build capacity-weighted adjacency (undirected, p2p only)
+  const p2p = edges.filter(e => e.type === 'p2p' && (e.capacity ?? 0) > 0);
+
+  // BFS/Dijkstra that returns {path: [edgeIds], minCap: number}
+  // Uses max-min-capacity path (widest path) via modified Dijkstra
+  function widestPath(src, dst, excludeEdgeId = null) {
+    const cap = new Map();  // node → max bottle-neck to here
+    cap.set(src, Infinity);
+    const prev = new Map();  // node → { from, edgeId }
+    const visited = new Set();
+    // Max-heap via simple priority: pick max cap unvisited
+    const pq = [[Infinity, src]];
+    while (pq.length) {
+      pq.sort((a, b) => b[0] - a[0]);
+      const [c, u] = pq.shift();
+      if (visited.has(u)) continue;
+      visited.add(u);
+      if (u === dst) break;
+      for (const e of p2p) {
+        if (e.id === excludeEdgeId) continue;
+        let v = null;
+        if (e.source === u) v = e.target;
+        else if (e.target === u) v = e.source;
+        if (!v || visited.has(v)) continue;
+        const w = Math.min(c, e.capacity ?? 0);
+        if (!cap.has(v) || w > cap.get(v)) {
+          cap.set(v, w);
+          prev.set(v, { from: u, edgeId: e.id });
+          pq.push([w, v]);
+        }
+      }
+    }
+    if (!cap.has(dst) || cap.get(dst) === 0) return { minCap: 0, edgeIds: [] };
+    // Reconstruct path edge ids
+    const edgeIds = [];
+    let cur = dst;
+    while (prev.has(cur)) { const { from, edgeId } = prev.get(cur); edgeIds.push(edgeId); cur = from; }
+    return { minCap: cap.get(dst), edgeIds };
+  }
+
+  const result = new Map();
+  for (const src of routerIds) {
+    for (const dst of routerIds) {
+      if (src === dst) continue;
+      const primary = widestPath(src, dst);
+      if (primary.minCap === 0) {
+        result.set(`${src}|${dst}`, { primary: 0, worstCase: 0, rate: 0 });
+        continue;
+      }
+      let worstCase = Infinity;
+      for (const eid of primary.edgeIds) {
+        const alt = widestPath(src, dst, eid);
+        if (alt.minCap < worstCase) worstCase = alt.minCap;
+      }
+      if (worstCase === Infinity) worstCase = primary.minCap;  // no edges to remove
+      const rate = Math.round((worstCase / primary.minCap) * 100);
+      result.set(`${src}|${dst}`, { primary: primary.minCap, worstCase, rate });
+    }
+  }
+  return result;
 }

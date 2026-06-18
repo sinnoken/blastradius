@@ -188,13 +188,14 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
 
   <div class="warn-banner" id="warnBanner"></div>
 
-  <header class="bg-blue-900 text-white px-5 py-2 min-h-[42px] shadow-sm flex items-baseline gap-3 flex-wrap">
-    <h1 class="text-sm font-semibold tracking-wide shrink-0">Topocide <span class="font-normal text-blue-200">· Data Editor</span></h1>
+  <header class="bg-blue-900 text-white px-5 py-2 min-h-[42px] shadow-sm flex items-center gap-3 overflow-x-auto">
+    <h1 class="text-sm font-semibold tracking-wide shrink-0 whitespace-nowrap">Topocide <span class="font-normal text-blue-200">· Data Editor</span></h1>
     <!-- 共用群組:所有 tab 都顯示,位置固定在左側 -->
     <!-- 共用群組:所有 tab 都顯示,位置固定在左側 -->
     <button class="btn" data-g="io"  id="btnLoadAll"  title="從同目錄 fetch topology / demand / srlg / rtt.js 全部載入">⤓ 載入全部</button>
     <button class="btn" data-g="io"  id="btnExportAll" title="將 topology / demand / srlg / rtt.js 全部下載到本機">⇩ 匯出全部</button>
-    <button class="btn" data-g="io"  id="btnSyncRemote" title="將目前資料同步到雲端（CF Workers KV）">☁ 同步</button>
+    <button class="btn" data-g="io"  id="btnExportImage" title="匯出拓樸圖片（PNG 2x）">💾</button>
+    <button class="btn" data-g="io"  id="btnSyncRemote" title="將目前資料同步到雲端（CF Workers KV）">☁</button>
     <button class="btn" data-g="cur" id="btnLoadLocal" title="從同目錄 fetch 當前分頁對應的 .js 載入">⤓ 載入</button>
     <button class="btn" data-g="cur" id="btnImport"    title="貼上或選取檔案,將 JS 資料載入當前分頁">⇪ 匯入</button>
     <button class="btn" data-g="cur" id="btnExport"    title="將當前分頁的資料下載為 .js 檔">⇩ 匯出本檔</button>
@@ -1681,7 +1682,7 @@ async function pushRemote(data){
 }
 
 // ── localStorage + BroadcastChannel ────────────────────────────────────────
-const _bc=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('blastradius'):null;
+const _bc=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('topocide'):null;
 
 function serializeAll(){
   return {
@@ -2230,6 +2231,12 @@ function loadOne(tab,txt){
 }
 $('btnExport').onclick=()=>{ const m=FILEMAP[TAB]; dl(m[0],m[1]()); toast('已匯出 '+m[0]); };
 $('btnExportAll').onclick=()=>{ for(const k of Object.keys(FILEMAP)){ const m=FILEMAP[k]; dl(m[0],m[1]()); } toast('已匯出 4 個檔'); };
+$('btnExportImage').onclick=()=>{
+  const a=document.createElement('a');
+  a.href=cy.png({scale:2, full:true, bg:'#fafbfc'});
+  a.download=`${topoKey||'topology'}.png`;
+  a.click();
+};
 $('btnSyncRemote').onclick=async()=>{
   $('btnSyncRemote').disabled=true;
   try{

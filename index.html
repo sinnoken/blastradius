@@ -428,6 +428,8 @@ if(_topoKey) document.addEventListener('DOMContentLoaded', ()=>{
         <span>
           <button class="np-mode active" data-action="c2Mode" data-mode="rtt" data-i18n="c2.mode.rtt">RTT / SLO</button>
           <button class="np-mode" data-action="c2Mode" data-mode="cost" data-i18n="c2.mode.cost">成本</button>
+          <button class="np-mode" data-action="c2Mode" data-mode="diversity" data-i18n="c2.mode.diversity">路徑備援</button>
+          <button class="np-mode" data-action="c2Mode" data-mode="bw-survival" data-i18n="c2.mode.bwSurvival">頻寬存活</button>
         </span>
       </div>
       <!-- 共用區:點格說明 + ECMP/非對稱符號(兩種模式都適用)-->
@@ -647,6 +649,8 @@ import {
   detectAsymmetric, computeHeatmap, computeN1WorstCase,
   evalCongestion, buildWeightBounds, optimizeWeights,
   impliedCostFromRtt, RTT_COST_CLAMP, RTT_COST_DIVISOR,
+  pairwiseEdgeConnectivity,
+  n1BandwidthSurvivability,
 } from './engine.js';
 import { baseGraphStyle } from './graph-style.js';
 
@@ -803,6 +807,7 @@ const I18N = {
     'c2.asymCostLabel': (p) => `cost ${p.cost} (非對稱)`,
     'c2.mode':          '檢視',
     'c2.mode.cost':     '成本',
+    'c2.mode.diversity': '路徑備援',
     'c2.mode.rtt':      'RTT / SLO',
     'c2.sloLabel':      'SLO 目標 ≤',
     'c2.rttLegend':     '色階:綠 ≤SLO · 黃 ≤1.5×SLO · 橙 超標 · 紅 不可達。RTT = geo 模型沿路徑加總(地理下限,非實測)。',
@@ -1096,6 +1101,7 @@ const I18N = {
     'c2.asymCostLabel': (p) => `cost ${p.cost} (asymmetric)`,
     'c2.mode':          'View',
     'c2.mode.cost':     'Cost',
+    'c2.mode.diversity': 'Path Diversity',
     'c2.mode.rtt':      'RTT / SLO',
     'c2.sloLabel':      'SLO target ≤',
     'c2.rttLegend':     'Shade: green ≤SLO · amber ≤1.5×SLO · orange over · red unreachable. RTT = geo model summed along the path (geographic floor, not measured).',
@@ -1872,7 +1878,15 @@ const C2_Matrix = (() => {
       }
     }
     const edgeById = {}; for (const e of topology.edges) edgeById[e.id] = e;
-    matrixCache = { routers, matrix, maxCost, edgeRtt: RTT_OK2 ? edgeRttById : null, edgeById };
+
+    // Path Diversity（edge-disjoint paths count）— 只用 p2p 邊，不含 transit/pseudonode
+    let diversityMap = null;
+    if (mode === 'diversity') {
+      const p2pEdges = topology.edges.filter(e => e.type !== 'transit');
+      diversityMap = pairwiseEdgeConnectivity(p2pEdges, routers);
+    }
+
+    matrixCache = { routers, matrix, maxCost, edgeRtt: RTT_OK2 ? edgeRttById : null, edgeById, diversityMap };
 
     // 顯示故障狀態
     const failInfo = dom('matrix-fail-info');
@@ -1911,7 +1925,13 @@ const C2_Matrix = (() => {
           html += `<td class="clickable cost-t4 matrix-cell" data-src="${a}" data-dst="${b}">∞</td>`;
           continue;
         }
-        if (isRtt) {
+        if (mode === 'diversity') {
+          const k = diversityMap ? (diversityMap.get(`${a}|${b}`) ?? 0) : 0;
+          // 色階：1=紅（單點失效）2=黃（有一備援）3+=綠（完整備援）
+          const divTier = k === 0 ? 4 : k === 1 ? 3 : k === 2 ? 2 : 1;
+          const divTitle = k === 0 ? '無法到達' : k === 1 ? '無備援（單點失效風險）' : k === 2 ? '1 條備援路徑' : `${k-1} 條備援路徑`;
+          html += `<td class="clickable cost-t${divTier} matrix-cell" data-src="${a}" data-dst="${b}" title="${divTitle}">${k}</td>`;
+        } else if (isRtt) {
           reach++;
           const ms = cell.rtt;
           if (ms != null && ms <= sloT) met++; else bad++;

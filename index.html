@@ -808,6 +808,7 @@ const I18N = {
     'c2.mode':          '檢視',
     'c2.mode.cost':     '成本',
     'c2.mode.diversity': '路徑備援',
+    'c2.mode.bwSurvival': '頻寬存活',
     'c2.mode.rtt':      'RTT / SLO',
     'c2.sloLabel':      'SLO 目標 ≤',
     'c2.rttLegend':     '色階:綠 ≤SLO · 黃 ≤1.5×SLO · 橙 超標 · 紅 不可達。RTT = geo 模型沿路徑加總(地理下限,非實測)。',
@@ -1102,6 +1103,7 @@ const I18N = {
     'c2.mode':          'View',
     'c2.mode.cost':     'Cost',
     'c2.mode.diversity': 'Path Diversity',
+    'c2.mode.bwSurvival': 'BW Survivability',
     'c2.mode.rtt':      'RTT / SLO',
     'c2.sloLabel':      'SLO target ≤',
     'c2.rttLegend':     'Shade: green ≤SLO · amber ≤1.5×SLO · orange over · red unreachable. RTT = geo model summed along the path (geographic floor, not measured).',
@@ -1886,6 +1888,12 @@ const C2_Matrix = (() => {
       diversityMap = pairwiseEdgeConnectivity(p2pEdges, routers);
     }
 
+    // N-1 Bandwidth Survivability — worst-case N-1 存活頻寬率（%）
+    let bwSurvivalMap = null;
+    if (mode === 'bw-survival') {
+      bwSurvivalMap = n1BandwidthSurvivability(topology.edges, routers);
+    }
+
     matrixCache = { routers, matrix, maxCost, edgeRtt: RTT_OK2 ? edgeRttById : null, edgeById, diversityMap };
 
     // 顯示故障狀態
@@ -1927,10 +1935,20 @@ const C2_Matrix = (() => {
         }
         if (mode === 'diversity') {
           const k = diversityMap ? (diversityMap.get(`${a}|${b}`) ?? 0) : 0;
-          // 色階：1=紅（單點失效）2=黃（有一備援）3+=綠（完整備援）
           const divTier = k === 0 ? 4 : k === 1 ? 3 : k === 2 ? 2 : 1;
-          const divTitle = k === 0 ? '無法到達' : k === 1 ? '無備援（單點失效風險）' : k === 2 ? '1 條備援路徑' : `${k-1} 條備援路徑`;
+          const divTitle = k === 0 ? '無法到達' : k === 1 ? '無備援（單點失效風險）' : `${k-1} 條備援路徑`;
           html += `<td class="clickable cost-t${divTier} matrix-cell" data-src="${a}" data-dst="${b}" title="${divTitle}">${k}</td>`;
+        } else if (mode === 'bw-survival') {
+          const bw = bwSurvivalMap ? bwSurvivalMap.get(`${a}|${b}`) : null;
+          if (!bw || bw.primary === 0) {
+            html += `<td class="clickable cost-t4 matrix-cell" data-src="${a}" data-dst="${b}" title="無容量資料或無法到達">—</td>`;
+          } else {
+            const r = bw.rate;
+            // 色階：0%=紅 1-49%=橙 50-99%=黃 100%+=綠
+            const bwTier = r === 0 ? 4 : r < 50 ? 3 : r < 100 ? 2 : 1;
+            const title = `主路 ${bw.primary}G → N-1 worst-case ${bw.worstCase}G（${r}%）`;
+            html += `<td class="clickable cost-t${bwTier} matrix-cell" data-src="${a}" data-dst="${b}" title="${title}">${r}%</td>`;
+          }
         } else if (isRtt) {
           reach++;
           const ms = cell.rtt;

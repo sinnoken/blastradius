@@ -950,6 +950,7 @@ const I18N = {
     'c10.col.type':    '類型',
     'c10.col.cost':    '成本 (去 / 回)',
     'c10.divergeTitle':'目前成本和建議值(依延遲推算)差距大於 1,可能是人為調過',
+    'c10.noRtt':        '未載入 rtt.js，無法計算 RTT 參考值',
     'c10.src.measured':'直測',
     'c10.src.cityRef': '城市參考',
     'c10.src.model':   '模型估計',
@@ -1242,6 +1243,7 @@ const I18N = {
     'c10.col.type':    'Type',
     'c10.col.cost':    'Cost (fwd / rev)',
     'c10.divergeTitle':'Current cost differs from the (latency-derived) suggestion by more than 1 — possibly tuned manually',
+    'c10.noRtt':        'rtt.js not loaded — RTT reference unavailable',
     'c10.src.measured':'Measured',
     'c10.src.cityRef': 'City reference',
     'c10.src.model':   'Model estimate',
@@ -2925,19 +2927,20 @@ const C10_Edges = (() => {
   function render() {
     fillRttConsts();
     const div = dom('edges-result');
-    const refCol = RTT_OK ? `<th>${t('c10.col.ref')}</th>` : '';
+    const refCol = `<th>${t('c10.col.ref')}</th>`;
     let html = `<table><tr><th>${t('c10.col.pair')}</th><th>${t('c10.col.type')}</th><th>${t('c10.col.cost')}</th>${refCol}</tr>`;
 
     // 無向表:一條實體鏈路一列。
     // 排序:transit 先、p2p 後;同型內 flagged(⚠ 可能人工調校)置頂,再按正規化 pair key(a<b? a+b : b+a)字母序。
     // 審計優先:成本偏離 RTT 建議值(diverge)的鏈路浮到組內最前,讓問題自己跳出來;
     // 組內仍維持字母序,避免每次編輯就整表跳動(穩定 vs 優先級的折衷)。
-    // isDiverged 委派 edgeRef(p2p-only);transit / 無 RTT 一律 false → 退回 transit-first → 字母序。
+    // isDiverged：p2p 無 RTT 參考也算 diverge（琥珀條邏輯一致）；transit 一律 false。
     const isDiverged = (e) => {
+      if (e.type !== 'p2p') return false;
       const ref = edgeRef(e);
-      if (!ref) return false;
+      if (!ref) return true;  // p2p 但無 RTT → 視為 diverge，置頂
       return Math.abs(e.cost - ref.cost) > 1 ||
-        (e.type === 'p2p' && Math.abs((e.costRev ?? e.cost) - ref.cost) > 1);
+        Math.abs((e.costRev ?? e.cost) - ref.cost) > 1;
     };
     const rows = [...topology.edges].sort((x, y) => {
       const xt = x.type === 'transit' ? 0 : 1;
@@ -2967,18 +2970,24 @@ const C10_Edges = (() => {
       if (RTT_OK) {
         const ref = edgeRef(e);
         if (ref) {
-          // 任一方向成本與最佳參考差距 > 1 → 旗標「可能人工調校」
           const diverge = Math.abs(e.cost - ref.cost) > 1 ||
             (e.type === 'p2p' && Math.abs((e.costRev ?? e.cost) - ref.cost) > 1);
           const costCls = diverge ? 'ref-cost diverged' : 'ref-cost';
           const chip = `<span class="ref-chip" data-ref-edge="${e.id}" data-ref-cost="${ref.cost}"`
             + ` title="${t('c10.chipTitle', { label: ref.label, rtt: ref.rtt, cost: ref.cost })}">`
             + `${ref.icon} <span class="${costCls}">${ref.cost}</span></span>`;
-          // 偏離 RTT 建議(diverge)→ 參考格左緣琥珀條(.ref-diverged)+ 建議成本數字轉琥珀;⚠ 文字標移除,改整格訊號。
           refCell = `<td data-reftd="${e.id}"${diverge ? ` class="ref-diverged" title="${t('c10.divergeTitle')}"` : ''}>${chip}</td>`;
         } else {
-          refCell = '<td><span class="ref-none">—</span></td>';
+          // p2p 但無 RTT 資料 → 琥珀條警示；transit 本無參考，不標
+          refCell = e.type === 'p2p'
+            ? `<td class="ref-diverged" title="${t('c10.noRtt')}"><span class="ref-none">—</span></td>`
+            : '<td><span class="ref-none">—</span></td>';
         }
+      } else {
+        // 無 rtt.js：p2p 琥珀條警示，transit 本無參考不標
+        refCell = e.type === 'p2p'
+          ? `<td class="ref-diverged" title="${t('c10.noRtt')}"><span class="ref-none">無參考</span></td>`
+          : '<td><span class="ref-none">—</span></td>';
       }
       html += `<tr data-edge-row="${e.id}"><td title="${e.id}">${e.source} ↔ ${e.target}</td><td>${e.type}</td><td data-costtd="${e.id}"${isAsym ? ' class="cost-asym"' : ''}>${costCell}</td>${refCell}</tr>`;
     }

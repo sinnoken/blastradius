@@ -212,7 +212,8 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
     <select class="btn" data-g="view" id="layoutSel" title="佈局演算法" style="padding-left:8px;padding-right:8px">
       <optgroup label="地理">
         <option value="geo-map" selected>地理座標配置</option>
-        <option value="metro-map">地鐵圖（8方向化）</option>
+        <option value="metro-map">地鐵圖</option>
+        <option value="metro-octilinear">地鐵圖（折線）</option>
       </optgroup>
       <optgroup label="RTT 延遲">
         <option value="cluster-rtt">RTT 延遲群聚</option>
@@ -396,6 +397,10 @@ const cy = cytoscape({
       'font-size':'11px','color':'#475569','text-background-color':'#fff','text-background-opacity':0.85,'text-background-padding':'2px' }},
     { selector:'edge[type="transit"]', style:{ 'line-style':'dashed','line-color':'#a855f7' }},
     { selector:'edge[?_asym]', style:{ 'line-color':'#16a34a' }},
+    // 八向折線布局：_oct='seg' 折線（segments）、_oct='straight' 直線（取代預設 bezier）
+    { selector:'edge[_oct = "seg"]', style:{ 'curve-style':'segments',
+      'segment-distances':(e)=>e.data('_segD')||'0', 'segment-weights':(e)=>e.data('_segW')||'0.5' }},
+    { selector:'edge[_oct = "straight"]', style:{ 'curve-style':'straight' }},
     { selector:'node:selected', style:{ 'border-color':'#2563eb','border-width':5 }},
     { selector:'edge:selected', style:{ 'line-color':'#2563eb','width':5,'opacity':1 }},
     // ghost(連線模式拖曳預覽)
@@ -1108,10 +1113,9 @@ function layoutGeoMap(){
 // 三步驟:Equal Earth 投影種子 → 格點量化 → 八向微調(Octilinear Nudge)。
 // 不需要 MILP solver 或 Delaunay(已有邊);約 70-80% 的邊可達 0°/45°/90°。
 // 長距離斜線(TPE↔LON 等)幾何上無法完美八向化,保留近似最佳角度。
-function layoutMetroMap(){
-  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
-  if(all.length<2){ toast('節點不足,無法執行地鐵圖佈局'); return; }
-
+// metro 節點定位核心：回 {pos, bedges, GRID, A_TOL}，定位失敗回 null。
+// layoutMetroMap（直線）與 layoutMetroOctilinear（折線）共用。
+function _metroPositions(all){
   const {grid:GRID,nudgeIter:N_ITER,angleTol:A_TOL,geoAnchor:G_ANC,distPow:D_POW}=LAYOUT_PARAMS.metro;
   const snapG=v=>Math.round(v/GRID)*GRID;
 
@@ -1122,7 +1126,7 @@ function layoutMetroMap(){
     const p=(c&&GEO_CITY[c])||(co&&GEO_COUNTRY[co])||null;
     if(p){ ll[n.id()]=p; placed.push(n); } else unplaced.push(n);
   });
-  if(!placed.length){ toast('無城市座標,無法執行地鐵圖佈局'); return; }
+  if(!placed.length){ toast('無城市座標,無法執行地鐵圖佈局'); return null; }
 
   const LON0=150;  // λ0=150°E：亞太電信業界慣例(ITU/Telegeography)，seam 在 -30°W(大西洋)，美洲完整落右側
   const proj={};
@@ -1215,10 +1219,31 @@ function layoutMetroMap(){
       pos[ai].x-=nx;pos[ai].y-=ny;pos[bi].x+=nx;pos[bi].y+=ny; }
   }
 
-  cy.layout({name:'preset',positions:node=>pos[node.id()],fit:true,padding:40,
-    animate:true,animationDuration:400}).run();
+  // Step 5: 最終全域 snap 回格點 — 節點都落格點，折線轉折點才能精確八向。
+  // 去重疊把節點推離格點，這步強制拉回；同格衝突往最近空格點外推（保持格點對齊）。
+  const taken=new Set();
+  // 依與原錨點距離排序，重要/中心節點優先佔格點
+  const order=IDS.slice().sort((a,b)=>
+    (Math.hypot(pos[a].x-anchor[a].x,pos[a].y-anchor[a].y))-(Math.hypot(pos[b].x-anchor[b].x,pos[b].y-anchor[b].y)));
+  for(const id of order){
+    let gx=snapG(pos[id].x), gy=snapG(pos[id].y);
+    if(taken.has(`${gx},${gy}`)){
+      // 螺旋找最近空格點（環狀往外）
+      let found=false;
+      for(let r=1;r<=6&&!found;r++) for(let dxg=-r;dxg<=r&&!found;dxg++) for(let dyg=-r;dyg<=r&&!found;dyg++){
+        if(Math.max(Math.abs(dxg),Math.abs(dyg))!==r) continue;
+        const k=`${gx+dxg*GRID},${gy+dyg*GRID}`;
+        if(!taken.has(k)){ gx+=dxg*GRID; gy+=dyg*GRID; found=true; }
+      }
+    }
+    taken.add(`${gx},${gy}`); pos[id]={x:gx,y:gy};
+  }
 
-  // 統計八向化率
+  return {pos, bedges, GRID, A_TOL};
+}
+
+// 統計八向化率（兩個 metro 布局共用）
+function _metroOctRate(pos, bedges, A_TOL){
   let ok=0,total=0;
   bedges.forEach(e=>{
     const sid=e.source().id(),tid=e.target().id();
@@ -1227,8 +1252,76 @@ function layoutMetroMap(){
     const angle=Math.atan2(dy,dx)*180/Math.PI,target=Math.round(angle/45)*45;
     const diff=Math.abs(angle-target); if((diff>180?360-diff:diff)<=A_TOL+2) ok++;
   });
+  return {ok, total};
+}
+
+// 地鐵圖（直線）：節點八向化，邊直連
+function layoutMetroMap(){
+  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  if(all.length<2){ toast('節點不足,無法執行地鐵圖佈局'); return; }
+  const r=_metroPositions(all); if(!r) return;
+  cy.layout({name:'preset',positions:node=>r.pos[node.id()],fit:true,padding:40,
+    animate:true,animationDuration:400}).run();
+  const {ok,total}=_metroOctRate(r.pos, r.bedges, r.A_TOL);
   toast(`地鐵圖佈局:${ok}/${total} 條邊八向化(${total?Math.round(ok/total*100):0}%);長距離斜線為幾何極限,可手動拖曳微調。`);
 }
+
+// 地鐵圖（折線）：節點八向化，斜邊用 segments 折成八向折線
+function layoutMetroOctilinear(){
+  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
+  if(all.length<2){ toast('節點不足,無法執行地鐵圖佈局'); return; }
+  const r=_metroPositions(all); if(!r) return;
+  const {pos, bedges, A_TOL}=r;
+  cy.layout({name:'preset',positions:node=>pos[node.id()],fit:true,padding:40,
+    animate:true,animationDuration:400}).run();
+
+  // 對每條邊算折線（用 cy 即時座標，供拖曳時重算共用）
+  // 折線容差 = 0：只要不是精確八向就折，盡量全部對齊（與定位的 16° 容差分開）
+  let bent=0;
+  bedges.forEach(e=>{ if(recomputeOctSegment(e, OCT_TOL)) bent++; });
+  _octEnabled=true;  // 開啟拖曳即時重算
+
+  const {ok,total}=_metroOctRate(pos, bedges, A_TOL);
+  toast(`地鐵圖折線:${ok}/${total} 直接八向 + ${bent} 條折線 = 全部八向化。拖曳節點折線即時更新。`);
+}
+
+// 單邊八向折線計算：已八向回 false（直線），斜邊設 _oct/_segW/_segD 回 true。
+// 用 cy 即時 position（非 layout 的 pos map），拖曳時可重算。
+// OCT_TOL：角度容差，差距在此度數內視為八向、不折（太小會把幾乎八向的邊也折，視覺亂）。
+// OCT_MIN_LEN：短邊門檻，邊長小於此值不折（短斜邊直連更清楚）。
+const OCT_TOL=8, OCT_MIN_LEN=120;
+let _octEnabled=false;
+function recomputeOctSegment(e, tol=OCT_TOL){
+  const sp=e.source().position(), tp=e.target().position();
+  const sx=sp.x,sy=sp.y,tx=tp.x,ty=tp.y;
+  const dx=tx-sx,dy=ty-sy,L=Math.hypot(dx,dy);
+  // 短邊或已八向 → 直線（_oct='straight'，蓋掉預設 bezier，避免彎曲看起來不八向）
+  if(L<OCT_MIN_LEN){ e.data('_oct','straight'); return false; }  // 短邊不折
+  const angle=Math.atan2(dy,dx)*180/Math.PI,target=Math.round(angle/45)*45;
+  const diff=Math.abs(angle-target),adiff=diff>180?360-diff:diff;
+  if(adiff<=tol){ e.data('_oct','straight'); return false; }  // 已八向（容差內），直線
+
+  // 斜邊折線：先沿主軸直走，再 45° 斜入 target（straight-then-diagonal）
+  const adx=Math.abs(dx),ady=Math.abs(dy),sgx=Math.sign(dx),sgy=Math.sign(dy);
+  let bx,by;
+  if(adx>ady){ bx=sx+sgx*(adx-ady); by=sy; }
+  else       { bx=sx;              by=sy+sgy*(ady-adx); }
+
+  const len2=dx*dx+dy*dy,len=Math.sqrt(len2);
+  const sbx=bx-sx,sby=by-sy;
+  const w=Math.max(0.05,Math.min(0.95,(sbx*dx+sby*dy)/len2));
+  const d=(sbx*dy-sby*dx)/len;
+  e.data('_oct','seg'); e.data('_segW',String(w)); e.data('_segD',String(Math.round(d)));
+  return true;
+}
+// 拖曳節點 → 完整重評估受影響的每條邊（recomputeOctSegment 自行決定折/不折）
+// 不靠 _oct 是否存在做 gating：直線拖歪要變折線、折線拖正要還原直線，兩向都要處理。
+cy.on('position','node', e=>{
+  if(!_octEnabled || isGhost(e.target.id())) return;
+  e.target.connectedEdges().forEach(edge=>{
+    if(!isGhost(edge.source().id()) && !isGhost(edge.target().id())) recomputeOctSegment(edge);
+  });
+});
 // cose 用:每條邊的理想長度 = 城市對 RTT(ms→px)。無 RTT(pseudonode transit 邊)用短邊,讓 PN 靠攏所屬 router。
 function rttEdgeLen(edge){
   const M=(R&&R.matrix)||{};
@@ -1319,6 +1412,12 @@ function layoutConcentricAdaptive(){
 }
 function runLayout(name){
   history.push();
+  // 切換布局時清掉折線資料 + 關閉拖曳即時重算（只有地鐵圖折線會重新開啟）
+  if(name!=='metro-octilinear'){
+    _octEnabled=false;
+    cy.edges('[_oct]').forEach(e=>{ e.removeData('_oct'); e.removeData('_segD'); e.removeData('_segW'); });
+  }
+  if(name==='metro-octilinear') return layoutMetroOctilinear(); // 自訂:metro 定位 + segments 八向折線
   if(name==='mds') return layoutMDS();           // 自訂:非 cytoscape plugin,用 rtt.matrix 跑 MDS
   if(name==='cluster-rtt') return layoutClusterRTT();  // 自訂:RTT 分群 + 群間炸開(兩尺度)
   if(name==='latency-map') return layoutLatencyMap();  // 自訂:raw-RTT MDS 真比例圖(忠實物理,無壓縮)

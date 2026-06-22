@@ -1029,63 +1029,62 @@ export function pairwiseEdgeConnectivity(edgeList, routerIds) {
 // returns: Map<"src|dst", { primary: number, worstCase: number, rate: number }>
 
 export function n1BandwidthSurvivability(edges, routerIds) {
-  // Build capacity-weighted adjacency (undirected, p2p only)
-  const p2p = edges.filter(e => e.type === 'p2p' && (e.capacity ?? 0) > 0);
+  // 預建 adjacency list（取代 widestPath 內每節點掃全部邊）：node → [{to, cap, edgeId}]
+  const adj = new Map();
+  const ensure = id => { if (!adj.has(id)) adj.set(id, []); };
+  for (const e of edges) {
+    if (e.type !== 'p2p' || (e.capacity ?? 0) <= 0) continue;
+    ensure(e.source); ensure(e.target);
+    adj.get(e.source).push({ to: e.target, cap: e.capacity, edgeId: e.id });
+    adj.get(e.target).push({ to: e.source, cap: e.capacity, edgeId: e.id });
+  }
 
-  // BFS/Dijkstra that returns {path: [edgeIds], minCap: number}
-  // Uses max-min-capacity path (widest path) via modified Dijkstra
+  // Widest-path（max-min-capacity）Dijkstra，用 heap（O(E log V)）。
+  // 借用 min-heap：key = -capacity，讓「容量最大」先彈出。excludeEdgeId 供 N-1 排除。
   function widestPath(src, dst, excludeEdgeId = null) {
-    const cap = new Map();  // node → max bottle-neck to here
+    const cap = new Map(), prev = new Map(), visited = new Set();
     cap.set(src, Infinity);
-    const prev = new Map();  // node → { from, edgeId }
-    const visited = new Set();
-    // Max-heap via simple priority: pick max cap unvisited
-    const pq = [[Infinity, src]];
-    while (pq.length) {
-      pq.sort((a, b) => b[0] - a[0]);
-      const [c, u] = pq.shift();
+    let seq = 0;
+    const h = []; heapPush(h, [-Infinity, seq++, src]);  // [-cap, seq, node]
+    while (h.length) {
+      const [, , u] = heapPop(h);
       if (visited.has(u)) continue;
       visited.add(u);
       if (u === dst) break;
-      for (const e of p2p) {
-        if (e.id === excludeEdgeId) continue;
-        let v = null;
-        if (e.source === u) v = e.target;
-        else if (e.target === u) v = e.source;
-        if (!v || visited.has(v)) continue;
-        const w = Math.min(c, e.capacity ?? 0);
-        if (!cap.has(v) || w > cap.get(v)) {
-          cap.set(v, w);
-          prev.set(v, { from: u, edgeId: e.id });
-          pq.push([w, v]);
-        }
+      const c = cap.get(u);
+      for (const { to, cap: ec, edgeId } of (adj.get(u) || [])) {
+        if (edgeId === excludeEdgeId || visited.has(to)) continue;
+        const w = c < ec ? c : ec;
+        if (w > (cap.get(to) ?? -1)) { cap.set(to, w); prev.set(to, { from: u, edgeId }); heapPush(h, [-w, seq++, to]); }
       }
     }
-    if (!cap.has(dst) || cap.get(dst) === 0) return { minCap: 0, edgeIds: [] };
-    // Reconstruct path edge ids
+    const mc = cap.get(dst);
+    if (!mc || mc <= 0) return { minCap: 0, edgeIds: [] };
     const edgeIds = [];
     let cur = dst;
     while (prev.has(cur)) { const { from, edgeId } = prev.get(cur); edgeIds.push(edgeId); cur = from; }
-    return { minCap: cap.get(dst), edgeIds };
+    return { minCap: mc, edgeIds };
   }
 
   const result = new Map();
-  for (const src of routerIds) {
-    for (const dst of routerIds) {
-      if (src === dst) continue;
+  for (let i = 0; i < routerIds.length; i++) {
+    for (let j = i + 1; j < routerIds.length; j++) {  // 對稱：只算 i<j，反向鏡射
+      const src = routerIds[i], dst = routerIds[j];
       const primary = widestPath(src, dst);
+      let val;
       if (primary.minCap === 0) {
-        result.set(`${src}|${dst}`, { primary: 0, worstCase: 0, rate: 0 });
-        continue;
+        val = { primary: 0, worstCase: 0, rate: 0 };
+      } else {
+        let worstCase = Infinity;
+        for (const eid of primary.edgeIds) {
+          const alt = widestPath(src, dst, eid);
+          if (alt.minCap < worstCase) worstCase = alt.minCap;
+        }
+        if (worstCase === Infinity) worstCase = primary.minCap;
+        val = { primary: primary.minCap, worstCase, rate: Math.round((worstCase / primary.minCap) * 100) };
       }
-      let worstCase = Infinity;
-      for (const eid of primary.edgeIds) {
-        const alt = widestPath(src, dst, eid);
-        if (alt.minCap < worstCase) worstCase = alt.minCap;
-      }
-      if (worstCase === Infinity) worstCase = primary.minCap;  // no edges to remove
-      const rate = Math.round((worstCase / primary.minCap) * 100);
-      result.set(`${src}|${dst}`, { primary: primary.minCap, worstCase, rate });
+      result.set(`${src}|${dst}`, val);
+      result.set(`${dst}|${src}`, val);  // 無向圖對稱
     }
   }
   return result;

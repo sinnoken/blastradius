@@ -925,7 +925,7 @@ const I18N = {
     'c9.culprit.node': (p) => `<span class="txt-danger">R</span> ${p.id} 失效`,
     // --- C3 Centrality ---
     'c3.title':        '樞紐度盤點',
-    'c3.hint':         '衡量每條鏈路和每台節點「有多少路徑經過」— 數值越高,越多流量依賴它,故障影響越大。<div class="mt-1">分 4 級:<b>樞紐</b>(需擴容) / <b>正常</b>(維持) / <b>偶爾</b>(可降規) / <b>純備援(鏈路)·末端(節點)</b>(零過路流量)。</div>',
+    'c3.hint':         '衡量每條鏈路和每台節點「有多少路徑經過」(Weighted Shortest-Path Betweenness) — 數值越高,越多流量依賴它,故障影響越大。<div class="mt-1">分 4 級(以全網最大介數 max 為基準):<b>樞紐</b>(&gt; 40% max,需擴容) / <b>正常</b>(10–40% max,維持) / <b>偶爾</b>(0–10% max,可降規) / <b>純備援(鏈路)·末端(節點)</b>(介數 = 0,零過路流量)。</div>',
     'c3.edge.idle':    '純備援',
     'c3.node.idle':    '末端',
     'c3.edge.act.hub':    '擴容雙保',
@@ -1230,7 +1230,7 @@ const I18N = {
     'c9.culprit.node': (p) => `<span class="txt-danger">R</span> ${p.id} fails`,
     // --- C3 Centrality ---
     'c3.title':        'Centrality inventory',
-    'c3.hint':         'Measures how many paths traverse each link and node — the higher the value, the more traffic relies on it and the larger the impact when it fails.<div class="mt-1">4 tiers: <b>Hub</b> (needs expansion) / <b>Normal</b> (maintain) / <b>Rare</b> (can downsize) / <b>Pure-backup (links) · Leaf (nodes)</b> (zero transit traffic).</div>',
+    'c3.hint':         'Measures how many paths traverse each link and node (Weighted Shortest-Path Betweenness) — the higher the value, the more traffic relies on it and the larger the impact when it fails.<div class="mt-1">4 tiers (relative to the network-wide max betweenness): <b>Hub</b> (&gt; 40% max, needs expansion) / <b>Normal</b> (10–40% max, maintain) / <b>Rare</b> (0–10% max, can downsize) / <b>Pure-backup (links) · Leaf (nodes)</b> (betweenness = 0, zero transit traffic).</div>',
     'c3.edge.idle':    'Pure backup',
     'c3.node.idle':    'Leaf',
     'c3.edge.act.hub':    'Expand & dual-home',
@@ -1929,11 +1929,14 @@ const C2_Matrix = (() => {
     }
     const edgeById = {}; for (const e of topology.edges) edgeById[e.id] = e;
 
-    // Path Diversity（edge-disjoint paths count）— 只用 p2p 邊，不含 transit/pseudonode
+    // Path Diversity（edge-disjoint paths count）— 含 transit 邊：pseudonode 當中繼節點，
+    // 讓只透過共享 LAN（LSA2）相連的 router 對也能被算到（否則會誤判為不可達）。
+    // routerIds 仍只傳 router；pseudonode 只作為路徑中繼，不計入點對。
     let diversityMap = null;
     if (mode === 'diversity') {
-      const p2pEdges = topology.edges.filter(e => e.type !== 'transit');
-      diversityMap = pairwiseEdgeConnectivity(p2pEdges, routers);
+      const divEdges = topology.edges.filter(e => !failedEdges.has(e.id) &&
+        !failedNodes.has(e.source) && !failedNodes.has(e.target));
+      diversityMap = pairwiseEdgeConnectivity(divEdges, routers);
     }
 
     // N-1 Bandwidth Survivability — worst-case N-1 存活頻寬率（%）

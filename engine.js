@@ -948,14 +948,17 @@ export function optimizeWeights(topo, demand, bounds, opts = {}) {
 // returns:  Map<"src|dst", number>  for all ordered pairs of router ids
 
 export function pairwiseEdgeConnectivity(edgeList, routerIds) {
-  // Build adjacency: node → Set of neighbours (undirected, ignoring transit/PN)
+  // Build adjacency: node → Array of neighbours (undirected)
+  // edgeList 可含 transit 邊（pseudonode 作為路徑中繼節點），routerIds 只算 router 點對。
+  // 必須用 Array 不能用 Set：平行邊（同一對節點之間多條鏈路）是獨立的容量，
+  // Set 會把它們合併成 1，導致 edge-disjoint paths 算少。
   const nbrs = new Map();
-  const ensure = id => { if (!nbrs.has(id)) nbrs.set(id, new Set()); };
+  const ensure = id => { if (!nbrs.has(id)) nbrs.set(id, []); };
   for (const e of edgeList) {
     const { source: s, target: t } = e;
     ensure(s); ensure(t);
-    nbrs.get(s).add(t);
-    nbrs.get(t).add(s);
+    nbrs.get(s).push(t);
+    nbrs.get(t).push(s);
   }
 
   // Edmonds-Karp max-flow for a single (src, dst) pair.
@@ -1004,7 +1007,9 @@ export function pairwiseEdgeConnectivity(edgeList, routerIds) {
   for (const s of routerIds) {
     for (const t of routerIds) {
       if (s === t) continue;
-      result.set(`${s}|${t}`, maxFlow(s, t));
+      // 無向圖 λ(s,t) = λ(t,s)，反向已算過直接複用，省一半 max-flow
+      const rev = result.get(`${t}|${s}`);
+      result.set(`${s}|${t}`, rev !== undefined ? rev : maxFlow(s, t));
     }
   }
   return result;  // Map<"s|t", k>  k = edge-disjoint path count

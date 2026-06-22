@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="theme.css">
 
 <script src="draft.js"></script>
+<script src="canvas-export.js"></script>
 <!-- Cytoscape core(對齊 index.html)+ cxtmenu(右鍵)。建邊/undo 改自寫,不依賴易碎外掛。 -->
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
 <script src="https://unpkg.com/cytoscape-cxtmenu@3.5.0/cytoscape-cxtmenu.js"></script>
@@ -631,6 +632,7 @@ if (HAS_CX){
     { content:'＋ Router', select:(x,e)=>addRouterAt(e.position) },
     { content:'＋ Pseudonode', select:(x,e)=>addPNAt(e.position) },
     { content:'⤢ 置中', select:()=>cy.fit(40) },
+    { content:'💾 存圖', select:()=>exportCanvasPng() },
   ]});
 }
 
@@ -1291,27 +1293,43 @@ function layoutMetroOctilinear(){
 // OCT_MIN_LEN：短邊門檻，邊長小於此值不折（短斜邊直連更清楚）。
 const OCT_TOL=8, OCT_MIN_LEN=120;
 let _octEnabled=false;
+const OCT_HYST=4;  // 遲滯帶（度）：避免拖曳到臨界角度時折線/直線反覆翻轉
 function recomputeOctSegment(e, tol=OCT_TOL){
   const sp=e.source().position(), tp=e.target().position();
   const sx=sp.x,sy=sp.y,tx=tp.x,ty=tp.y;
   const dx=tx-sx,dy=ty-sy,L=Math.hypot(dx,dy);
-  // 短邊或已八向 → 直線（_oct='straight'，蓋掉預設 bezier，避免彎曲看起來不八向）
-  if(L<OCT_MIN_LEN){ e.data('_oct','straight'); return false; }  // 短邊不折
+  const goStraight=()=>{ e.data('_oct','straight'); e.removeData('_segW'); e.removeData('_segD'); };
+  // ① 長度優先：短邊一律不折（含遲滯，避免邊界長度抖動）
+  const wasSeg=e.data('_oct')==='seg';
+  const minLen=wasSeg?OCT_MIN_LEN-10:OCT_MIN_LEN;  // 已折的要更短才還原，已直的要更長才折
+  if(L<minLen){ goStraight(); return false; }
+  // ② 角度：差距在容差內 → 直線。遲滯：已折的容差放寬、已直的收緊
   const angle=Math.atan2(dy,dx)*180/Math.PI,target=Math.round(angle/45)*45;
   const diff=Math.abs(angle-target),adiff=diff>180?360-diff:diff;
-  if(adiff<=tol){ e.data('_oct','straight'); return false; }  // 已八向（容差內），直線
+  const effTol=wasSeg?tol+OCT_HYST:tol;  // 已折的要更接近八向才還原直線
+  if(adiff<=effTol){ goStraight(); return false; }
 
-  // 斜邊折線：先沿主軸直走，再 45° 斜入 target（straight-then-diagonal）
+  // 三段式折線：主軸直走 → 45° 置中 → 主軸直走（兩端正交收尾，真地鐵圖樣式）
   const adx=Math.abs(dx),ady=Math.abs(dy),sgx=Math.sign(dx),sgy=Math.sign(dy);
-  let bx,by;
-  if(adx>ady){ bx=sx+sgx*(adx-ady); by=sy; }
-  else       { bx=sx;              by=sy+sgy*(ady-adx); }
+  let b1x,b1y,b2x,b2y;
+  if(adx>ady){
+    // 水平主軸：水平 (adx-ady)/2 → 45° 走 ady → 水平 (adx-ady)/2
+    b1x=sx+sgx*(adx-ady)/2;       b1y=sy;
+    b2x=sx+sgx*(adx+ady)/2;       b2y=ty;
+  } else {
+    // 垂直主軸：垂直 (ady-adx)/2 → 45° 走 adx → 垂直 (ady-adx)/2
+    b1x=sx;                       b1y=sy+sgy*(ady-adx)/2;
+    b2x=tx;                       b2y=sy+sgy*(ady+adx)/2;
+  }
 
+  // 兩個轉折點 → cytoscape segment 的 (weight, distance)，相對 source→target 直線
   const len2=dx*dx+dy*dy,len=Math.sqrt(len2);
-  const sbx=bx-sx,sby=by-sy;
-  const w=Math.max(0.05,Math.min(0.95,(sbx*dx+sby*dy)/len2));
-  const d=(sbx*dy-sby*dx)/len;
-  e.data('_oct','seg'); e.data('_segW',String(w)); e.data('_segD',String(Math.round(d)));
+  const toSeg=(bx,by)=>{ const sbx=bx-sx,sby=by-sy;
+    return { w:(sbx*dx+sby*dy)/len2, d:(sbx*dy-sby*dx)/len }; };
+  const p1=toSeg(b1x,b1y), p2=toSeg(b2x,b2y);
+  e.data('_oct','seg');
+  e.data('_segW',`${p1.w.toFixed(4)} ${p2.w.toFixed(4)}`);
+  e.data('_segD',`${Math.round(p1.d)} ${Math.round(p2.d)}`);
   return true;
 }
 // 拖曳節點 → 完整重評估受影響的每條邊（recomputeOctSegment 自行決定折/不折）
@@ -1413,9 +1431,13 @@ function layoutConcentricAdaptive(){
 function runLayout(name){
   history.push();
   // 切換布局時清掉折線資料 + 關閉拖曳即時重算（只有地鐵圖折線會重新開啟）
+  // 對所有邊清理（不靠 [_oct] selector，避免 'straight' 值殘留）+ 強制 cytoscape 重算樣式
   if(name!=='metro-octilinear'){
     _octEnabled=false;
-    cy.edges('[_oct]').forEach(e=>{ e.removeData('_oct'); e.removeData('_segD'); e.removeData('_segW'); });
+    cy.batch(()=>{ cy.edges().forEach(e=>{
+      if(e.data('_oct')!==undefined){ e.removeData('_oct'); e.removeData('_segD'); e.removeData('_segW'); }
+    }); });
+    cy.style().update();  // 強制重繪：curve-style 回 bezier
   }
   if(name==='metro-octilinear') return layoutMetroOctilinear(); // 自訂:metro 定位 + segments 八向折線
   if(name==='mds') return layoutMDS();           // 自訂:非 cytoscape plugin,用 rtt.matrix 跑 MDS
@@ -2330,12 +2352,13 @@ function loadOne(tab,txt){
 }
 $('btnExport').onclick=()=>{ const m=FILEMAP[TAB]; dl(m[0],m[1]()); toast('已匯出 '+m[0]); };
 $('btnExportAll').onclick=()=>{ for(const k of Object.keys(FILEMAP)){ const m=FILEMAP[k]; dl(m[0],m[1]()); } toast('已匯出 4 個檔'); };
-$('btnExportImage').onclick=()=>{
+function exportCanvasPng(){
   const a=document.createElement('a');
   a.href=cy.png({scale:2, full:true, bg:'#fafbfc'});
   a.download=`${topoKey||'topology'}.png`;
   a.click();
-};
+}
+$('btnExportImage').onclick=exportCanvasPng;
 $('btnSyncRemote').onclick=async()=>{
   $('btnSyncRemote').disabled=true;
   try{

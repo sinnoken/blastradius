@@ -8,7 +8,9 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="theme.css">
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/cytoscape-cxtmenu@3.5.0/cytoscape-cxtmenu.js"></script>
 <script src="draft.js"></script>
+<script src="canvas-export.js"></script>
 <script src="topology.js"></script>
 <script src="demand.js"></script>
 <script src="srlg.js"></script>
@@ -3507,6 +3509,15 @@ cy.on('cxttap', 'node', (evt) => {
   else                       failedNodes.add(nid);
   rerenderIfPathActive();
 });
+
+// 空白處右鍵 → 圓盤選單（節點/邊的右鍵維持 cxttap 切故障，互不干擾）
+if (typeof cy.cxtmenu === 'function') {
+  cy.cxtmenu({ selector: 'core', menuRadius: 80, commands: () => [
+    { content: '💾 存圖', select: () => window.exportCanvasPng(cy, _topoKey) },
+    { content: '⤢ 置中', select: () => cy.fit(40) },
+    { content: '✎ 編輯器', select: () => { location.href = _topoKey ? `edit.html?topo=${encodeURIComponent(_topoKey)}` : 'edit.html'; } },
+  ]});
+}
 
 // 抑制瀏覽器在 cytoscape 容器內的右鍵 context menu
 dom('cy').addEventListener('contextmenu', e => e.preventDefault());

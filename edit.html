@@ -214,7 +214,6 @@ input:invalid,textarea:invalid{border-color:#dc2626;background:#fef2f2}
       <optgroup label="地理">
         <option value="geo-map" selected>地理座標配置</option>
         <option value="metro-map">地鐵圖</option>
-        <option value="metro-octilinear">地鐵圖（折線）</option>
       </optgroup>
       <optgroup label="RTT 延遲">
         <option value="cluster-rtt">RTT 延遲群聚</option>
@@ -380,7 +379,7 @@ const NODE_SIZE=40, PN_W=48, PN_H=28;
 
 // ── Cytoscape ───────────────────────────────────────────────────────────
 const cy = cytoscape({
-  container: $('cy'), wheelSensitivity:0.25, minZoom:0.2, maxZoom:3,
+  container: $('cy'), wheelSensitivity:0.25, minZoom:0.02, maxZoom:5,
   style:[
     // ── 節點/邊基礎樣式:繼承 index.html(白底藍框圓 router、琥珀菱形 pseudonode、slate bezier 邊)──
     ...baseGraphStyle(),   // node 基礎樣式抽至共用 graph-style.js(router/pseudonode)
@@ -398,10 +397,6 @@ const cy = cytoscape({
       'font-size':'11px','color':'#475569','text-background-color':'#fff','text-background-opacity':0.85,'text-background-padding':'2px' }},
     { selector:'edge[type="transit"]', style:{ 'line-style':'dashed','line-color':'#a855f7' }},
     { selector:'edge[?_asym]', style:{ 'line-color':'#16a34a' }},
-    // 八向折線布局：_oct='seg' 折線（segments）、_oct='straight' 直線（取代預設 bezier）
-    { selector:'edge[_oct = "seg"]', style:{ 'curve-style':'segments',
-      'segment-distances':(e)=>e.data('_segD')||'0', 'segment-weights':(e)=>e.data('_segW')||'0.5' }},
-    { selector:'edge[_oct = "straight"]', style:{ 'curve-style':'straight' }},
     { selector:'node:selected', style:{ 'border-color':'#2563eb','border-width':5 }},
     { selector:'edge:selected', style:{ 'line-color':'#2563eb','width':5,'opacity':1 }},
     // ghost(連線模式拖曳預覽)
@@ -1116,7 +1111,6 @@ function layoutGeoMap(){
 // 不需要 MILP solver 或 Delaunay(已有邊);約 70-80% 的邊可達 0°/45°/90°。
 // 長距離斜線(TPE↔LON 等)幾何上無法完美八向化,保留近似最佳角度。
 // metro 節點定位核心：回 {pos, bedges, GRID, A_TOL}，定位失敗回 null。
-// layoutMetroMap（直線）與 layoutMetroOctilinear（折線）共用。
 function _metroPositions(all){
   const {grid:GRID,nudgeIter:N_ITER,angleTol:A_TOL,geoAnchor:G_ANC,distPow:D_POW}=LAYOUT_PARAMS.metro;
   const snapG=v=>Math.round(v/GRID)*GRID;
@@ -1268,78 +1262,6 @@ function layoutMetroMap(){
   toast(`地鐵圖佈局:${ok}/${total} 條邊八向化(${total?Math.round(ok/total*100):0}%);長距離斜線為幾何極限,可手動拖曳微調。`);
 }
 
-// 地鐵圖（折線）：節點八向化，斜邊用 segments 折成八向折線
-function layoutMetroOctilinear(){
-  const all=cy.nodes().filter(n=>n.id()!=='__ghost__');
-  if(all.length<2){ toast('節點不足,無法執行地鐵圖佈局'); return; }
-  const r=_metroPositions(all); if(!r) return;
-  const {pos, bedges, A_TOL}=r;
-  cy.layout({name:'preset',positions:node=>pos[node.id()],fit:true,padding:40,
-    animate:true,animationDuration:400}).run();
-
-  // 對每條邊算折線（用 cy 即時座標，供拖曳時重算共用）
-  // 折線容差 = 0：只要不是精確八向就折，盡量全部對齊（與定位的 16° 容差分開）
-  let bent=0;
-  bedges.forEach(e=>{ if(recomputeOctSegment(e, OCT_TOL)) bent++; });
-  _octEnabled=true;  // 開啟拖曳即時重算
-
-  const {ok,total}=_metroOctRate(pos, bedges, A_TOL);
-  toast(`地鐵圖折線:${ok}/${total} 直接八向 + ${bent} 條折線 = 全部八向化。拖曳節點折線即時更新。`);
-}
-
-// 單邊八向折線計算：已八向回 false（直線），斜邊設 _oct/_segW/_segD 回 true。
-// 用 cy 即時 position（非 layout 的 pos map），拖曳時可重算。
-// OCT_TOL：角度容差，差距在此度數內視為八向、不折（太小會把幾乎八向的邊也折，視覺亂）。
-// OCT_MIN_LEN：短邊門檻，邊長小於此值不折（短斜邊直連更清楚）。
-const OCT_TOL=8, OCT_MIN_LEN=120;
-let _octEnabled=false;
-const OCT_HYST=4;  // 遲滯帶（度）：避免拖曳到臨界角度時折線/直線反覆翻轉
-function recomputeOctSegment(e, tol=OCT_TOL){
-  const sp=e.source().position(), tp=e.target().position();
-  const sx=sp.x,sy=sp.y,tx=tp.x,ty=tp.y;
-  const dx=tx-sx,dy=ty-sy,L=Math.hypot(dx,dy);
-  const goStraight=()=>{ e.data('_oct','straight'); e.removeData('_segW'); e.removeData('_segD'); };
-  // ① 長度優先：短邊一律不折（含遲滯，避免邊界長度抖動）
-  const wasSeg=e.data('_oct')==='seg';
-  const minLen=wasSeg?OCT_MIN_LEN-10:OCT_MIN_LEN;  // 已折的要更短才還原，已直的要更長才折
-  if(L<minLen){ goStraight(); return false; }
-  // ② 角度：差距在容差內 → 直線。遲滯：已折的容差放寬、已直的收緊
-  const angle=Math.atan2(dy,dx)*180/Math.PI,target=Math.round(angle/45)*45;
-  const diff=Math.abs(angle-target),adiff=diff>180?360-diff:diff;
-  const effTol=wasSeg?tol+OCT_HYST:tol;  // 已折的要更接近八向才還原直線
-  if(adiff<=effTol){ goStraight(); return false; }
-
-  // 三段式折線：主軸直走 → 45° 置中 → 主軸直走（兩端正交收尾，真地鐵圖樣式）
-  const adx=Math.abs(dx),ady=Math.abs(dy),sgx=Math.sign(dx),sgy=Math.sign(dy);
-  let b1x,b1y,b2x,b2y;
-  if(adx>ady){
-    // 水平主軸：水平 (adx-ady)/2 → 45° 走 ady → 水平 (adx-ady)/2
-    b1x=sx+sgx*(adx-ady)/2;       b1y=sy;
-    b2x=sx+sgx*(adx+ady)/2;       b2y=ty;
-  } else {
-    // 垂直主軸：垂直 (ady-adx)/2 → 45° 走 adx → 垂直 (ady-adx)/2
-    b1x=sx;                       b1y=sy+sgy*(ady-adx)/2;
-    b2x=tx;                       b2y=sy+sgy*(ady+adx)/2;
-  }
-
-  // 兩個轉折點 → cytoscape segment 的 (weight, distance)，相對 source→target 直線
-  const len2=dx*dx+dy*dy,len=Math.sqrt(len2);
-  const toSeg=(bx,by)=>{ const sbx=bx-sx,sby=by-sy;
-    return { w:(sbx*dx+sby*dy)/len2, d:(sbx*dy-sby*dx)/len }; };
-  const p1=toSeg(b1x,b1y), p2=toSeg(b2x,b2y);
-  e.data('_oct','seg');
-  e.data('_segW',`${p1.w.toFixed(4)} ${p2.w.toFixed(4)}`);
-  e.data('_segD',`${Math.round(p1.d)} ${Math.round(p2.d)}`);
-  return true;
-}
-// 拖曳節點 → 完整重評估受影響的每條邊（recomputeOctSegment 自行決定折/不折）
-// 不靠 _oct 是否存在做 gating：直線拖歪要變折線、折線拖正要還原直線，兩向都要處理。
-cy.on('position','node', e=>{
-  if(!_octEnabled || isGhost(e.target.id())) return;
-  e.target.connectedEdges().forEach(edge=>{
-    if(!isGhost(edge.source().id()) && !isGhost(edge.target().id())) recomputeOctSegment(edge);
-  });
-});
 // cose 用:每條邊的理想長度 = 城市對 RTT(ms→px)。無 RTT(pseudonode transit 邊)用短邊,讓 PN 靠攏所屬 router。
 function rttEdgeLen(edge){
   const M=(R&&R.matrix)||{};
@@ -1430,16 +1352,6 @@ function layoutConcentricAdaptive(){
 }
 function runLayout(name){
   history.push();
-  // 切換布局時清掉折線資料 + 關閉拖曳即時重算（只有地鐵圖折線會重新開啟）
-  // 對所有邊清理（不靠 [_oct] selector，避免 'straight' 值殘留）+ 強制 cytoscape 重算樣式
-  if(name!=='metro-octilinear'){
-    _octEnabled=false;
-    cy.batch(()=>{ cy.edges().forEach(e=>{
-      if(e.data('_oct')!==undefined){ e.removeData('_oct'); e.removeData('_segD'); e.removeData('_segW'); }
-    }); });
-    cy.style().update();  // 強制重繪：curve-style 回 bezier
-  }
-  if(name==='metro-octilinear') return layoutMetroOctilinear(); // 自訂:metro 定位 + segments 八向折線
   if(name==='mds') return layoutMDS();           // 自訂:非 cytoscape plugin,用 rtt.matrix 跑 MDS
   if(name==='cluster-rtt') return layoutClusterRTT();  // 自訂:RTT 分群 + 群間炸開(兩尺度)
   if(name==='latency-map') return layoutLatencyMap();  // 自訂:raw-RTT MDS 真比例圖(忠實物理,無壓縮)
@@ -2352,12 +2264,7 @@ function loadOne(tab,txt){
 }
 $('btnExport').onclick=()=>{ const m=FILEMAP[TAB]; dl(m[0],m[1]()); toast('已匯出 '+m[0]); };
 $('btnExportAll').onclick=()=>{ for(const k of Object.keys(FILEMAP)){ const m=FILEMAP[k]; dl(m[0],m[1]()); } toast('已匯出 4 個檔'); };
-function exportCanvasPng(){
-  const a=document.createElement('a');
-  a.href=cy.png({scale:2, full:true, bg:'#fafbfc'});
-  a.download=`${topoKey||'topology'}.png`;
-  a.click();
-}
+const exportCanvasPng=()=>window.exportCanvasPng(cy, topoKey);
 $('btnExportImage').onclick=exportCanvasPng;
 $('btnSyncRemote').onclick=async()=>{
   $('btnSyncRemote').disabled=true;

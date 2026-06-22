@@ -765,9 +765,12 @@ const LIMITS = {
 // §1 初始 edge data 與 Edges Editor 的 paintEdgeLabels 都走這裡,避免兩處邏輯漂移。
 function edgeLabelFields(e) {
   const asym = e.costRev != null && e.costRev !== e.cost;
+  // cap 不混入 cost(對齊 edit.html):對稱邊 cap 疊在 cost 下方第二行;非對稱邊 cost 已分置兩端,cap 放中央。
+  // 單位 'G' 為語言中性(Gbps 簡寫),對齊 edit.html 直接組字串,不進 i18n(數字是資料、G 不需翻譯)。
+  const capT = e.capacity != null ? `${e.capacity}G` : '';
   return asym
-    ? { label: '', srcLabel: String(e.cost), dstLabel: String(e.costRev) }
-    : { label: String(e.cost), srcLabel: '', dstLabel: '' };
+    ? { label: capT, srcLabel: String(e.cost), dstLabel: String(e.costRev) }
+    : { label: capT ? `${e.cost}\n${capT}` : String(e.cost), srcLabel: '', dstLabel: '' };
 }
 
 // ============================================================================
@@ -1437,8 +1440,8 @@ const cy = cytoscape({
   autounselectify: true,
   autoungrabify: false,
   wheelSensitivity: 0.3,
-  minZoom: 0.15,
-  maxZoom: 4,
+  minZoom: 0.02,
+  maxZoom: 5,
   elements: [
     ...topology.nodes.map(n => ({
       data: { id: n.id, label: n.label, type: n.type },
@@ -1447,7 +1450,7 @@ const cy = cytoscape({
     ...topology.edges.map(e => ({
       data: {
         id: e.id, source: e.source, target: e.target,
-        cost: e.cost, costRev: e.costRev,
+        cost: e.cost, costRev: e.costRev, capacity: e.capacity,
         // 混合標籤欄位由 edgeLabelFields 決定:對稱→置中 label,非對稱→兩端 src/dstLabel。
         ...edgeLabelFields(e),
         type: e.type,
@@ -1467,6 +1470,7 @@ const cy = cytoscape({
       'label':'data(label)',
       'source-label':'data(srcLabel)','target-label':'data(dstLabel)',
       'source-text-offset':24,'target-text-offset':24,
+      'text-wrap':'wrap','text-justification':'center',
       'font-size':'11px','color':'#475569',
       'text-background-color':'#fff','text-background-opacity':0.85,
       'text-background-padding':'2px','target-arrow-shape':'none',
